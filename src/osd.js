@@ -2,13 +2,14 @@
 const pad = (n, l = 2) => String(n).padStart(l, '0');
 
 export class OSD {
-  constructor(canvas, seed) {
+  constructor(canvas, seed, fixedDate = false) {
     this.c = canvas; this.ctx = canvas.getContext('2d');
     this.device = 'KESTREL BC-7';
     this.serial = 'X' + String(40000 + (seed * 7919) % 59999).padStart(5, '0');
     this.officer = 'TRN-' + pad((seed * 37) % 97 + 3, 3);
     // 영상 속 시각: 흐린 날 늦은 오후
-    const now = new Date();
+    // 테스트 촬영에서는 날짜를 고정한다. 찍은 날이 다르다는 것이 전후 비교의 단서가 되면 안 된다
+    const now = fixedDate ? new Date(2026, 10, 11) : new Date();
     this.base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 16, 41, 12).getTime();
     this.t0 = performance.now();
   }

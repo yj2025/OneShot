@@ -11,6 +11,7 @@
     "shots": "node scripts/shots.mjs",
     "sheet": "node scripts/sheet.mjs",
     "score": "node scripts/score.mjs",
+    "ab": "node scripts/ab.mjs",
     "perf": "node scripts/perf.mjs",
     "audio": "node scripts/audio.mjs"
   },

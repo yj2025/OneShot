@@ -13,6 +13,8 @@ import { OSD } from './osd.js';
 
 const Q = new URLSearchParams(location.search);
 const TEST = Q.get('test') === '1';
+// 수동 시계(테스트 촬영 전용): 게임 시간이 __bc.step()으로만 흐른다. 같은 빌드가 매번 같은 화면을 내게 하려는 것이다.
+const MANUAL = TEST && Q.get('clock') === 'manual';
 const SEED = +(Q.get('seed') || 1);
 const VIEW = Q.has('view') ? +Q.get('view') : null;
 const TOUR = Q.get('tour') === '1';
@@ -104,7 +106,7 @@ class Game {
     this.scene.fog = new THREE.FogExp2(0xb4b8bb, 0.0085);
     this.camera = new THREE.PerspectiveCamera(80, 16 / 9, 0.04, 420);
     this.input = new Input(this.canvas);
-    this.osd = new OSD($('osd'), SEED);
+    this.osd = new OSD($('osd'), SEED, TEST);
     this.phase = 'loading';
     this.stats = { shotsFired: 0, hits: 0, botShots: 0, playerHits: 0, deaths: 0, kills: 0 };
     this.events = [];
@@ -163,7 +165,7 @@ class Game {
     this.phase = 'menu';
     $('loading').classList.remove('on'); $('menu').classList.add('on');
     this.last = performance.now();
-    requestAnimationFrame((t) => this.frame(t));
+    if (MANUAL) this.tick(1 / 60); else requestAnimationFrame((t) => this.frame(t));
     window.__bc.ready = true;
   }
 
@@ -336,7 +338,11 @@ class Game {
     requestAnimationFrame((t) => this.frame(t));
     let dt = (now - this.last) / 1000; this.last = now;
     if (this.perf) this.perf.frames.push(dt * 1000);
-    dt = Math.min(dt, 0.05);
+    this.tick(Math.min(dt, 0.05));
+  }
+
+  // 한 프레임. 실시간에서는 frame()이, 수동 시계에서는 __bc.step()이 부른다
+  tick(dt) {
     this.lastDt = dt;
     this.time += dt;
     if (this.phase === 'playing') this.update(dt);
@@ -526,6 +532,8 @@ class Game {
       perfStart() { g.perf = { frames: [], t0: performance.now(), d0: g.distance }; },
       perfStop() { const r = g.perf; g.perf = null; return { frames: r.frames.slice(2), seconds: (performance.now() - r.t0) / 1000, renderScale: SCALE[g.settings.quality], canvas: `${innerWidth}x${innerHeight}`, distance: g.distance - r.d0 }; },
       async audioTest() { return g.sound.offlineStats(); },
+      // 수동 시계에서 1/60초짜리 프레임을 n번 진행한다 (입력은 그 사이에 실제 이벤트로 넣는다)
+      step(n = 1) { if (!MANUAL) return null; for (let i = 0; i < n; i++) g.tick(1 / 60); return { time: g.time, phase: g.phase, playerHits: g.stats.playerHits, shotsFired: g.stats.shotsFired }; },
     };
   }
 }

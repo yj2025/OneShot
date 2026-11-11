@@ -1,48 +1,53 @@
 // npm run shots: 고정 지점 + 플레이 장면 스크린샷과 1초 8장 연속 프레임 묶음을 out/shots/에 저장
+// 촬영은 수동 시계(?clock=manual)로 한다. 게임 시간이 __bc.step()으로만 흐르고 입력은 그 사이에 실제 이벤트로 넣으므로,
+// 같은 빌드는 몇 번을 찍어도 같은 화면이 나온다. 전후 비교(npm run ab)에서 촬영 시점의 우연이 차이로 보이지 않게 하려는 것이다.
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-import { OUT, ensureDir, build, launch, openGame, clickStart, makeMouse, sleep } from './lib.mjs';
+import { OUT, ensureDir, build, launch, openGame, clickStart, makeMouse } from './lib.mjs';
 
-const W = 1280, H = 720;
+const W = 1280, H = 720, FPS = 60;
 const dir = ensureDir(path.join(OUT, 'shots'));
 for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { recursive: true, force: true });
 if (!process.argv.includes('--nobuild')) build();
 
 const L = await launch({ width: W, height: H });
 console.log(`렌더러: ${L.renderer} (${L.mode})`);
-const meta = { renderer: L.renderer, mode: L.mode, software: L.software, shots: [], strips: [] };
+const meta = { renderer: L.renderer, mode: L.mode, software: L.software, clock: 'manual', simFps: FPS, shots: [], strips: [] };
 
-async function open(view, extra = '') {
-  const g = await openGame(L.context, `test=1&seed=11&view=${view}${extra}`);
+const step = (page, n = 1) => page.evaluate((k) => window.__bc.step(k), n);
+// 마지막으로 그린 프레임이 화면에 올라온 뒤에 찍는다
+const settle = (page) => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+
+async function open(view, settleFrames = 156) {
+  const g = await openGame(L.context, `test=1&clock=manual&seed=11&view=${view}`);
   await clickStart(g.page);
-  await sleep(2600); // 자동 노출이 자리를 잡을 시간
+  if (settleFrames) await step(g.page, settleFrames); // 2.6초: 자동 노출과 자세가 자리를 잡을 시간
   return g;
 }
 async function shot(page, name) {
   const file = path.join(dir, `${name}.png`);
+  await settle(page);
   await page.screenshot({ path: file });
   meta.shots.push(`${name}.png`);
   return file;
 }
-async function strip(page, name, action) {
+// 1초(60프레임) 동안 8장: 1, 9, 16, 24, 31, 39, 46, 54번째 프레임. perFrame은 프레임마다 그 직전에 불린다(입력을 넣는 자리)
+async function strip(page, name, perFrame) {
   const frames = [];
-  const t0 = Date.now();
-  const actP = action ? action() : Promise.resolve();
+  let done = 0;
   for (let i = 0; i < 8; i++) {
-    const wait = t0 + i * 125 - Date.now();
-    if (wait > 0) await sleep(wait);
+    const target = 1 + Math.round(i * FPS / 8);
+    while (done < target) { if (perFrame) await perFrame(done); await step(page, 1); done++; }
+    await settle(page);
     frames.push(await page.screenshot({ type: 'png' }));
   }
-  await actP;
-  const elapsed = Date.now() - t0;
   const fw = 480, fh = 270;
   const tiles = await Promise.all(frames.map(b => sharp(b).resize(fw, fh).png().toBuffer()));
-  const file = path.join(dir, `strip-${name}.png`);
   await sharp({ create: { width: fw * 8, height: fh, channels: 3, background: '#000' } })
     .composite(tiles.map((t, i) => ({ input: t, left: i * fw, top: 0 })))
-    .png().toFile(file);
-  meta.strips.push({ file: `strip-${name}.png`, ms: elapsed });
+    .png().toFile(path.join(dir, `strip-${name}.png`));
+  meta.strips.push({ file: `strip-${name}.png`, simMs: Math.round((done - 1) * 1000 / FPS) });
 }
 
 const VIEWS = [
@@ -55,23 +60,28 @@ for (const [name, v] of VIEWS) {
   await page.close();
 }
 
-// 사격 순간
+// 사격 순간: 첫 발이 나간 바로 그 프레임. 이어서 방아쇠를 1초 내내 누른 연사
 {
   const { page } = await open(7);
   const mouse = makeMouse(page, W, H); await mouse.center();
+  await step(page, 1);
   await mouse.down('left');
-  await sleep(40);
+  await step(page, 1);
   await shot(page, '09-firing');
   await mouse.up('left');
-  await sleep(700);
-  await strip(page, 'firing-burst', async () => { await mouse.down('left'); await sleep(1000); await mouse.up('left'); });
+  await step(page, 42);
+  await mouse.down('left');
+  await strip(page, 'firing-burst', null);
+  await mouse.up('left');
   await page.close();
 }
-// 피격 순간: 경계 상태 봇이 플레이어를 향해 사격하는 장면
+// 피격 순간: 경계 상태 봇이 쏜 탄에 처음 맞고 3프레임(0.05초) 뒤
 {
-  const { page } = await open(8);
-  await page.waitForFunction(() => window.__bc.state().stats.playerHits > 0, null, { timeout: 20000 }).catch(() => console.log('  (피격이 일어나지 않음)'));
-  await sleep(50);
+  const { page } = await open(8, 0);
+  let hit = false;
+  for (let i = 0; i < 1500 && !hit; i++) hit = (await step(page, 1)).playerHits > 0;
+  if (!hit) console.log('  (피격이 일어나지 않음)');
+  await step(page, 3);
   await shot(page, '10-hit-taken');
   await page.close();
 }
@@ -79,9 +89,9 @@ for (const [name, v] of VIEWS) {
 {
   const { page } = await open(6);
   await page.keyboard.down('KeyW');
-  await sleep(300);
+  await step(page, 18);
   await strip(page, 'indoor-to-outdoor', null);
-  await sleep(200);
+  await step(page, 12);
   await shot(page, '11-stepped-outside');
   await page.keyboard.up('KeyW');
   await page.close();
@@ -90,15 +100,15 @@ for (const [name, v] of VIEWS) {
 {
   const { page } = await open(2);
   await page.keyboard.down('KeyW');
-  await sleep(500);
+  await step(page, 30);
   await strip(page, 'walking', null);
   await page.keyboard.down('ShiftLeft');
   const mouse = makeMouse(page, W, H); await mouse.center();
-  await strip(page, 'running-turn', async () => { for (let i = 0; i < 20; i++) { await mouse.move(14, 0); await sleep(40); } });
+  await strip(page, 'running-turn', async (f) => { if (f < 48) await mouse.move(6, 0); });
   await page.keyboard.up('ShiftLeft');
   await page.keyboard.up('KeyW');
   await page.close();
 }
 fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
 await L.browser.close();
-console.log(`저장: ${meta.shots.length}장 + 연속 프레임 ${meta.strips.length}묶음 → out/shots/`);
+console.log(`저장: ${meta.shots.length}장 + 연속 프레임 ${meta.strips.length}묶음 → out/shots/ (수동 시계, ${FPS}Hz)`);
