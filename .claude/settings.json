@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(npm install *)",
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm run check)",
+      "Bash(npm run shots)",
+      "Bash(npm run sheet)",
+      "Bash(npm run score *)",
+      "Bash(npm run perf)",
+      "Bash(npm run audio)",
+      "Bash(npx playwright install chromium)",
+      "Bash(node *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(sudo *)",
+      "Read(./out/keys/**)"
+    ]
+  }
+}
