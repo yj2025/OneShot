@@ -54,7 +54,7 @@ void main(){
 // 렌즈 + 센서
 const CAM_FS = `
 uniform sampler2D tScene; uniform sampler2D tBloomA; uniform sampler2D tBloomB; uniform sampler2D tBloomC;
-uniform sampler2D tAdapt; uniform sampler2D tPrev;
+uniform sampler2D tAdapt; uniform sampler2D tPrev; uniform sampler2D tDepth; uniform float uNear; uniform float uFar;
 uniform float uAspect; uniform float uK; uniform float uCA; uniform vec2 uBlur; uniform float uBlurAmt; uniform float uZoomBlur;
 uniform float uTime; uniform float uKey; uniform float uFlash; uniform vec2 uRimShift; uniform float uGhost; uniform float uNoise;
 uniform float uSat; uniform float uHit; uniform float uFrame; uniform float uDead;
@@ -66,6 +66,21 @@ vec2 distort(vec2 uv, float k){
   float rmax2 = 0.25 * (uAspect * uAspect + 1.0);
   vec2 q = p * (1.0 + k * r2) / (1.0 + k * rmax2 * 0.62);
   return q / vec2(uAspect, 1.0) + 0.5;
+}
+float linDepth(vec2 uv){ float d = texture2D(tDepth, uv).r; return uNear * uFar / (uFar - d * (uFar - uNear)); }
+vec3 defocus(vec2 uv, vec3 base){
+  float z = linDepth(uv);
+  float coc = smoothstep(0.85, 0.22, z) * 0.011;
+  if (coc < 0.0006) return base;
+  vec3 acc = base; float n = 1.0;
+  for (int i = 0; i < 10; i++) {
+    float a = float(i) * 2.39996, r = sqrt((float(i) + 0.5) / 10.0);
+    vec2 o = vec2(cos(a), sin(a)) * r * coc * vec2(1.0 / uAspect, 1.0);
+    float zz = linDepth(uv + o);
+    // 먼 배경이 가까운 물체 위로 번지지 않도록
+    if (zz < 1.2) { acc += texture2D(tScene, uv + o).rgb; n += 1.0; }
+  }
+  return acc / n;
 }
 vec3 sampleBlur(vec2 uv){
   // 카메라 회전 방향 + 전진 방향(가장자리 방사형)으로 셔터 시간 동안 번짐
@@ -88,7 +103,7 @@ void main(){
   vec2 uvG = distort(vUv, uK);
   vec2 uvR = distort(vUv, uK * (1.0 + uCA));
   vec2 uvB = distort(vUv, uK * (1.0 - uCA));
-  vec3 col = sampleBlur(uvG);
+  vec3 col = defocus(uvG, sampleBlur(uvG));
   float rr = texture2D(tScene, uvR).r, bb = texture2D(tScene, uvB).b, gg = texture2D(tScene, uvG).g;
   col.r += (rr - gg) * 0.9; col.b += (bb - gg) * 0.9;
   col = max(col, 0.0);
@@ -167,6 +182,7 @@ export class Post {
     this.scene = new THREE.Scene(); this.scene.add(this.quad);
     const HF = { type: THREE.HalfFloatType, depthBuffer: false };
     this.rtScene = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 0 });
+    this.rtScene.depthTexture = new THREE.DepthTexture(4, 4); this.rtScene.depthTexture.type = THREE.UnsignedIntType;
     this.rtLum = new THREE.WebGLRenderTarget(64, 64, { ...HF, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
     this.rtAdapt = [new THREE.WebGLRenderTarget(1, 1, HF), new THREE.WebGLRenderTarget(1, 1, HF)];
     this.rtB = [0, 1, 2].map(() => [new THREE.WebGLRenderTarget(4, 4, HF), new THREE.WebGLRenderTarget(4, 4, HF)]);
@@ -179,7 +195,7 @@ export class Post {
       tScene: { value: null }, tBloomA: { value: null }, tBloomB: { value: null }, tBloomC: { value: null }, tAdapt: { value: null }, tPrev: { value: null },
       uAspect: { value: 1.78 }, uK: { value: 0.32 }, uCA: { value: 0.035 }, uBlur: { value: new THREE.Vector2() }, uBlurAmt: { value: 1 }, uZoomBlur: { value: 0 },
       uTime: { value: 0 }, uKey: { value: 0.2 }, uFlash: { value: 0 }, uRimShift: { value: new THREE.Vector2() }, uGhost: { value: 0.12 }, uNoise: { value: 1 },
-      uSat: { value: 0.62 }, uHit: { value: 0 }, uFrame: { value: 0 }, uDead: { value: 0 },
+      uSat: { value: 0.62 }, uHit: { value: 0 }, uFrame: { value: 0 }, uDead: { value: 0 }, tDepth: { value: null }, uNear: { value: 0.04 }, uFar: { value: 420 },
     });
     this.mCodec = pass(CODEC_FS, { tIn: { value: null }, uRes: { value: new THREE.Vector2() }, uQ: { value: 0.2 }, uSharp: { value: 0.45 } });
     this.ping = 0; this.frame = 0; this.init = true;
@@ -223,7 +239,7 @@ export class Post {
     const U = this.mCam.uniforms;
     const cur = this.rtCam[this.ping], prev = this.rtCam[1 - this.ping];
     U.tScene.value = this.rtScene.texture; U.tBloomA.value = this.rtB[0][0].texture; U.tBloomB.value = this.rtB[1][0].texture; U.tBloomC.value = this.rtB[2][0].texture;
-    U.tAdapt.value = adapt; U.tPrev.value = prev.texture;
+    U.tAdapt.value = adapt; U.tPrev.value = prev.texture; U.tDepth.value = this.rtScene.depthTexture; U.uNear.value = camera.near; U.uFar.value = camera.far;
     U.uBlur.value.copy(P.blurVec); U.uBlurAmt.value = P.blur; U.uZoomBlur.value = P.zoomBlur * P.blur;
     U.uKey.value = P.key; U.uFlash.value = P.flash; U.uRimShift.value.copy(P.rim); U.uHit.value = P.hit; U.uDead.value = P.dead;
     U.uFrame.value = (this.frame++ % 997); U.uTime.value += dt;

@@ -24,8 +24,18 @@ function cylPart(group, mat, r, len, pos, axis = 'z', seg = 12, r2) {
 }
 
 // 두 점 사이를 잇는 원기둥(팔)
-function limb(mat, r0, r1) {
-  const g = new THREE.CylinderGeometry(r1, r0, 1, 12, 1); g.translate(0, 0.5, 0);
+function limb(mat, r0, r1, wrinkle = 0) {
+  const g = new THREE.CylinderGeometry(r1, r0, 1, 16, wrinkle ? 14 : 1); g.translate(0, 0.5, 0);
+  if (wrinkle) {
+    // 소매 주름: 길이 방향으로 불규칙한 접힘과 비대칭
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
+      const k = 1 + wrinkle * (0.16 * Math.sin(y * 31 + a * 2.0) * Math.sin(a * 3 + y * 7) + 0.1 * Math.sin(y * 57 + a * 5) + 0.12 * Math.cos(a - 0.6));
+      p.setXYZ(i, x * k, y, z * k * 1.12);
+    }
+    g.computeVertexNormals();
+  }
   return new THREE.Mesh(g, mat);
 }
 const _up = V(0, 1, 0), _d = V(0, 0, 0), _q = new THREE.Quaternion();
@@ -59,15 +69,15 @@ function fabricTexture(base, seed) {
 }
 
 export function buildMaterials() {
-  const blk = wearTexture('#2a2b2a', 3), tan = wearTexture('#8d7d5f', 7), stl = wearTexture('#3c3e40', 11);
+  const blk = wearTexture('#252625', 3), tan = wearTexture('#5e5a4e', 7), stl = wearTexture('#3c3e40', 11);
   return {
     polymer: bcMaterial({ map: blk, roughness: 0.62, metalness: 0.05, envMapIntensity: 1.0 }, { grime: 0 }),
     steel: bcMaterial({ map: stl, roughness: 0.38, metalness: 0.55, envMapIntensity: 1.2 }, { grime: 0 }),
     worn: bcMaterial({ color: 0x77797b, roughness: 0.3, metalness: 0.7, envMapIntensity: 1.2 }, { grime: 0 }),
     tan: bcMaterial({ map: tan, roughness: 0.7, metalness: 0.02, envMapIntensity: 0.9 }, { grime: 0 }),
-    glove: bcMaterial({ map: fabricTexture('#3b3a35', 5), roughness: 0.92 }, { grime: 0 }),
+    glove: bcMaterial({ map: fabricTexture('#2e2d2a', 5), roughness: 0.95 }, { grime: 0 }),
     gloveKnuckle: bcMaterial({ color: 0x24241f, roughness: 0.55, envMapIntensity: 0.8 }, { grime: 0 }),
-    sleeve: bcMaterial({ map: fabricTexture('#5d604c', 9), roughness: 1.0 }, { grime: 0 }),
+    sleeve: bcMaterial({ map: fabricTexture('#3f413a', 9), roughness: 1.0 }, { grime: 0 }),
     cuff: bcMaterial({ map: fabricTexture('#3a3c31', 13), roughness: 1.0 }, { grime: 0 }),
   };
 }
@@ -166,9 +176,9 @@ function curlHand(h, curls) {
 
 const WEAPONS = {
   rifle: { mag: 30, spareMags: 4, interval: 0.088, auto: true, reload: 2.35, recoil: 1.0, kind: 'rifle', damage: 1, spread: 0.0016,
-    hip: V(0.15, -0.2, -0.37), ads: V(0.0, -0.118, -0.28), sprint: V(0.06, -0.25, -0.3) },
+    hip: V(0.17, -0.235, -0.35), ads: V(0.0, -0.118, -0.28), sprint: V(0.07, -0.28, -0.28) },
   pistol: { mag: 15, spareMags: 3, interval: 0.13, auto: false, reload: 1.75, recoil: 0.8, kind: 'pistol', damage: 0.85, spread: 0.003,
-    hip: V(0.09, -0.19, -0.33), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.27, -0.2) },
+    hip: V(0.11, -0.22, -0.33), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.28, -0.2) },
 };
 
 class Spring {
@@ -199,7 +209,7 @@ export class Viewmodel {
     for (const k in this.models) { this.gunHolder.add(this.models[k].group); this.models[k].group.visible = false; }
     this.handR = buildHand(this.M); this.handL = buildHand(this.M, true);
     this.gunHolder.add(this.handR, this.handL);
-    this.foreR = limb(this.M.sleeve, 0.038, 0.052); this.foreL = limb(this.M.sleeve, 0.038, 0.052);
+    this.foreR = limb(this.M.sleeve, 0.042, 0.06, 1); this.foreL = limb(this.M.sleeve, 0.042, 0.06, 1);
     this.cuffR = limb(this.M.cuff, 0.041, 0.041); this.cuffL = limb(this.M.cuff, 0.041, 0.041);
     scene.add(this.foreR, this.foreL, this.cuffR, this.cuffL);
     for (const m of [this.foreR, this.foreL, this.cuffR, this.cuffL]) m.frustumCulled = false;

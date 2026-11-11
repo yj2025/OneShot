@@ -59,8 +59,8 @@ export class Player {
   }
   shotKick(scale) {
     const r = this.rng;
-    this.camShake.v.add(V((0.6 + r() * 0.6) * scale, (r() - 0.5) * 0.8 * scale, (r() - 0.5) * 1.1 * scale));
-    this.camOffset.v.add(V(0, 0, 0.05 * scale));
+    this.camShake.v.add(V((2.6 + r() * 2.2) * scale, (r() - 0.5) * 3.4 * scale, (r() - 0.5) * 4.4 * scale));
+    this.camOffset.v.add(V((r() - 0.5) * 0.3 * scale, 0.15 * scale, 0.5 * scale));
   }
 
   update(dt, t, input, settings, weapon) {

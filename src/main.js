@@ -283,8 +283,8 @@ class Game {
     vm.ejectCasing(this.fx, p.vel);
     p.shotKick(this.settings.shake * (vm.current === 'rifle' ? 1 : 0.8));
     // 총이 위로 튀며 조준이 조금 올라간다
-    p.aimPitch += (0.006 + r() * 0.006) * def.recoil * (1 - vm.ads * 0.3);
-    p.aimYaw += (r() - 0.5) * 0.008 * def.recoil;
+    p.aimPitch += (0.009 + r() * 0.009) * def.recoil * (1 - vm.ads * 0.3);
+    p.aimYaw += (r() - 0.5) * 0.014 * def.recoil;
     vm.stress = Math.min(1, vm.stress + 0.08);
     this.sound.play(vm.current === 'rifle' ? 'rifle' : 'pistol', { gain: vm.current === 'rifle' ? 1.75 : 1.5, send: 0.5 });
     this.sound.duck(0.15, 1.6);
