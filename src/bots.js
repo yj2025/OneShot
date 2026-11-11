@@ -45,9 +45,9 @@ export class Bot {
     const o = OUTFITS[idx % OUTFITS.length];
     this.height = 0.97 + rng() * 0.06; // 키 비율
     const M = {
-      cloth: bcMaterial({ map: game.tex.fabric, color: o.cloth, roughness: 1 }, { grime: 0.3 }),
-      vest: bcMaterial({ map: game.tex.fabric, color: o.vest, roughness: 0.95 }, { grime: 0.3 }),
-      helmet: bcMaterial({ color: o.helmet, roughness: 0.8, metalness: 0.05 }, { grime: 0.2 }),
+      cloth: bcMaterial({ map: game.tex.fabric, color: new THREE.Color(o.cloth).multiplyScalar(1.35), roughness: 0.92, envMapIntensity: 0.7 }, { grime: 0.3 }),
+      vest: bcMaterial({ map: game.tex.fabric, color: new THREE.Color(o.vest).multiplyScalar(1.3), roughness: 0.85, envMapIntensity: 0.6 }, { grime: 0.3 }),
+      helmet: bcMaterial({ map: game.tex.fabric, color: new THREE.Color(o.helmet).multiplyScalar(1.1), roughness: 0.95, metalness: 0.0, envMapIntensity: 0.15 }, { grime: 0.2 }),
       lens: bcMaterial({ color: 0x0b0c0d, roughness: 0.12, metalness: 0.4 }, { grime: 0 }),
       face: bcMaterial({ map: game.tex.fabric, color: 0x262624, roughness: 1 }, { grime: 0 }),
       glove: bcMaterial({ color: 0x1e1e1c, roughness: 0.9 }, { grime: 0 }),
@@ -183,7 +183,7 @@ export class Bot {
     this.J[J.shL].copy(chest).addScaledVector(tr, -0.19 * H).add(V(0, -0.04, 0));
     this.J[J.shR].copy(chest).addScaledVector(tr, 0.19 * H).add(V(0, -0.04, 0));
     // 총 방향: 조준 중이면 aimYaw/aimPitch, 아니면 앞으로 낮게
-    const gp = this.aimPitch * this.aimRaise + (-0.75) * (1 - this.aimRaise);
+    const gp = this.aimPitch * this.aimRaise + (-0.5) * (1 - this.aimRaise);
     const gy = this.aimYaw;
     const gdir = V(-Math.sin(gy) * Math.cos(gp), Math.sin(gp), -Math.cos(gy) * Math.cos(gp));
     const gside = V(Math.cos(gy), 0, -Math.sin(gy));
@@ -390,7 +390,16 @@ export class Bot {
   }
 
   hear(pos, loud, now) {
-    if (!this.alive || this.dormant) return;
+    if (!this.alive) return;
+    if (this.dormant) {
+      // 정지 상태여도 총성에는 움찔하고 소리 쪽으로 몸을 돌린다
+      if (loud > 20 && this.pos.distanceTo(pos) < loud) {
+        this.startle = 1; this.startleDelay = 0.12 + this.rng() * 0.25;
+        this.lookYaw = Math.atan2(-(pos.x - this.pos.x), -(pos.z - this.pos.z));
+        this.hitFlinch = Math.max(this.hitFlinch, 0.5); this.flinchDir.set(this.pos.x - pos.x, 0, this.pos.z - pos.z).normalize();
+      }
+      return;
+    }
     const d = this.pos.distanceTo(pos);
     const inSame = this.g.level.insideBuilding(pos.x, pos.z) === this.g.level.insideBuilding(this.pos.x, this.pos.z);
     const range = loud * (inSame ? 1 : 0.6);
@@ -472,7 +481,12 @@ export class Bot {
 
     switch (this.state) {
       case 'idle': {
-        raise = 0.0; this.lookYaw += Math.sin(now * 0.3 + this.idx) * 0.002; faceYaw = this.lookYaw; break;
+        this.startleDelay = (this.startleDelay || 0) - dt;
+        const st = this.startleDelay > 0 ? 0 : (this.startle || 0);
+        this.startle = Math.max(0, (this.startle || 0) - dt * 0.15);
+        raise = st * 0.95; wantCrouch = st * 0.45;
+        if (st <= 0) this.lookYaw += Math.sin(now * 0.3 + this.idx) * 0.002;
+        faceYaw = st > 0 ? this.lookYaw : this.lookYaw; break;
       }
       case 'patrol': {
         raise = 0.0;
