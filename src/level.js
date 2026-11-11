@@ -2,6 +2,7 @@
 // 좌표: y 위, 건물은 x[-12,12] z[-16,0], 정면(z=0)이 마당(+z) 쪽. 실내 바닥 높이 FL = 0.7 m.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { bcMaterial, envUniforms, setOpenings } from './materials.js';
 import { mulberry32 } from './rng.js';
 
@@ -82,6 +83,8 @@ export class Level {
     M('pallet', { map: t.plywood, color: 0xb59a7a, roughness: 0.95 }, { grime: 0.8 });
     M('linoleum', { map: t.linoleum, roughness: 0.6 }, { grime: 0.8 });
     M('cardboard', { map: t.cardboard, roughness: 1 }, { grime: 0.3 });
+    M('cardboardB', { map: t.cardboard, color: 0xc4b8a4, roughness: 1 }, { grime: 0.5 });
+    M('cardboardC', { map: t.cardboard, color: 0x9c9284, roughness: 1 }, { grime: 0.7 });
     M('locker', { map: t.locker, roughness: 0.55, metalness: 0.35 }, { grime: 0.4 });
     M('metalDark', { color: 0x55574f, roughness: 0.55, metalness: 0.45 }, { grime: 0.5 });
     M('metalGalv', { color: 0x8c8f8e, roughness: 0.5, metalness: 0.7 }, { grime: 0.5 });
@@ -121,10 +124,17 @@ export class Level {
   }
   collider(min, max, mat = 'concrete') { this.boxes.push({ min, max, mat }); }
   // 회전된 상자: 시각은 정확히, 충돌은 감싸는 AABB
-  obox(matKey, center, size, rotY, { tile = 2, collide = true, mat = 'metal', rotX = 0, rotZ = 0 } = {}) {
+  obox(matKey, center, size, rotY, { tile = 2, collide = true, mat = 'metal', rotX = 0, rotZ = 0, round = 0 } = {}) {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(...center), new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, rotY, rotZ)), new THREE.Vector3(1, 1, 1));
     const h = size.map(s => s / 2);
-    this.add(matKey, boxGeometry([-h[0], -h[1], -h[2]], h, tile, m));
+    if (round > 0) {
+      // 모서리가 닳은 상자: 둥근 모서리 + 면마다 살짝 찌그러짐
+      const g = new RoundedBoxGeometry(size[0], size[1], size[2], 2, Math.min(round, Math.min(...size) * 0.3));
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) { const k = 1 + (this.rng() - 0.5) * 0.025; p.setXYZ(i, p.getX(i) * k, p.getY(i) * (1 + (this.rng() - 0.5) * 0.015), p.getZ(i) * k); }
+      g.computeVertexNormals(); g.applyMatrix4(m);
+      this.add(matKey, g);
+    } else this.add(matKey, boxGeometry([-h[0], -h[1], -h[2]], h, tile, m));
     if (collide) {
       const bb = new THREE.Box3().setFromBufferAttribute(boxGeometry([-h[0], -h[1], -h[2]], h, tile, m).attributes.position);
       this.boxes.push({ min: bb.min.toArray(), max: bb.max.toArray(), mat });
@@ -469,7 +479,7 @@ export class Level {
     this.buckets.get('pallet').pop(); // 충돌용 상자만 남기고 겉면은 판재로
     this.boxes[this.boxes.length - 1].cover = h > 0.8;
   }
-  crate(x, z, s, a) { this.obox('plywood', [x, FL + s / 2, z], [s, s, s], a, { tile: 1.2, mat: 'wood' }); this.boxes[this.boxes.length - 1].cover = true; }
+  crate(x, z, s, a) { this.obox(['plywood', 'plywoodB', 'plywoodC'][Math.floor(this.rng() * 3)], [x, FL + s / 2, z], [s, s, s], a, { tile: 1.2, mat: 'wood', round: 0.025 }); this.boxes[this.boxes.length - 1].cover = true; }
   tire(x, y, z, a) {
     const g = new THREE.TorusGeometry(0.3, 0.11, 8, 16); g.rotateX(Math.PI / 2); g.rotateY(a); g.translate(x, y, z);
     this.add('rubber', g); this.boxes.push({ min: [x - 0.42, y - 0.11, z - 0.42], max: [x + 0.42, y + 0.11, z + 0.42], mat: 'rubber' });
@@ -516,7 +526,7 @@ export class Level {
         const w = 0.35 + this.rng() * 0.3, hh = 0.25 + this.rng() * 0.35;
         if (this.rng() < 0.75) {
           const cx = alongZ ? x : x + p + w / 2, cz = alongZ ? z + p + w / 2 : z;
-          this.obox('cardboard', [cx, y + h + hh / 2, cz], [alongZ ? 0.45 : w, hh, alongZ ? w : 0.45], (this.rng() - 0.5) * 0.15, { tile: 0.6, collide: false });
+          this.obox(['cardboard', 'cardboardB', 'cardboardC'][Math.floor(this.rng() * 3)], [cx, y + h + hh / 2, cz], [alongZ ? 0.45 : w, hh, alongZ ? w : 0.45], (this.rng() - 0.5) * 0.15, { tile: 0.6, collide: false, round: 0.02 });
         }
         p += w + 0.05;
       }

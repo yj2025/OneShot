@@ -147,13 +147,16 @@ export class Bot {
     const sp = Math.min(1, this.speed / 3.5);
     const ph = this.walkPhase;
     const cr = this.crouch;
+    const idle = Math.max(0, 1 - this.speed * 2) * (1 - cr);
+    const wSide = (this.idx % 2) ? 1 : -1;
     const legLen = 0.46 * H;
     const legs = [];
     for (const side of [-1, 1]) {
       const p = ph + (side < 0 ? 0 : Math.PI);
       let a = Math.sin(p) * (0.25 + sp * 0.35) * Math.min(1, this.speed * 1.5) + cr * 1.15 * (side < 0 ? 1.0 : 0.25);
       let kb = Math.max(0, -Math.cos(p)) * (0.4 + sp * 0.7) * Math.min(1, this.speed * 1.5) + cr * (side < 0 ? 1.35 : 2.3) + 0.16 + (side < 0 ? 0.05 : 0);
-      a += 0.08 + (side < 0 ? 0.05 : -0.02);
+      a += 0.08 + (side < 0 ? 0.05 : -0.02) + idle * (side === wSide ? -0.04 : 0.16);
+      kb += idle * (side === wSide ? 0.0 : 0.32);
       const hip = V(0, 0, 0).addScaledVector(r, side * 0.11 * H);
       const knee = hip.clone().addScaledVector(f, Math.sin(a) * legLen).add(V(0, -Math.cos(a) * legLen, 0));
       const b = a - kb;
@@ -162,14 +165,14 @@ export class Bot {
     }
     const drop = -Math.min(legs[0].foot.y, legs[1].foot.y) + 0.06;
     const bounce = Math.abs(Math.sin(ph)) * 0.025 * Math.min(1, this.speed);
-    const pelvis = this.pos.clone().add(V(0, drop + bounce, 0)).addScaledVector(f, -cr * 0.05);
+    const pelvis = this.pos.clone().add(V(0, drop + bounce, 0)).addScaledVector(f, -cr * 0.05).addScaledVector(r, idle * wSide * (0.045 + 0.012 * Math.sin(t * 0.37 + this.idx)));
     const [L, R] = legs;
     this.J[J.hipL].copy(pelvis).add(L.hip).add(V(0, -0.05, 0)); this.J[J.knL].copy(pelvis).add(L.knee); this.J[J.ftL].copy(pelvis).add(L.foot);
     this.J[J.hipR].copy(pelvis).add(R.hip).add(V(0, -0.05, 0)); this.J[J.knR].copy(pelvis).add(R.knee); this.J[J.ftR].copy(pelvis).add(R.foot);
     this.J[J.pelvis].copy(pelvis);
     const lean = 0.08 + this.aimRaise * 0.12 + cr * 0.25 + sp * 0.12;
     const flinch = this.flinchDir.clone().multiplyScalar(this.hitFlinch * 0.25);
-    const spineUp = V(0, 1, 0).addScaledVector(f, Math.sin(lean)).add(flinch).normalize();
+    const spineUp = V(0, 1, 0).addScaledVector(f, Math.sin(lean) + idle * 0.012 * Math.sin(t * 1.3 + this.idx)).addScaledVector(r, -idle * wSide * 0.06).add(flinch).normalize();
     const chest = pelvis.clone().addScaledVector(spineUp, 0.5 * H);
     // 조준하면 상체가 조준 방향으로 비틀림
     const twist = Math.max(-0.6, Math.min(0.6, angDiff(this.aimYaw, this.yaw)));
