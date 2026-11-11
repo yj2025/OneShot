@@ -112,7 +112,7 @@ void main(){
   // --- 센서: 자동 노출
   float ad = texture2D(tAdapt, vec2(0.5)).r;
   float ex = clamp(uKey / ad, 0.35, 7.0);
-  col = col * ex + bloom * 0.55 + uFlash * vec3(1.0, 0.85, 0.6) * 0.06;
+  col = col * ex + bloom * 0.55 + uFlash * vec3(1.0, 0.85, 0.6) * 0.02;
   // 렌즈 주변부 광량 저하
   col *= mix(1.0, 0.55, smoothstep(0.35, 1.0, r));
   // 좁은 계조: 빠르게 하얗게 날아가는 어깨, 뭉개지는 그늘

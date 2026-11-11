@@ -276,9 +276,9 @@ class Game {
       if (t > 0) { const d = start.clone().addScaledVector(dir, t).distanceTo(c); if (d < 1.6) b.suppressed = now; }
     }
     // 총구 화염, 탄피, 반동, 소리
-    this.fx.muzzleFlash(origin, dir, vm.current === 'rifle' ? 1 : 0.75);
+    this.fx.muzzleFlash(origin, dir, vm.current === 'rifle' ? 0.55 : 0.4);
     this.flashLight.position.copy(origin).addScaledVector(dir, 0.15);
-    this.flashLight.intensity = 30 + r() * 25; this.flashT = 0.035;
+    this.flashLight.intensity = 6 + r() * 6; this.flashT = 0.03;
     this.flash = 1;
     vm.ejectCasing(this.fx, p.vel);
     p.shotKick(this.settings.shake * (vm.current === 'rifle' ? 1 : 0.8));
