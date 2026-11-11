@@ -118,7 +118,7 @@ class Game {
   setLoad(p, msg) { $('load-fill').style.width = `${Math.round(p * 100)}%`; if (msg) $('load-msg').textContent = msg; }
 
   async load() {
-    const T = { concrete: '콘크리트 바닥', plaster: '회반죽 벽', ceiling: '천장 타일', block: '블록 외벽', asphalt: '아스팔트', gravel: '자갈', corrugated: '골판 강판', plywood: '합판', linoleum: '리놀륨', cardboard: '종이 상자', locker: '사물함', fabric: '천', chainlink: '철망', holes: '탄흔', puff: '먼지', flash: '총구 화염', stain: '얼룩', paper: '서류' };
+    const T = { concrete: '콘크리트 바닥', plaster: '회반죽 벽', ceiling: '천장 타일', block: '블록 외벽', asphalt: '아스팔트', gravel: '자갈', corrugated: '골판 강판', plywood: '합판', linoleum: '리놀륨', cardboard: '종이 상자', locker: '사물함', fabric: '천', chainlink: '철망', holes: '탄흔', puff: '먼지', plywoodB: '합판', plywoodC: '합판', flash: '총구 화염', stain: '얼룩', paper: '서류' };
     this.tex = await buildTextures(SEED, (p, k) => this.setLoad(p * 0.45, `재질 만드는 중: ${T[k] || k}`));
     this.sound = new Sound(SEED);
     await this.sound.generate((p) => this.setLoad(0.45 + p * 0.35, '소리 합성 중: 총성, 발소리, 공간 잔향'));

@@ -77,6 +77,8 @@ export class Level {
     M('contRust', { map: t.corrugated, color: 0x8a4e36, roughness: 0.75, metalness: 0.3 }, { grime: 0.6 });
     M('roofMetal', { map: t.corrugated, color: 0x6a6e70, roughness: 0.7, metalness: 0.4 }, { grime: 0.4 });
     M('plywood', { map: t.plywood, roughness: 0.9 }, { grime: 0.6 });
+    M('plywoodB', { map: t.plywoodB, roughness: 0.9 }, { grime: 0.6 });
+    M('plywoodC', { map: t.plywoodC, roughness: 0.9 }, { grime: 0.6 });
     M('pallet', { map: t.plywood, color: 0xb59a7a, roughness: 0.95 }, { grime: 0.8 });
     M('linoleum', { map: t.linoleum, roughness: 0.6 }, { grime: 0.8 });
     M('cardboard', { map: t.cardboard, roughness: 1 }, { grime: 0.3 });
@@ -378,9 +380,9 @@ export class Level {
     // 홀: 기둥, 합판 훈련벽, 팔레트·나무상자 엄폐물, 드럼통
     for (const x of [-8, -4, 0]) for (const z of [-9.8, -12.9]) this.box('concrete', [x - 0.2, FL, z - 0.2], [x + 0.2, CH, z + 0.2], { tile: 2, mat: 'concrete' });
     this.box('plywood', [-10.8, FL, -11.0], [-8.4, FL + 2.4, -10.95], { tile: 2.44, mat: 'wood', cover: true });
-    this.box('plywood', [-6.5, FL, -14.6], [-6.45, FL + 2.4, -12.2], { tile: 2.44, mat: 'wood', cover: true });
+    this.box('plywoodB', [-6.5, FL, -14.6], [-6.45, FL + 2.4, -12.2], { tile: 2.44, mat: 'wood', cover: true });
     this.box('plywood', [-3.0, FL, -8.6], [-0.6, FL + 2.4, -8.55], { tile: 2.44, mat: 'wood', cover: true });
-    this.box('plywood', [1.2, FL, -13.0], [3.6, FL + 2.4, -12.95], { tile: 2.44, mat: 'wood', cover: true });
+    this.box('plywoodC', [1.2, FL, -13.0], [3.6, FL + 2.4, -12.95], { tile: 2.44, mat: 'wood', cover: true });
     this.box('metalDark', [-10.8, FL, -11.1], [-10.7, FL + 2.4, -10.85], { collide: false });
     this.palletStack(-2.4, FL, -11.5, 6, 0.3);
     this.palletStack(2.6, FL, -9.6, 4, -0.2);

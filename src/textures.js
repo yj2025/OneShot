@@ -159,11 +159,15 @@ const GEN = {
     // 스프레이로 적은 구역 표시
     ctx.save(); ctx.translate(S * 0.3, S * 0.4); ctx.rotate(-0.05);
     ctx.font = `bold ${S * 0.2}px Arial`; ctx.fillStyle = 'rgba(160,40,30,0.75)'; ctx.shadowColor = 'rgba(160,40,30,0.5)'; ctx.shadowBlur = 6;
-    ctx.fillText(['B2', 'C4', 'A1', '7'][Math.floor(rng() * 4)], 0, 0);
+    const marks = ['B2', 'C4', 'A1', '7', 'D3', '→ 2', 'X', '12'];
+    ctx.fillText(marks[Math.floor(rng() * marks.length)], 0, 0);
+    if (rng() < 0.6) { ctx.font = `${S * 0.07}px Arial`; ctx.fillStyle = 'rgba(30,30,30,0.6)'; ctx.fillText(['탄착 금지', 'STOP', '진입로', '사선 2'][Math.floor(rng() * 4)], S * 0.05, S * 0.32); }
     ctx.restore();
     speckle(ctx, rng, S, 140, ['rgba(40,30,20,0.5)', 'rgba(20,20,20,0.4)'], 1, 3);
     return c;
   },
+  plywoodB(rng, S = 512) { return GEN.plywood(rng, S); },
+  plywoodC(rng, S = 512) { return GEN.plywood(rng, S); },
   linoleum(rng, S = 512) {
     // 30 cm 리놀륨 타일 (텍스처 1장 = 2.4 m → 8×8)
     return field(S, (u, v, x, y) => {
