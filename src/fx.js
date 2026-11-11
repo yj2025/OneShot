@@ -37,7 +37,7 @@ export class FX {
     this.casings = [];
     this.onCasingLand = null;
     // 총구 화염
-    this.flashMat = new THREE.SpriteMaterial({ map: tex.flash, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, color: 0xffffff });
+    this.flashMat = new THREE.SpriteMaterial({ map: tex.flash, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, color: 0x8a7a66 });
     this.flashes = [];
     this.dummy = new THREE.Object3D();
   }

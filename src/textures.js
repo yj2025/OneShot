@@ -104,22 +104,24 @@ const GEN = {
     for (let i = 0; i <= 4; i++) { ctx.fillRect(i * S / 4 - 2, 0, 4, S); ctx.fillRect(0, i * S / 4 - 2, S, 4); }
     return c;
   },
-  block(rng, S = 512) {
-    // 콘크리트 블록 외벽 (0.4 × 0.2 m, 텍스처 1장 = 2 m)
+  block(rng, S = 1024) {
+    // 낡은 시멘트 미장 외벽 (텍스처 1장 = 2 m): 격자 없이 얼룩·보수 자국·빗물 줄·균열
     const c = field(S, (u, v) => {
-      const n = fbm(u * 10, v * 10, 10, 4, 31), big = fbm(u * 2, v * 2, 2, 3, 32);
-      const streak = Math.pow(fbm(u * 18, v * 1.2, 18, 3, 33), 2) * 1.3;
-      const row = Math.floor(v * 10), col = Math.floor(u * 5 + (row % 2) * 0.5);
-      const bu = (u * 5 + (row % 2) * 0.5) % 1, bv = (v * 10) % 1;
-      const id = vnoise(col * 3.1 + 0.5, row * 7.3 + 0.5, 1000, 35);
-      const chip = fbm(u * 40, v * 40, 40, 2, 36);
-      const mw = 0.025 + chip * 0.025;
-      const mortar = (bu < mw || bu > 1 - mw * 0.6 || bv < mw * 2 || bv > 1 - mw) ? 1 : 0;
-      let g = 146 + (id - 0.5) * 22 + (n - 0.5) * 30 - big * 22 - streak * 46;
-      g = mortar ? g * 0.96 : g;
-      const rust = sstep(0.7, 0.9, fbm(u * 12, v * 1.5, 12, 3, 37)) * sstep(0.3, 0.9, 1 - v) * 0.6;
-      return [g + 6 + rust * 30, g + 3 + rust * 8, g - 4 - rust * 18];
+      const n = fbm(u * 9, v * 9, 9, 5, 31), big = fbm(u * 1.5, v * 1.5, 1.5, 3, 32), fine = vnoise(u * 300, v * 300, 300, 38);
+      const rain = sstep(0.5, 0.85, fbm(u * 14, v * 0.7, 14, 3, 33)) * (0.4 + 0.6 * sstep(0.2, 1.0, 1 - v));
+      const patch = sstep(0.68, 0.7, fbm(u * 3, v * 3, 3, 4, 34));
+      let g = 150 + (n - 0.5) * 34 - big * 26 - rain * 40 + (fine - 0.5) * 14;
+      g += patch * 14;
+      const rust = sstep(0.72, 0.92, fbm(u * 10, v * 1.3, 10, 3, 37)) * sstep(0.3, 0.9, 1 - v) * 0.5;
+      const green = sstep(0.6, 0.85, fbm(u * 4, v * 4, 4, 3, 39)) * sstep(0.5, 1.0, v) * 0.5;
+      return [g + 4 + rust * 28 - green * 10, g + 2 + rust * 6 + green * 2, g - 4 - rust * 18 - green * 16];
     });
+    const ctx = c.getContext('2d');
+    crackLines(ctx, rng, S, 9, 'rgba(45,42,38,0.55)', 1.3);
+    // 수평 이음(타설 이음) 하나와 드문 보수 자국
+    ctx.fillStyle = 'rgba(60,58,52,0.25)'; ctx.fillRect(0, S * (0.42 + rng() * 0.1), S, 3);
+    for (let i = 0; i < 4; i++) { ctx.fillStyle = `rgba(${170 + rng() * 30 | 0},${165 + rng() * 25 | 0},${150 + rng() * 20 | 0},0.35)`; ctx.fillRect(rng() * S, rng() * S, 30 + rng() * 120, 20 + rng() * 70); }
+    speckle(ctx, rng, S, 500, ['rgba(60,58,52,0.35)', 'rgba(200,198,190,0.3)'], 0.6, 2);
     return c;
   },
   asphalt(rng, S = 512) {
