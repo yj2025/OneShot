@@ -109,7 +109,7 @@ export class Level {
     this.mats.chain = new THREE.MeshStandardMaterial({ map: t.chainlink, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.6, color: 0x9a9a96 });
     this.mats.tube = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xeef3ff, emissiveIntensity: 3.5 });
     this.mats.tubeDead = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.4 });
-    this.mats.puddle = bcMaterial({ color: 0x17191a, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 1.0 }, { grime: 0 });
+    this.mats.puddle = bcMaterial({ color: 0x17191a, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.8 }, { grime: 0 });
     this.mats.stain = new THREE.MeshStandardMaterial({ map: t.stain, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 });
   }
 
@@ -645,6 +645,13 @@ export class Level {
       this.stain(x, 0.023, z + 0.5, 1.1, r() * 3);
     }
     for (const [x, z] of [[12.16, -15.6], [-12.16, -15.6]]) this.cyl('metalGalv', [x, 2.0, z], 0.045, 3.8, { collide: false, seg: 10 });
+    // 옥상: 실외기, 환기구, 안테나, 낮은 파라펫 구간
+    this.box('acUnit', [1.0, 3.9, -3.4], [2.3, 4.75, -2.4], { collide: false, tile: 1 });
+    this.box('acUnit', [-8.6, 3.9, -4.0], [-7.6, 4.5, -3.2], { collide: false, tile: 1 });
+    for (const [x, z, h] of [[-3.5, -1.8, 0.7], [6.2, -3.0, 0.9], [-10.5, -5.0, 0.5]]) this.cyl('metalGalv', [x, 3.9 + h / 2, z], 0.09, h, { collide: false, seg: 10 }), this.cyl('metalGalv', [x, 3.9 + h + 0.04, z], 0.15, 0.08, { collide: false, seg: 10 });
+    this.cyl('metalDark', [9.5, 5.4, -1.0], 0.02, 3.0, { collide: false, seg: 5 });
+    this.box('block', [4.0, 3.9, -0.3], [7.5, 4.25, 0.0], { collide: false, tile: 2 });
+    this.box('block', [-12.0, 3.9, -0.3], [-9.0, 4.15, 0.0], { collide: false, tile: 2 });
     // 실외기(동쪽 벽) + 냉매관
     for (const z of [-9.0, -10.2]) {
       this.box('acUnit', [12.05, 0.0, z - 0.42], [12.4, 0.65, z + 0.42], { mat: 'metal', tile: 1 });

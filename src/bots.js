@@ -9,10 +9,10 @@ const UP = V(0, 1, 0);
 const J = { pelvis: 0, chest: 1, head: 2, shL: 3, elL: 4, haL: 5, shR: 6, elR: 7, haR: 8, hipL: 9, knL: 10, ftL: 11, hipR: 12, knR: 13, ftR: 14 };
 const EDGES = [[0, 1], [1, 2], [1, 3], [1, 6], [3, 6], [3, 4], [4, 5], [6, 7], [7, 8], [0, 9], [0, 12], [9, 12], [9, 10], [10, 11], [12, 13], [13, 14], [3, 9], [6, 12], [3, 12], [6, 9], [2, 3], [2, 6]];
 const OUTFITS = [
-  { cloth: 0x6e7258, vest: 0x454b3c, helmet: 0x7d7660 },
-  { cloth: 0x59607a, vest: 0x3a3f4a, helmet: 0x55595f },
-  { cloth: 0x8a8470, vest: 0x5a584a, helmet: 0x8b8268 },
-  { cloth: 0x4e524c, vest: 0x34372f, helmet: 0x60625a },
+  { cloth: 0x6e7258, vest: 0x454b3c, helmet: 0x7d7660, pants: 0x5a5c4c },
+  { cloth: 0x59607a, vest: 0x3a3f4a, helmet: 0x55595f, pants: 0x3f4350 },
+  { cloth: 0x8a8470, vest: 0x5a584a, helmet: 0x8b8268, pants: 0x6f6a58 },
+  { cloth: 0x4e524c, vest: 0x34372f, helmet: 0x60625a, pants: 0x46483f },
 ];
 
 function limbMesh(mat, r0, r1, seg = 8) { const g = new THREE.CylinderGeometry(r1, r0, 1, seg); g.translate(0, 0.5, 0); return new THREE.Mesh(g, mat); }
@@ -40,6 +40,9 @@ export class Bot {
       boot: bcMaterial({ color: 0x241f1a, roughness: 0.8 }, { grime: 0.4 }),
       gun: bcMaterial({ color: 0x1f2020, roughness: 0.5, metalness: 0.5 }, { grime: 0 }),
       pouch: bcMaterial({ map: game.tex.fabric, color: o.vest, roughness: 1 }, { grime: 0.3 }),
+      pants: bcMaterial({ map: game.tex.fabric, color: o.pants, roughness: 1 }, { grime: 0.5 }),
+      pad: bcMaterial({ color: 0x2a2a28, roughness: 0.7 }, { grime: 0.3 }),
+      strap: bcMaterial({ color: 0x1c1d1b, roughness: 0.9 }, { grime: 0 }),
     };
     this.M = M;
     const grp = new THREE.Group();
@@ -55,8 +58,15 @@ export class Bot {
       head: new THREE.Group(),
       uArmL: limbMesh(M.cloth, 0.078, 0.066), fArmL: limbMesh(M.cloth, 0.062, 0.05),
       uArmR: limbMesh(M.cloth, 0.078, 0.066), fArmR: limbMesh(M.cloth, 0.062, 0.05),
-      thighL: limbMesh(M.cloth, 0.105, 0.08), shinL: limbMesh(M.cloth, 0.075, 0.06),
-      thighR: limbMesh(M.cloth, 0.105, 0.08), shinR: limbMesh(M.cloth, 0.075, 0.06),
+      thighL: limbMesh(M.pants, 0.11, 0.085), shinL: limbMesh(M.pants, 0.08, 0.062),
+      thighR: limbMesh(M.pants, 0.11, 0.085), shinR: limbMesh(M.pants, 0.08, 0.062),
+      plate: box(M.vest, 0.3, 0.32, 0.05),
+      mag1: box(M.pouch, 0.075, 0.13, 0.06), mag2: box(M.pouch, 0.075, 0.13, 0.06), mag3: box(M.pouch, 0.075, 0.13, 0.06),
+      radio: box(M.pad, 0.07, 0.16, 0.05), cumL: box(M.vest, 0.05, 0.18, 0.2), cumR: box(M.vest, 0.05, 0.18, 0.2),
+      strapL: box(M.strap, 0.06, 0.03, 0.3), strapR: box(M.strap, 0.06, 0.03, 0.3),
+      kneeL: box(M.pad, 0.12, 0.13, 0.06), kneeR: box(M.pad, 0.12, 0.13, 0.06),
+      elbL: box(M.pad, 0.09, 0.09, 0.05), elbR: box(M.pad, 0.09, 0.09, 0.05),
+      holster: box(M.pad, 0.06, 0.18, 0.1), sling: limbMesh(M.strap, 0.012, 0.012, 4),
       handL: box(M.glove, 0.08, 0.1, 0.035), handR: box(M.glove, 0.08, 0.1, 0.035),
       bootL: box(M.boot, 0.11, 0.1, 0.28), bootR: box(M.boot, 0.11, 0.1, 0.28),
       pelvisBox: box(M.cloth, 0.36, 0.2, 0.22),
@@ -67,6 +77,9 @@ export class Bot {
     const helm = new THREE.Mesh(new THREE.SphereGeometry(0.135, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.55), M.helmet); helm.position.y = 0.03; helm.scale.set(1.0, 0.95, 1.08); h.add(helm);
     const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.138, 0.14, 0.03, 14), M.helmet); rim.position.y = 0.03; h.add(rim);
     const gog = box(M.lens, 0.17, 0.05, 0.03); gog.position.set(0, 0.0, -0.105); h.add(gog);
+    const mount = box(M.glove, 0.05, 0.04, 0.03); mount.position.set(0, 0.11, -0.12); h.add(mount);
+    for (const sx of [-1, 1]) { const rail = box(M.glove, 0.02, 0.025, 0.14); rail.position.set(sx * 0.13, 0.05, 0.0); h.add(rail); }
+    const cover = box(M.helmet, 0.06, 0.03, 0.07); cover.position.set(0.0, 0.135, 0.07); h.add(cover);
     const strap = box(M.glove, 0.23, 0.025, 0.2); strap.position.set(0, 0.0, 0.0); h.add(strap);
     for (const k in this.parts) grp.add(this.parts[k]);
     // 소총
@@ -125,8 +138,9 @@ export class Bot {
     for (const side of [-1, 1]) {
       const p = ph + (side < 0 ? 0 : Math.PI);
       let a = Math.sin(p) * (0.25 + sp * 0.35) * Math.min(1, this.speed * 1.5) + cr * 1.15 * (side < 0 ? 1.0 : 0.25);
-      let kb = Math.max(0, -Math.cos(p)) * (0.4 + sp * 0.7) * Math.min(1, this.speed * 1.5) + cr * (side < 0 ? 1.35 : 2.3) + 0.05;
-      const hip = V(0, 0, 0).addScaledVector(r, side * 0.1 * H);
+      let kb = Math.max(0, -Math.cos(p)) * (0.4 + sp * 0.7) * Math.min(1, this.speed * 1.5) + cr * (side < 0 ? 1.35 : 2.3) + 0.16 + (side < 0 ? 0.05 : 0);
+      a += 0.08 + (side < 0 ? 0.05 : -0.02);
+      const hip = V(0, 0, 0).addScaledVector(r, side * 0.11 * H);
       const knee = hip.clone().addScaledVector(f, Math.sin(a) * legLen).add(V(0, -Math.cos(a) * legLen, 0));
       const b = a - kb;
       const foot = knee.clone().addScaledVector(f, Math.sin(b) * legLen).add(V(0, -Math.cos(b) * legLen, 0));
@@ -148,7 +162,7 @@ export class Bot {
     const tf = V(-Math.sin(this.yaw + twist), 0, -Math.cos(this.yaw + twist)), tr = V(Math.cos(this.yaw + twist), 0, -Math.sin(this.yaw + twist));
     this.J[J.chest].copy(chest);
     const headDir = spineUp.clone().addScaledVector(tf, 0.12 + this.aimPitch * 0.15).normalize();
-    this.J[J.head].copy(chest).addScaledVector(headDir, 0.27 * H);
+    this.J[J.head].copy(chest).addScaledVector(headDir, 0.215 * H);
     this.J[J.shL].copy(chest).addScaledVector(tr, -0.19 * H).add(V(0, -0.04, 0));
     this.J[J.shR].copy(chest).addScaledVector(tr, 0.19 * H).add(V(0, -0.04, 0));
     // 총 방향: 조준 중이면 aimYaw/aimPitch, 아니면 앞으로 낮게
@@ -178,6 +192,21 @@ export class Bot {
     const fwdT = new THREE.Vector3().crossVectors(side, up).normalize();
     placeBasis(P.pouch, mid.clone().lerp(j[J.chest], 0.1).addScaledVector(fwdT, -0.19), side, up);
     placeBasis(P.pack, mid.clone().lerp(j[J.chest], 0.55).addScaledVector(fwdT, 0.2), side, up);
+    const sN = side.clone().normalize(), uN = up.clone().normalize();
+    const vc = mid.clone().lerp(j[J.chest], 0.42);
+    placeBasis(P.plate, vc.clone().addScaledVector(fwdT, -0.19).addScaledVector(uN, 0.03), side, up);
+    [P.mag1, P.mag2, P.mag3].forEach((m, i) => placeBasis(m, vc.clone().addScaledVector(fwdT, -0.235).addScaledVector(sN, (i - 1) * 0.085).addScaledVector(uN, -0.08), side, up));
+    placeBasis(P.radio, vc.clone().addScaledVector(fwdT, -0.2).addScaledVector(sN, -0.17).addScaledVector(uN, 0.12), side, up);
+    placeBasis(P.cumL, vc.clone().addScaledVector(sN, -0.24).addScaledVector(uN, -0.08), side, up);
+    placeBasis(P.cumR, vc.clone().addScaledVector(sN, 0.24).addScaledVector(uN, -0.08), side, up);
+    placeBasis(P.strapL, j[J.shL].clone().addScaledVector(sN, 0.06).addScaledVector(uN, 0.06), side, up);
+    placeBasis(P.strapR, j[J.shR].clone().addScaledVector(sN, -0.06).addScaledVector(uN, 0.06), side, up);
+    placeBasis(P.holster, j[J.hipR].clone().addScaledVector(sN, 0.1).addScaledVector(uN, -0.1), side, up);
+    const knee = (pad, k, ft, hp) => { const shin = j[ft].clone().sub(j[k]); const thigh = j[k].clone().sub(j[hp]); const fw = thigh.clone().normalize().sub(shin.clone().normalize()).normalize(); placeBasis(pad, j[k].clone().addScaledVector(fw, 0.07), sN, shin.clone().negate().add(thigh)); };
+    knee(P.kneeL, J.knL, J.ftL, J.hipL); knee(P.kneeR, J.knR, J.ftR, J.hipR);
+    const elb = (pad, e, sh, ha) => { const a = j[sh].clone().sub(j[e]).normalize(), b = j[ha].clone().sub(j[e]).normalize(); const out = a.clone().add(b).negate().normalize(); placeBasis(pad, j[e].clone().addScaledVector(out, 0.05), sN, a); };
+    elb(P.elbL, J.elL, J.shL, J.haL); elb(P.elbR, J.elR, J.shR, J.haR);
+    placeLimb(P.sling, j[J.shL].clone().addScaledVector(fwdT, -0.12), this.gun.position);
     placeLimb(P.neck, j[J.chest], j[J.head]);
     const hu = j[J.head].clone().sub(j[J.chest]);
     placeBasis(P.head, j[J.head], side, hu);
