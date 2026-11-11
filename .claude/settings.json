@@ -6,14 +6,16 @@
       "Bash(npm install *)",
       "Bash(npm run dev)",
       "Bash(npm run build)",
-      "Bash(npm run check)",
-      "Bash(npm run shots)",
-      "Bash(npm run sheet)",
+      "Bash(npm run check *)",
+      "Bash(npm run shots *)",
+      "Bash(npm run sheet *)",
       "Bash(npm run score *)",
-      "Bash(npm run perf)",
-      "Bash(npm run audio)",
+      "Bash(npm run ab *)",
+      "Bash(npm run perf *)",
+      "Bash(npm run audio *)",
       "Bash(npx playwright install chromium)",
       "Bash(node *)",
+      "Bash(date *)",
       "Bash(git init *)",
       "Bash(git add *)",
       "Bash(git commit *)"
@@ -21,7 +23,11 @@
     "deny": [
       "Bash(git push *)",
       "Bash(sudo *)",
-      "Read(./out/keys/**)"
+      "Read(./out/keys/**)",
+      "Read(/out/keys/**)",
+      "Edit(/SPEC.md)",
+      "Edit(/ROADMAP.md)",
+      "Edit(/PLAYTEST.md)"
     ]
   }
 }
