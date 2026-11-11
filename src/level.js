@@ -100,7 +100,7 @@ export class Level {
     this.mats.chain = new THREE.MeshStandardMaterial({ map: t.chainlink, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.6, color: 0x9a9a96 });
     this.mats.tube = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xeef3ff, emissiveIntensity: 3.5 });
     this.mats.tubeDead = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.4 });
-    this.mats.puddle = new THREE.MeshStandardMaterial({ color: 0x1d1f20, roughness: 0.04, metalness: 0.0, transparent: true, opacity: 0.88, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    this.mats.puddle = bcMaterial({ color: 0x17191a, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 1.0 }, { grime: 0 });
     this.mats.stain = new THREE.MeshStandardMaterial({ map: t.stain, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 });
   }
 
@@ -327,10 +327,17 @@ export class Level {
       const a = tr() * Math.PI * 2, d = 45 + tr() * 50;
       const x = Math.cos(a) * d * 1.3, z = Math.sin(a) * d + 5;
       const h = 7 + tr() * 9;
-      const g = new THREE.ConeGeometry(2.2 + tr() * 2.5, h, 7);
-      g.translate(x, h / 2 + 1.5, z);
-      this.add('treeDark', g);
-      this.cyl('pallet', [x, 1.0, z], 0.2, 2, { collide: false, seg: 5 });
+      // 활엽수: 찌그러진 덩어리 몇 개
+      for (let k = 0; k < 4; k++) {
+        const rr = 1.6 + tr() * 2.2;
+        const g = new THREE.IcosahedronGeometry(rr, 1);
+        const pp = g.attributes.position;
+        for (let q = 0; q < pp.count; q++) { const s = 0.75 + tr() * 0.45; pp.setXYZ(q, pp.getX(q) * s, pp.getY(q) * s * 0.8, pp.getZ(q) * s); }
+        g.computeVertexNormals();
+        g.translate(x + (tr() - 0.5) * 3, h * (0.55 + tr() * 0.4), z + (tr() - 0.5) * 3);
+        this.add('treeDark', g);
+      }
+      this.cyl('pallet', [x, h * 0.3, z], 0.22, h * 0.6, { collide: false, seg: 5 });
     }
 
     // ===== 실내 =====
@@ -488,9 +495,10 @@ export class Level {
   }
   paper(x, z, a) { this.obox('paper', [x, FL + 0.002, z], [0.21, 0.001, 0.297], a, { tile: 0.3, collide: false }); }
   puddle(x, y, z, s, inside = false) {
-    const g = new THREE.CircleGeometry(1, 20);
+    const g = new THREE.CircleGeometry(1, 40);
     const p = g.attributes.position;
-    for (let i = 1; i < p.count; i++) { const k = 0.65 + this.rng() * 0.5; p.setXY(i, p.getX(i) * k * s * 0.5, p.getY(i) * k * s * 0.35); }
+    const ph = [this.rng() * 6, this.rng() * 6, this.rng() * 6];
+    for (let i = 1; i < p.count; i++) { const a = Math.atan2(p.getY(i), p.getX(i)); const k = 0.85 + 0.12 * Math.sin(a * 2 + ph[0]) + 0.08 * Math.sin(a * 3 + ph[1]) + 0.05 * Math.sin(a * 5 + ph[2]); p.setXY(i, p.getX(i) * k * s * 0.5, p.getY(i) * k * s * 0.35); }
     g.rotateX(-Math.PI / 2); g.rotateY(this.rng() * 3); g.translate(x, y, z);
     const m = new THREE.Mesh(g, this.mats.puddle); m.renderOrder = 1;
     this.group.add(m);

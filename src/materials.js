@@ -84,7 +84,9 @@ const FRAG_LIGHT = `
   vec3 bcWN = normalize(inverseTransformDirection(normal, viewMatrix));
   float sv = bcSkyVis(vBcW, bcWN, bcIns);
   irradiance *= sv;
-  #ifdef USE_ENVMAP
+  #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
+    iblIrradiance *= sv;
+    radiance *= sv * sv;
   #endif
 }
 #endif
@@ -92,7 +94,7 @@ const FRAG_LIGHT = `
 `;
 
 export function bcMaterial(params = {}, { grime = 1, ao = 1 } = {}) {
-  const m = new THREE.MeshStandardMaterial(params);
+  const m = new THREE.MeshStandardMaterial({ envMapIntensity: 0.5, ...params });
   const local = { uGrime: { value: grime }, uAO: { value: ao } };
   m.userData.bc = local;
   m.onBeforeCompile = (sh) => {

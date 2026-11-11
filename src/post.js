@@ -124,7 +124,7 @@ void main(){
   // 둥근 렌즈 테두리 (흔들림을 조금 따라 움직이고, 주변이 밝으면 테두리 안쪽이 번진다)
   vec2 pr = p - uRimShift;
   float rim = length(pr * vec2(0.93, 1.0));
-  float edge = 0.935 + 0.012 * sin(atan(pr.y, pr.x) * 3.0);
+  float edge = 0.915 + 0.012 * sin(atan(pr.y, pr.x) * 3.0);
   float m = smoothstep(edge, edge - 0.08, rim);
   vec3 rimGlow = bloom * 0.25 * smoothstep(edge - 0.2, edge, rim);
   x = x * m + rimGlow * m;

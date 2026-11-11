@@ -58,7 +58,7 @@ function footstep(r, mat) {
       const n = 60 + Math.floor(r() * 40);
       for (let i = 0; i < n; i++) {
         const t = Math.pow(r(), 1.6) * 0.15;
-        addInto(x, onePoleHP(noiseBurst(r, 0.004, 0.0007), 2500 + r() * 2500), Math.floor(t * SR), (0.3 + r() * 0.7) * Math.exp(-t / 0.08));
+        addInto(x, onePoleLP(onePoleHP(noiseBurst(r, 0.005, 0.0009), 1200 + r() * 1500), 5500), Math.floor(t * SR), (0.3 + r() * 0.7) * Math.exp(-t / 0.08));
       }
       addInto(x, onePoleLP(noiseBurst(r, 0.1, 0.02), 500), 0, 0.25);
       break;

@@ -32,10 +32,10 @@ export function buildMaterials() {
     polymer: bcMaterial({ color: 0x2c2d2b, roughness: 0.6, metalness: 0.05 }, { grime: 0 }),
     steel: bcMaterial({ color: 0x3a3c3d, roughness: 0.45, metalness: 0.35 }, { grime: 0 }),
     worn: bcMaterial({ color: 0x66686a, roughness: 0.35, metalness: 0.5 }, { grime: 0 }),
-    tan: bcMaterial({ color: 0x6d6450, roughness: 0.7, metalness: 0.05 }, { grime: 0 }),
-    glove: bcMaterial({ color: 0x232321, roughness: 0.9 }, { grime: 0 }),
+    tan: bcMaterial({ color: 0x8a7a5c, roughness: 0.72, metalness: 0.02 }, { grime: 0 }),
+    glove: bcMaterial({ color: 0x34332f, roughness: 0.9 }, { grime: 0 }),
     gloveKnuckle: bcMaterial({ color: 0x343431, roughness: 0.75 }, { grime: 0 }),
-    sleeve: bcMaterial({ color: 0x434638, roughness: 1.0 }, { grime: 0 }),
+    sleeve: bcMaterial({ color: 0x5a5d4a, roughness: 1.0 }, { grime: 0 }),
     cuff: bcMaterial({ color: 0x2f3128, roughness: 1.0 }, { grime: 0 }),
   };
 }
@@ -45,27 +45,27 @@ function buildRifle(M) {
   // 원점 = 권총손잡이 윗부분(오른손 위치). -z가 총구 방향
   part(g, M.steel, [0.052, 0.062, 0.30], [0, 0.035, -0.07]);            // 하부 리시버
   part(g, M.steel, [0.056, 0.05, 0.36], [0, 0.085, -0.09]);             // 상부 리시버
-  part(g, M.polymer, [0.06, 0.07, 0.30], [0, 0.07, -0.37]);             // 핸드가드
+  part(g, M.tan, [0.062, 0.072, 0.30], [0, 0.07, -0.37]);             // 핸드가드
   for (let i = 0; i < 5; i++) part(g, M.steel, [0.062, 0.012, 0.035], [0, 0.07, -0.26 - i * 0.055]); // 레일 홈
   cylPart(g, M.steel, 0.0095, 0.26, [0, 0.07, -0.64]);                  // 총열
   cylPart(g, M.steel, 0.014, 0.05, [0, 0.07, -0.79], 'z', 8);          // 소염기
   part(g, M.steel, [0.012, 0.055, 0.012], [0, 0.125, -0.5]);           // 가늠쇠
   part(g, M.steel, [0.03, 0.04, 0.03], [0, 0.125, 0.04]);              // 가늠자
   part(g, M.steel, [0.035, 0.015, 0.05], [0, 0.112, 0.08]);            // 장전 손잡이
-  part(g, M.polymer, [0.03, 0.105, 0.045], [0, -0.035, 0.035], [0.32, 0, 0]); // 권총손잡이
+  part(g, M.tan, [0.03, 0.105, 0.045], [0, -0.035, 0.035], [0.32, 0, 0]); // 권총손잡이
   part(g, M.polymer, [0.012, 0.03, 0.05], [0, -0.005, -0.03]);          // 방아쇠울
   const mag = new THREE.Group();
-  part(mag, M.polymer, [0.026, 0.11, 0.07], [0, -0.05, 0], [-0.12, 0, 0]);
-  part(mag, M.polymer, [0.026, 0.09, 0.065], [0, -0.135, 0.018], [-0.32, 0, 0]);
+  part(mag, M.tan, [0.026, 0.11, 0.07], [0, -0.05, 0], [-0.12, 0, 0]);
+  part(mag, M.tan, [0.026, 0.09, 0.065], [0, -0.135, 0.018], [-0.32, 0, 0]);
   mag.position.set(0, 0.0, -0.13);
   g.add(mag);
   cylPart(g, M.steel, 0.016, 0.24, [0, 0.07, 0.17]);                    // 완충관
-  part(g, M.polymer, [0.042, 0.085, 0.14], [0, 0.04, 0.27]);            // 개머리판
+  part(g, M.tan, [0.042, 0.085, 0.14], [0, 0.04, 0.27]);            // 개머리판
   part(g, M.tan, [0.044, 0.02, 0.06], [0, 0.0, 0.31]);
   const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.07, -0.82); g.add(muzzle);
   const ejection = new THREE.Object3D(); ejection.position.set(0.03, 0.085, -0.05); g.add(ejection);
   return { group: g, mag, muzzle, ejection, sightY: 0.125,
-    rightHand: V(0, -0.03, 0.03), leftHand: V(-0.005, 0.03, -0.38), magPos: mag.position.clone() };
+    rightHand: V(0.012, -0.035, 0.04), leftHand: V(-0.05, 0.05, -0.36), magPos: mag.position.clone() };
 }
 
 function buildPistol(M) {
@@ -94,7 +94,7 @@ function buildHand(M) {
 
 const WEAPONS = {
   rifle: { mag: 30, spareMags: 4, interval: 0.088, auto: true, reload: 2.35, recoil: 1.0, kind: 'rifle', damage: 1, spread: 0.0016,
-    hip: V(0.15, -0.2, -0.2), ads: V(0.0, -0.118, -0.22), sprint: V(0.06, -0.25, -0.18) },
+    hip: V(0.16, -0.19, -0.36), ads: V(0.0, -0.105, -0.27), sprint: V(0.06, -0.24, -0.3) },
   pistol: { mag: 15, spareMags: 3, interval: 0.13, auto: false, reload: 1.75, recoil: 0.8, kind: 'pistol', damage: 0.85, spread: 0.003,
     hip: V(0.09, -0.19, -0.33), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.27, -0.2) },
 };
@@ -126,10 +126,11 @@ export class Viewmodel {
     this.root.add(this.gunHolder);
     for (const k in this.models) { this.gunHolder.add(this.models[k].group); this.models[k].group.visible = false; }
     this.handR = buildHand(this.M); this.handL = buildHand(this.M);
-    this.root.add(this.handR, this.handL);
+    scene.add(this.handR, this.handL);
     this.foreR = limb(this.M.sleeve, 0.04, 0.05); this.foreL = limb(this.M.sleeve, 0.04, 0.05);
     this.cuffR = limb(this.M.cuff, 0.037, 0.037); this.cuffL = limb(this.M.cuff, 0.037, 0.037);
-    this.root.add(this.foreR, this.foreL, this.cuffR, this.cuffL);
+    scene.add(this.foreR, this.foreL, this.cuffR, this.cuffL);
+    for (const m of [this.foreR, this.foreL, this.cuffR, this.cuffL]) m.frustumCulled = false;
     this.heldMag = null;
     this.state = {
       rifle: { ammo: WEAPONS.rifle.mag, spare: WEAPONS.rifle.spareMags },

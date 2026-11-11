@@ -9,10 +9,10 @@ const UP = V(0, 1, 0);
 const J = { pelvis: 0, chest: 1, head: 2, shL: 3, elL: 4, haL: 5, shR: 6, elR: 7, haR: 8, hipL: 9, knL: 10, ftL: 11, hipR: 12, knR: 13, ftR: 14 };
 const EDGES = [[0, 1], [1, 2], [1, 3], [1, 6], [3, 6], [3, 4], [4, 5], [6, 7], [7, 8], [0, 9], [0, 12], [9, 12], [9, 10], [10, 11], [12, 13], [13, 14], [3, 9], [6, 12], [3, 12], [6, 9], [2, 3], [2, 6]];
 const OUTFITS = [
-  { cloth: 0x4c5040, vest: 0x2e3329, helmet: 0x5f5a48 },
-  { cloth: 0x3b4150, vest: 0x262a30, helmet: 0x3a3e44 },
-  { cloth: 0x6a6656, vest: 0x3c3b31, helmet: 0x6c6550 },
-  { cloth: 0x2d2f2c, vest: 0x1f211f, helmet: 0x45473f },
+  { cloth: 0x6e7258, vest: 0x454b3c, helmet: 0x7d7660 },
+  { cloth: 0x59607a, vest: 0x3a3f4a, helmet: 0x55595f },
+  { cloth: 0x8a8470, vest: 0x5a584a, helmet: 0x8b8268 },
+  { cloth: 0x4e524c, vest: 0x34372f, helmet: 0x60625a },
 ];
 
 function limbMesh(mat, r0, r1, seg = 8) { const g = new THREE.CylinderGeometry(r1, r0, 1, seg); g.translate(0, 0.5, 0); return new THREE.Mesh(g, mat); }
@@ -52,10 +52,10 @@ export class Bot {
       pouch: box(M.pouch, 0.34, 0.12, 0.08),
       neck: limbMesh(M.face, 0.055, 0.05),
       head: new THREE.Group(),
-      uArmL: limbMesh(M.cloth, 0.058, 0.05), fArmL: limbMesh(M.cloth, 0.048, 0.04),
-      uArmR: limbMesh(M.cloth, 0.058, 0.05), fArmR: limbMesh(M.cloth, 0.048, 0.04),
-      thighL: limbMesh(M.cloth, 0.085, 0.065), shinL: limbMesh(M.cloth, 0.06, 0.05),
-      thighR: limbMesh(M.cloth, 0.085, 0.065), shinR: limbMesh(M.cloth, 0.06, 0.05),
+      uArmL: limbMesh(M.cloth, 0.07, 0.06), fArmL: limbMesh(M.cloth, 0.058, 0.048),
+      uArmR: limbMesh(M.cloth, 0.07, 0.06), fArmR: limbMesh(M.cloth, 0.058, 0.048),
+      thighL: limbMesh(M.cloth, 0.105, 0.08), shinL: limbMesh(M.cloth, 0.075, 0.06),
+      thighR: limbMesh(M.cloth, 0.105, 0.08), shinR: limbMesh(M.cloth, 0.075, 0.06),
       handL: box(M.glove, 0.08, 0.1, 0.035), handR: box(M.glove, 0.08, 0.1, 0.035),
       bootL: box(M.boot, 0.11, 0.1, 0.28), bootR: box(M.boot, 0.11, 0.1, 0.28),
       pelvisBox: box(M.cloth, 0.36, 0.2, 0.22),

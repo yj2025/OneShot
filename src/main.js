@@ -129,6 +129,13 @@ class Game {
     this.sky = makeSky(); this.scene.add(this.sky);
     this.hemi = new THREE.HemisphereLight(0xdfe4ea, 0x6a665c, 6.2);
     this.scene.add(this.hemi);
+    // 흐린 하늘 반사용 환경맵 (실내에서는 셰이더가 줄인다)
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    const envScene = new THREE.Scene();
+    const envSky = makeSky(); envScene.add(envSky);
+    const gnd = new THREE.Mesh(new THREE.CircleGeometry(250, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3a3833 })); gnd.position.y = -2; envScene.add(gnd);
+    this.scene.environment = pm.fromScene(envScene, 0.02).texture;
+    pm.dispose();
     this.flashLight = new THREE.PointLight(0xffb36a, 0, 10, 1.8); this.scene.add(this.flashLight);
     this.botFlashLight = new THREE.PointLight(0xffb36a, 0, 9, 1.8); this.scene.add(this.botFlashLight);
     this.fx = new FX(this.scene, this.tex, this.level, this.rng);
@@ -546,8 +553,8 @@ const VIEWS = [
   { pos: [3.2, -0.8], yaw: 1.07, pitch: 0.06 },
   { pos: [1.2, 5.8], yaw: -0.84, pitch: -0.02 },
   { pos: [-7.5, -3.2], yaw: Math.PI, pitch: 0.02 },
-  { pos: [8, -5.6], yaw: Math.PI, pitch: -0.02, bot: { i: 1, pos: [7.4, -2.4], yaw: -1.3 } },
-  { pos: [0, -7.2], yaw: 0, pitch: 0, bot: { i: 2, pos: [-2, -12.5], yaw: 0.4, active: true } },
+  { pos: [8, -5.6], yaw: Math.PI, pitch: -0.02, bot: { i: 1, pos: [8.7, -2.0], yaw: -1.9 } },
+  { pos: [0, -7.2], yaw: 0, pitch: 0, bot: { i: 2, pos: [-2, -12.5], yaw: -2.78, active: true } },
 ];
 
 const game = new Game();

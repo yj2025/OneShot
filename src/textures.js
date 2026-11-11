@@ -115,7 +115,7 @@ const GEN = {
   asphalt(rng, S = 512) {
     const c = field(S, (u, v) => {
       const n = vnoise(u * 200, v * 200, 200, 41), m = fbm(u * 4, v * 4, 4, 4, 42);
-      let g = 62 + (n - 0.5) * 34 + (m - 0.5) * 30;
+      let g = 98 + (n - 0.5) * 34 + (m - 0.5) * 30;
       const patch = sstep(0.6, 0.62, fbm(u * 2.5, v * 2.5, 2.5, 3, 43)) * -14;
       return [g + patch, g + patch + 1, g + patch + 3];
     });
