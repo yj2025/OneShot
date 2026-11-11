@@ -236,8 +236,12 @@ export class Bot {
     this.suppressed = now;
     if (!this.lastKnown) this.lastKnown = this.g.player.pos.clone();
     if (this.hp <= 0) { this.die(dir, point, part); return true; }
-    // 맞으면 엄폐로 가려는 경향
-    if (this.state !== 'cover' && this.rng() < 0.7) this.seekCover(now);
+    // 맞으면 바로 응사하거나 엄폐로 간다
+    this.lastKnown = this.g.player.pos.clone();
+    if (this.rng() < 0.55 || !this.seekCover(now)) {
+      this.state = 'engage'; this.path = null; this.lastSeen = now;
+      this.shotCool = Math.min(this.shotCool, 0.12 + this.rng() * 0.25); this.aimErr = Math.max(this.aimErr, 0.06);
+    }
     return false;
   }
 

@@ -120,7 +120,7 @@ export function makeAutoPilot(page, mouse) {
     if (on && !held.has(code)) { held.add(code); await page.keyboard.down(code); }
     if (!on && held.has(code)) { held.delete(code); await page.keyboard.up(code); }
   }
-  let lastFire = 0, aimSettle = 0;
+  let lastFire = 0, aimSettle = 0, curBot = -1, acquiredAt = 0;
   return {
     held,
     async releaseAll() { for (const c of [...held]) await hold(c, false); },
@@ -133,7 +133,9 @@ export function makeAutoPilot(page, mouse) {
       const rpp = s.radPerPixel;
       const dyaw = angDiff(plan.yaw, p.gunYaw);
       const dpitch = plan.pitch - p.gunPitch;
-      const k = plan.mode === 'engage' ? 0.55 : 0.35;
+      // 사람처럼: 새 목표를 잡으면 0.45초 뒤부터 쏘고, 마우스는 오차의 일부만 따라간다
+      if (plan.mode === 'engage' && plan.bot !== curBot) { curBot = plan.bot; acquiredAt = now; }
+      const k = plan.mode === 'engage' ? 0.3 : 0.3;
       let mx = Math.max(-140, Math.min(140, (-dyaw / rpp) * k));
       let my = Math.max(-90, Math.min(90, (-dpitch / rpp) * k));
       if (Math.abs(mx) > 0.5 || Math.abs(my) > 0.5) await mouse.move(mx, my);
@@ -144,7 +146,7 @@ export function makeAutoPilot(page, mouse) {
         await hold('KeyA', plan.strafe < 0); await hold('KeyD', plan.strafe > 0);
         const err = Math.hypot(dyaw, dpitch);
         if (err < Math.max(0.012, 0.35 / Math.max(plan.dist, 1))) aimSettle++; else aimSettle = 0;
-        if (aimSettle >= 2 && plan.clear && now - lastFire > 160 && !p.reloading) { await mouse.click('left'); lastFire = now; }
+        if (aimSettle >= 2 && plan.clear && now - acquiredAt > 450 && now - lastFire > 240 && !p.reloading) { await mouse.click('left'); lastFire = now; }
       } else if (plan.mode === 'travel') {
         const bodyErr = Math.abs(angDiff(plan.yaw, p.yaw));
         await hold('KeyA', false); await hold('KeyD', false);
