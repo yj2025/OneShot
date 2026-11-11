@@ -83,7 +83,7 @@ export class Level {
     M('linoleum', { map: t.linoleum, roughness: 0.6 }, { grime: 0.8 });
     M('cardboard', { map: t.cardboard, roughness: 1 }, { grime: 0.3 });
     M('locker', { map: t.locker, roughness: 0.55, metalness: 0.35 }, { grime: 0.4 });
-    M('metalDark', { color: 0x3b3d3c, roughness: 0.55, metalness: 0.6 }, { grime: 0.5 });
+    M('metalDark', { color: 0x55574f, roughness: 0.55, metalness: 0.45 }, { grime: 0.5 });
     M('metalGalv', { color: 0x8c8f8e, roughness: 0.5, metalness: 0.7 }, { grime: 0.5 });
     M('steelGrate', { color: 0x5a5b58, roughness: 0.6, metalness: 0.7 }, { grime: 0.7 });
     M('rubber', { color: 0x1a1a1a, roughness: 0.9 }, { grime: 0.2 });
@@ -99,7 +99,7 @@ export class Level {
     M('jersey', { map: t.concrete, bumpMap: t.concrete, bumpScale: 3.0, color: 0xc8c4b8, roughness: 0.95 });
     M('doorPaint', { map: t.plywood, color: 0x7a8a8c, roughness: 0.7 }, { grime: 0.7 });
     M('deskTop', { map: t.plywood, color: 0x9c968a, roughness: 0.6 }, { grime: 0.5 });
-    M('fabricChair', { map: t.fabric, color: 0x4a4e5a, roughness: 1 }, { grime: 0.5 });
+    M('fabricChair', { map: t.fabric, color: 0x6a6e78, roughness: 1 }, { grime: 0.5 });
     M('trash', { color: 0x161616, roughness: 0.35, metalness: 0.0 }, { grime: 0.2 });
     M('paper', { map: t.paper, roughness: 1, side: THREE.DoubleSide }, { grime: 0.3 });
     M('backdrop', { color: 0x6c6f6c, roughness: 1 }, { grime: 1, ao: 0 });
@@ -348,15 +348,23 @@ export class Level {
       const a = tr() * Math.PI * 2, d = 45 + tr() * 50;
       const x = Math.cos(a) * d * 1.3, z = Math.sin(a) * d + 5;
       const h = 7 + tr() * 9;
-      // 활엽수: 찌그러진 덩어리 몇 개
-      for (let k = 0; k < 9; k++) {
-        const rr = 0.9 + tr() * 1.6;
-        const g = new THREE.IcosahedronGeometry(rr, 1);
-        const pp = g.attributes.position;
-        for (let q = 0; q < pp.count; q++) { const s = 0.75 + tr() * 0.45; pp.setXYZ(q, pp.getX(q) * s, pp.getY(q) * s * 0.8, pp.getZ(q) * s); }
-        g.computeVertexNormals();
-        g.translate(x + (tr() - 0.5) * 3, h * (0.55 + tr() * 0.4), z + (tr() - 0.5) * 3);
-        this.add('treeDark', g);
+      // 활엽수: 줄기에서 뻗은 가지 끝마다 성긴 잎 덩어리
+      const nb = 4 + Math.floor(tr() * 4);
+      for (let k = 0; k < nb; k++) {
+        const ba = tr() * Math.PI * 2, bl = 2 + tr() * 3.5, by = h * (0.35 + tr() * 0.35), tilt = 0.5 + tr() * 0.6;
+        const ex = x + Math.cos(ba) * Math.sin(tilt) * bl, ez = z + Math.sin(ba) * Math.sin(tilt) * bl, ey = by + Math.cos(tilt) * bl;
+        const br = new THREE.CylinderGeometry(0.05, 0.13, bl, 5); br.translate(0, bl / 2, 0);
+        br.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(ex - x, ey - by, ez - z).normalize())));
+        br.translate(x, by, z); this.add('pallet', br);
+        for (let q = 0; q < 3; q++) {
+          const rr = 0.7 + tr() * 1.3;
+          const g = new THREE.IcosahedronGeometry(rr, 1);
+          const pp = g.attributes.position;
+          for (let w = 0; w < pp.count; w++) { const s = 0.6 + tr() * 0.6; pp.setXYZ(w, pp.getX(w) * s, pp.getY(w) * s * 0.75, pp.getZ(w) * s); }
+          g.computeVertexNormals();
+          g.translate(ex + (tr() - 0.5) * 1.6, ey + (tr() - 0.3) * 1.2, ez + (tr() - 0.5) * 1.6);
+          this.add('treeDark', g);
+        }
       }
       this.cyl('pallet', [x, h * 0.3, z], 0.22, h * 0.6, { collide: false, seg: 5 });
     }

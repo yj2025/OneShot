@@ -172,6 +172,7 @@ class Game {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
     this.post?.setSize(w, h, SCALE[this.settings.quality] || 1);
+    if (this.post) this.post.aoEnabled = this.settings.quality !== 'low';
     this.osd.resize(w, h);
   }
   applyQuality() {

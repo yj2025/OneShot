@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { bcMaterial } from './materials.js';
 import { noise1 } from './rng.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const UP = V(0, 1, 0);
@@ -15,7 +16,20 @@ const OUTFITS = [
   { cloth: 0x4e524c, vest: 0x34372f, helmet: 0x60625a, pants: 0x46483f },
 ];
 
-function limbMesh(mat, r0, r1, seg = 8) { const g = new THREE.CylinderGeometry(r1, r0, 1, seg); g.translate(0, 0.5, 0); return new THREE.Mesh(g, mat); }
+function limbMesh(mat, r0, r1, seg = 10) {
+  const g = new THREE.CylinderGeometry(r1, r0, 1, seg, seg > 6 ? 10 : 1); g.translate(0, 0.5, 0);
+  if (seg > 6) {
+    // 옷 주름: 길이 방향으로 불규칙한 접힘, 관절 쪽이 조금 부풂
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
+      const k = 1 + 0.09 * Math.sin(y * 26 + a * 2) * Math.sin(a * 3 + y * 9) + 0.06 * Math.sin(y * 47 + a * 4) + 0.08 * Math.exp(-((y - 0.92) ** 2) * 60);
+      p.setXYZ(i, x * k, y, z * k * 1.08);
+    }
+    g.computeVertexNormals();
+  }
+  return new THREE.Mesh(g, mat);
+}
 const _d = V(0, 0, 0), _q = new THREE.Quaternion(), _m = new THREE.Matrix4();
 function placeLimb(m, a, b) { _d.subVectors(b, a); const L = Math.max(1e-4, _d.length()); m.position.copy(a); _q.setFromUnitVectors(UP, _d.divideScalar(L)); m.quaternion.copy(_q); m.scale.set(1, L, 1); }
 function placeBasis(m, pos, side, up) {
@@ -47,10 +61,10 @@ export class Bot {
     this.M = M;
     const grp = new THREE.Group();
     this.group = grp;
-    const box = (mat, sx, sy, sz) => new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+    const box = (mat, sx, sy, sz) => new THREE.Mesh(new RoundedBoxGeometry(sx, sy, sz, 3, Math.min(sx, sy, sz) * 0.32), mat);
     this.parts = {
-      torsoLow: box(M.cloth, 0.36, 1, 0.24),
-      torsoUp: box(M.cloth, 0.42, 1, 0.26),
+      torsoLow: new THREE.Mesh(new RoundedBoxGeometry(0.36, 1, 0.24, 4, 0.1), M.cloth),
+      torsoUp: new THREE.Mesh(new RoundedBoxGeometry(0.42, 1, 0.26, 4, 0.11), M.cloth),
       vest: box(M.vest, 0.46, 0.4, 0.34),
       pouch: box(M.pouch, 0.36, 0.13, 0.09),
       pack: box(M.pouch, 0.3, 0.38, 0.12),

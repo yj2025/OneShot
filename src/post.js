@@ -51,10 +51,47 @@ void main(){
   gl_FragColor = vec4(c, 1.0);
 }`;
 
+// 화면 공간 차폐(접지 그림자, 구석 어둠)
+const AO_FS = `
+uniform sampler2D tDepth; uniform mat4 uProj; uniform mat4 uInvProj; uniform vec2 uRes; uniform float uFrame; varying vec2 vUv;
+vec3 vpos(vec2 uv){ float d = texture2D(tDepth, uv).r; vec4 p = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return p.xyz / p.w; }
+float hh(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main(){
+  vec3 P = vpos(vUv);
+  float dist = -P.z;
+  if (dist > 70.0 || dist < 0.7) { gl_FragColor = vec4(1.0); return; }
+  vec2 t = 1.0 / uRes;
+  vec3 px1 = vpos(vUv + vec2(t.x, 0.0)), px2 = vpos(vUv - vec2(t.x, 0.0));
+  vec3 py1 = vpos(vUv + vec2(0.0, t.y)), py2 = vpos(vUv - vec2(0.0, t.y));
+  vec3 dx = abs(px1.z - P.z) < abs(px2.z - P.z) ? px1 - P : P - px2;
+  vec3 dy = abs(py1.z - P.z) < abs(py2.z - P.z) ? py1 - P : P - py2;
+  vec3 N = normalize(cross(dx, dy));
+  if (dot(N, -P) < 0.0) N = -N;
+  vec3 T = normalize(abs(N.y) < 0.99 ? cross(N, vec3(0.0, 1.0, 0.0)) : cross(N, vec3(1.0, 0.0, 0.0)));
+  vec3 Bt = cross(N, T);
+  float rad = 0.55;
+  float rnd = hh(vUv * uRes + uFrame * 0.37) * 6.2831;
+  float occ = 0.0;
+  for (int i = 0; i < 12; i++) {
+    float fi = float(i) + 0.5;
+    float z = 1.0 - fi / 12.0, r = sqrt(1.0 - z * z), a = fi * 2.39996 + rnd;
+    vec3 h = vec3(cos(a) * r, sin(a) * r, z * 0.9 + 0.1);
+    float sc = mix(0.15, 1.0, (fi / 12.0) * (fi / 12.0));
+    vec3 S = P + (T * h.x + Bt * h.y + N * h.z) * rad * sc;
+    vec4 cs = uProj * vec4(S, 1.0);
+    vec2 suv = cs.xy / cs.w * 0.5 + 0.5;
+    float sz = vpos(suv).z;
+    float range = smoothstep(0.0, 1.0, rad / max(abs(P.z - sz), 1e-3));
+    occ += (sz >= S.z + 0.025 ? 1.0 : 0.0) * range;
+  }
+  float ao = 1.0 - occ / 12.0;
+  gl_FragColor = vec4(vec3(pow(ao, 1.4)), 1.0);
+}`;
+
 // 렌즈 + 센서
 const CAM_FS = `
 uniform sampler2D tScene; uniform sampler2D tBloomA; uniform sampler2D tBloomB; uniform sampler2D tBloomC;
-uniform sampler2D tAdapt; uniform sampler2D tPrev; uniform sampler2D tDepth; uniform float uNear; uniform float uFar;
+uniform sampler2D tAdapt; uniform sampler2D tPrev; uniform sampler2D tDepth; uniform sampler2D tAO; uniform float uAOAmt; uniform float uNear; uniform float uFar;
 uniform float uAspect; uniform float uK; uniform float uCA; uniform vec2 uBlur; uniform float uBlurAmt; uniform float uZoomBlur;
 uniform float uTime; uniform float uKey; uniform float uFlash; uniform vec2 uRimShift; uniform float uGhost; uniform float uNoise;
 uniform float uSat; uniform float uHit; uniform float uFrame; uniform float uDead;
@@ -107,6 +144,7 @@ void main(){
   float rr = texture2D(tScene, uvR).r, bb = texture2D(tScene, uvB).b, gg = texture2D(tScene, uvG).g;
   col.r += (rr - gg) * 0.9; col.b += (bb - gg) * 0.9;
   col = max(col, 0.0);
+  col *= mix(1.0, texture2D(tAO, uvG).r, uAOAmt);
   // 하이라이트 번짐(렌즈 산란)
   vec3 bloom = texture2D(tBloomA, uvG).rgb * 0.45 + texture2D(tBloomB, uvG).rgb * 0.55 + texture2D(tBloomC, uvG).rgb * 0.75;
   // --- 센서: 자동 노출
@@ -195,8 +233,11 @@ export class Post {
       tScene: { value: null }, tBloomA: { value: null }, tBloomB: { value: null }, tBloomC: { value: null }, tAdapt: { value: null }, tPrev: { value: null },
       uAspect: { value: 1.78 }, uK: { value: 0.32 }, uCA: { value: 0.035 }, uBlur: { value: new THREE.Vector2() }, uBlurAmt: { value: 1 }, uZoomBlur: { value: 0 },
       uTime: { value: 0 }, uKey: { value: 0.2 }, uFlash: { value: 0 }, uRimShift: { value: new THREE.Vector2() }, uGhost: { value: 0.12 }, uNoise: { value: 1 },
-      uSat: { value: 0.62 }, uHit: { value: 0 }, uFrame: { value: 0 }, uDead: { value: 0 }, tDepth: { value: null }, uNear: { value: 0.04 }, uFar: { value: 420 },
+      uSat: { value: 0.62 }, uHit: { value: 0 }, uFrame: { value: 0 }, uDead: { value: 0 }, tDepth: { value: null }, uNear: { value: 0.04 }, uFar: { value: 420 }, tAO: { value: null }, uAOAmt: { value: 0.9 },
     });
+    this.mAO = pass(AO_FS, { tDepth: { value: null }, uProj: { value: new THREE.Matrix4() }, uInvProj: { value: new THREE.Matrix4() }, uRes: { value: new THREE.Vector2() }, uFrame: { value: 0 } });
+    this.rtAO = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];
+    this.aoEnabled = true;
     this.mCodec = pass(CODEC_FS, { tIn: { value: null }, uRes: { value: new THREE.Vector2() }, uQ: { value: 0.2 }, uSharp: { value: 0.45 } });
     this.ping = 0; this.frame = 0; this.init = true;
     this.scale = 1;
@@ -210,6 +251,7 @@ export class Post {
     let bw = Math.floor(sw / 4), bh = Math.floor(sh / 4);
     for (const pair of this.rtB) { pair[0].setSize(bw, bh); pair[1].setSize(bw, bh); bw = Math.max(2, bw >> 1); bh = Math.max(2, bh >> 1); }
     this.rtCam.forEach(rt => rt.setSize(w, h));
+    this.rtAO.forEach(rt => rt.setSize(Math.max(2, sw >> 1), Math.max(2, sh >> 1)));
     this.mCam.uniforms.uAspect.value = w / h;
     this.mCodec.uniforms.uRes.value.set(w, h);
   }
@@ -235,8 +277,17 @@ export class Post {
       this.mBlur.uniforms.tIn.value = A.texture; this.mBlur.uniforms.uDir.value.set(1 / A.width, 0); this.run(this.mBlur, B);
       this.mBlur.uniforms.tIn.value = B.texture; this.mBlur.uniforms.uDir.value.set(0, 1 / A.height); this.run(this.mBlur, A);
     }
+    // 차폐
+    if (this.aoEnabled) {
+      const A = this.mAO.uniforms; A.tDepth.value = this.rtScene.depthTexture; A.uProj.value.copy(camera.projectionMatrix); A.uInvProj.value.copy(camera.projectionMatrixInverse);
+      A.uRes.value.set(this.rtAO[0].width, this.rtAO[0].height); A.uFrame.value = this.frame % 64;
+      this.run(this.mAO, this.rtAO[0]);
+      this.mBlur.uniforms.tIn.value = this.rtAO[0].texture; this.mBlur.uniforms.uDir.value.set(1 / this.rtAO[0].width, 0); this.run(this.mBlur, this.rtAO[1]);
+      this.mBlur.uniforms.tIn.value = this.rtAO[1].texture; this.mBlur.uniforms.uDir.value.set(0, 1 / this.rtAO[0].height); this.run(this.mBlur, this.rtAO[0]);
+    }
     // 렌즈 + 센서
     const U = this.mCam.uniforms;
+    U.tAO.value = this.rtAO[0].texture; U.uAOAmt.value = this.aoEnabled ? 0.9 : 0.0;
     const cur = this.rtCam[this.ping], prev = this.rtCam[1 - this.ping];
     U.tScene.value = this.rtScene.texture; U.tBloomA.value = this.rtB[0][0].texture; U.tBloomB.value = this.rtB[1][0].texture; U.tBloomC.value = this.rtB[2][0].texture;
     U.tAdapt.value = adapt; U.tPrev.value = prev.texture; U.tDepth.value = this.rtScene.depthTexture; U.uNear.value = camera.near; U.uFar.value = camera.far;
