@@ -67,16 +67,16 @@ export class Level {
   makeMaterials() {
     const t = this.tex;
     const M = (k, p, o) => (this.mats[k] = bcMaterial(p, o));
-    M('concrete', { map: t.concrete, roughness: 0.92, color: 0xffffff });
-    M('plaster', { map: t.plaster, roughness: 0.95 }, { damp: 1 });
-    M('ceiling', { map: t.ceiling, roughness: 1.0 }, { grime: 0.5 });
-    M('block', { map: t.block, roughness: 0.95 }, { damp: 0.7 });
-    M('asphalt', { map: t.asphalt, roughness: 0.88 });
-    M('gravel', { map: t.gravel, roughness: 1.0 });
+    M('concrete', { map: t.concrete, bumpMap: t.concrete, bumpScale: 2.0, roughness: 0.92, color: 0xffffff });
+    M('plaster', { map: t.plaster, bumpMap: t.plaster, bumpScale: 2.5, roughness: 0.95 }, { damp: 1 });
+    M('ceiling', { map: t.ceiling, bumpMap: t.ceiling, bumpScale: 2.0, roughness: 1.0 }, { grime: 0.5 });
+    M('block', { map: t.block, bumpMap: t.block, bumpScale: 4.0, roughness: 0.95 }, { damp: 0.7 });
+    M('asphalt', { map: t.asphalt, bumpMap: t.asphalt, bumpScale: 2.0, roughness: 0.88 });
+    M('gravel', { map: t.gravel, bumpMap: t.gravel, bumpScale: 5.0, roughness: 1.0 });
     M('contBlue', { map: t.corrugated, color: 0x5f7486, roughness: 0.7, metalness: 0.3 }, { grime: 0.6 });
     M('contRust', { map: t.corrugated, color: 0x8a4e36, roughness: 0.75, metalness: 0.3 }, { grime: 0.6 });
     M('roofMetal', { map: t.corrugated, color: 0x6a6e70, roughness: 0.7, metalness: 0.4 }, { grime: 0.4 });
-    M('plywood', { map: t.plywood, roughness: 0.9 }, { grime: 0.6 });
+    M('plywood', { map: t.plywood, bumpMap: t.plywood, bumpScale: 1.5, roughness: 0.9 }, { grime: 0.6 });
     M('plywoodB', { map: t.plywoodB, roughness: 0.9 }, { grime: 0.6 });
     M('plywoodC', { map: t.plywoodC, roughness: 0.9 }, { grime: 0.6 });
     M('pallet', { map: t.plywood, color: 0xb59a7a, roughness: 0.95 }, { grime: 0.8 });
@@ -87,9 +87,12 @@ export class Level {
     M('metalGalv', { color: 0x8c8f8e, roughness: 0.5, metalness: 0.7 }, { grime: 0.5 });
     M('steelGrate', { color: 0x5a5b58, roughness: 0.6, metalness: 0.7 }, { grime: 0.7 });
     M('rubber', { color: 0x1a1a1a, roughness: 0.9 }, { grime: 0.2 });
+    M('skirt', { color: 0x4a4a44, roughness: 0.7 }, { grime: 0.8 });
+    M('cable', { color: 0x161616, roughness: 0.5 }, { grime: 0.2 });
+    M('bottle', { color: 0x5b6e4e, roughness: 0.15, metalness: 0.1, envMapIntensity: 1.2 }, { grime: 0.3 });
     M('drumBlue', { color: 0x2f4a6b, roughness: 0.6, metalness: 0.3 }, { grime: 0.8 });
     M('drumRed', { color: 0x7a2c22, roughness: 0.6, metalness: 0.3 }, { grime: 0.8 });
-    M('jersey', { map: t.concrete, color: 0xd8d4c8, roughness: 0.95 });
+    M('jersey', { map: t.concrete, bumpMap: t.concrete, bumpScale: 3.0, color: 0xc8c4b8, roughness: 0.95 });
     M('doorPaint', { map: t.plywood, color: 0x7a8a8c, roughness: 0.7 }, { grime: 0.7 });
     M('deskTop', { map: t.plywood, color: 0x9c968a, roughness: 0.6 }, { grime: 0.5 });
     M('fabricChair', { map: t.fabric, color: 0x4a4e5a, roughness: 1 }, { grime: 0.5 });
@@ -140,16 +143,23 @@ export class Level {
       if (o.b > y0) this.box(matKey, [ox0, y0, z0], [ox1, o.b, z1], { tile: 3, mat: 'concrete' });
       if (o.t < y1) this.box(matKey, [ox0, o.t, z0], [ox1, y1, z1], { tile: 3, mat: 'concrete' });
       if (frameMat && !o.noFrame) {
-        const f = 0.05;
-        this.box(frameMat, [ox0, o.b, z0 - 0.01], [ox0 + f, o.t, z1 + 0.01], { collide: false });
-        this.box(frameMat, [ox1 - f, o.b, z0 - 0.01], [ox1, o.t, z1 + 0.01], { collide: false });
-        this.box(frameMat, [ox0, o.t - f, z0 - 0.01], [ox1, o.t, z1 + 0.01], { collide: false });
+        const f = 0.07, pr = 0.025;
+        this.box(frameMat, [ox0 - 0.02, o.b, z0 - pr], [ox0 + f - 0.02, o.t + 0.02, z1 + pr], { collide: false });
+        this.box(frameMat, [ox1 - f + 0.02, o.b, z0 - pr], [ox1 + 0.02, o.t + 0.02, z1 + pr], { collide: false });
+        this.box(frameMat, [ox0 - 0.02, o.t - f + 0.02, z0 - pr], [ox1 + 0.02, o.t + 0.02, z1 + pr], { collide: false });
         if (o.b > y0 + 0.2) this.box(frameMat, [ox0 - 0.03, o.b - 0.03, z0 - 0.06], [ox1 + 0.03, o.b + 0.01, z1 + 0.06], { collide: false });
       }
       x = Math.max(x, ox1);
     }
     if (x1 > x) this.box(matKey, [x, y0, z0], [x1, y1, z1], { tile: 3, mat: 'concrete' });
+    if (matKey === 'plaster' && Math.abs(y0 - FL) < 0.01) {
+      let xs = x0;
+      for (const o of ops) { const a = o.c - o.w / 2; if (a > xs + 0.05) this.skirtZ(z0, z1, xs, a); xs = Math.max(xs, o.c + o.w / 2); }
+      if (x1 > xs + 0.05) this.skirtZ(z0, z1, xs, x1);
+    }
   }
+  skirtZ(z0, z1, xa, xb) { this.box('skirt', [xa, FL, z0 - 0.014], [xb, FL + 0.1, z0], { collide: false, tile: 1 }); this.box('skirt', [xa, FL, z1], [xb, FL + 0.1, z1 + 0.014], { collide: false, tile: 1 }); }
+  skirtX(x0, x1, za, zb) { this.box('skirt', [x0 - 0.014, FL, za], [x0, FL + 0.1, zb], { collide: false, tile: 1 }); this.box('skirt', [x1, FL, za], [x1 + 0.014, FL + 0.1, zb], { collide: false, tile: 1 }); }
   // x 방향에 수직인 벽(z로 뻗음)
   wallX(x0, x1, z0, z1, y0, y1, openings, matKey, frameMat = 'metalDark') {
     const ops = [...openings].sort((a, b) => a.c - b.c);
@@ -160,15 +170,20 @@ export class Level {
       if (o.b > y0) this.box(matKey, [x0, y0, oz0], [x1, o.b, oz1], { tile: 3, mat: 'concrete' });
       if (o.t < y1) this.box(matKey, [x0, o.t, oz0], [x1, y1, oz1], { tile: 3, mat: 'concrete' });
       if (frameMat && !o.noFrame) {
-        const f = 0.05;
-        this.box(frameMat, [x0 - 0.01, o.b, oz0], [x1 + 0.01, o.t, oz0 + f], { collide: false });
-        this.box(frameMat, [x0 - 0.01, o.b, oz1 - f], [x1 + 0.01, o.t, oz1], { collide: false });
-        this.box(frameMat, [x0 - 0.01, o.t - f, oz0], [x1 + 0.01, o.t, oz1], { collide: false });
+        const f = 0.07, pr = 0.025;
+        this.box(frameMat, [x0 - pr, o.b, oz0 - 0.02], [x1 + pr, o.t + 0.02, oz0 + f - 0.02], { collide: false });
+        this.box(frameMat, [x0 - pr, o.b, oz1 - f + 0.02], [x1 + pr, o.t + 0.02, oz1 + 0.02], { collide: false });
+        this.box(frameMat, [x0 - pr, o.t - f + 0.02, oz0 - 0.02], [x1 + pr, o.t + 0.02, oz1 + 0.02], { collide: false });
         if (o.b > y0 + 0.2) this.box(frameMat, [x0 - 0.06, o.b - 0.03, oz0 - 0.03], [x1 + 0.06, o.b + 0.01, oz1 + 0.03], { collide: false });
       }
       z = Math.max(z, oz1);
     }
     if (z1 > z) this.box(matKey, [x0, y0, z], [x1, y1, z1], { tile: 3, mat: 'concrete' });
+    if (matKey === 'plaster' && Math.abs(y0 - FL) < 0.01) {
+      let zs = z0;
+      for (const o of ops) { const a = o.c - o.w / 2; if (a > zs + 0.05) this.skirtX(x0, x1, zs, a); zs = Math.max(zs, o.c + o.w / 2); }
+      if (z1 > zs + 0.05) this.skirtX(x0, x1, zs, z1);
+    }
   }
   // 바깥(블록)·안(회반죽) 두 겹 외벽
   extWallZ(zOut, dir, x0, x1, y1, ops) {
@@ -330,8 +345,8 @@ export class Level {
       const x = Math.cos(a) * d * 1.3, z = Math.sin(a) * d + 5;
       const h = 7 + tr() * 9;
       // 활엽수: 찌그러진 덩어리 몇 개
-      for (let k = 0; k < 4; k++) {
-        const rr = 1.6 + tr() * 2.2;
+      for (let k = 0; k < 9; k++) {
+        const rr = 0.9 + tr() * 1.6;
         const g = new THREE.IcosahedronGeometry(rr, 1);
         const pp = g.attributes.position;
         for (let q = 0; q < pp.count; q++) { const s = 0.75 + tr() * 0.45; pp.setXYZ(q, pp.getX(q) * s, pp.getY(q) * s * 0.8, pp.getZ(q) * s); }
@@ -580,6 +595,16 @@ export class Level {
     }
     // 소화기 (벽 고리)
     for (const [x, z] of [[-11.6, -5.4], [4.35, -7.2], [11.6, -8.0]]) { this.cyl('drumRed', [x, FL + 0.55, z], 0.08, 0.5, { collide: false, seg: 10 }); this.cyl('rubber', [x, FL + 0.85, z], 0.03, 0.1, { collide: false, seg: 6 }); }
+    // 바닥을 가로지르는 전선, 천장에서 늘어진 전선
+    const cable = (pts, r = 0.008) => { const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))); this.add('cable', new THREE.TubeGeometry(c, 40, r, 5, false)); };
+    for (let i = 0; i < 7; i++) {
+      const x0 = -11 + r() * 22, z0 = -15 + r() * 14, a = r() * 6.28, L2 = 2 + r() * 5;
+      const pts = []; for (let k = 0; k <= 6; k++) { const t = k / 6; pts.push([x0 + Math.cos(a) * L2 * t + Math.sin(t * 7 + i) * 0.25, FL + 0.008, z0 + Math.sin(a) * L2 * t + Math.cos(t * 5 + i) * 0.25]); }
+      cable(pts);
+    }
+    for (const [x, z] of [[-9.9, -3.3], [1.5, -1.5], [-4.5, -5.7], [7.5, -13.8]]) cable([[x, CA, z], [x + 0.1, CA - 0.5, z + 0.05], [x + 0.25, CA - 0.9 - r() * 0.4, z - 0.05], [x + 0.32, CA - 0.75, z + 0.1]], 0.006);
+    for (let i = 0; i < 14; i++) { const x = -11 + r() * 22, z = -15 + r() * 14; this.cyl('bottle', [x, FL + 0.035, z], 0.032, 0.24, { collide: false, seg: 8, rotX: Math.PI / 2, rotZ: r() * 6 }); }
+    for (let i = 0; i < 24; i++) this.paper(-11.5 + r() * 23, -15.5 + r() * 15, r() * 6);
     // 바닥 쓰레기: 깨진 타일 조각, 캔, 전선
     for (let i = 0; i < 40; i++) {
       const inside = i < 28;

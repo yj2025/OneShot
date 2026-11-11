@@ -64,7 +64,7 @@ for (const [name, v] of VIEWS) {
   await shot(page, '09-firing');
   await mouse.up('left');
   await sleep(700);
-  await strip(page, 'firing-burst', async () => { for (let i = 0; i < 4; i++) { await mouse.click('left'); await sleep(170); } });
+  await strip(page, 'firing-burst', async () => { await mouse.down('left'); await sleep(620); await mouse.up('left'); });
   await page.close();
 }
 // 피격 순간: 경계 상태 봇이 플레이어를 향해 사격하는 장면

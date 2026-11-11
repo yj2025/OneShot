@@ -59,6 +59,9 @@ const GEN = {
     });
     const ctx = c.getContext('2d');
     crackLines(ctx, rng, S, 7, 'rgba(40,38,35,0.55)', 1.2);
+    ctx.strokeStyle = 'rgba(60,56,50,0.18)'; ctx.lineWidth = 3;
+    for (let i = 0; i < 14; i++) { const x = rng() * S, y = rng() * S, a = rng() * 6.28, l = 40 + rng() * 120; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.cos(a) * l * 0.5 + (rng() - 0.5) * 30, y + Math.sin(a) * l * 0.5, x + Math.cos(a) * l, y + Math.sin(a) * l); ctx.stroke(); }
+    speckle(ctx, rng, S, 25, ['rgba(200,190,150,0.5)', 'rgba(170,60,40,0.35)', 'rgba(220,220,215,0.5)'], 1, 4);
     speckle(ctx, rng, S, 900, ['rgba(70,68,64,0.5)', 'rgba(160,158,150,0.4)', 'rgba(50,45,40,0.35)'], 0.5, 1.8);
     // 기름 얼룩
     for (let i = 0; i < 5; i++) { const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1); ctx.save(); ctx.translate(rng() * S, rng() * S); ctx.scale(20 + rng() * 60, 14 + rng() * 40); g.addColorStop(0, 'rgba(30,28,24,0.35)'); g.addColorStop(1, 'rgba(30,28,24,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 1, 0, 7); ctx.fill(); ctx.restore(); }
@@ -73,7 +76,7 @@ const GEN = {
       const zone = fbm(u * 2.5, v * 2.5, 2.5, 3, 16);
       const peel = sstep(0.76, 0.78, chip * 0.7 + zone * 0.45);
       const edge = sstep(0.73, 0.76, chip * 0.7 + zone * 0.45) - peel;
-      const streak = Math.pow(fbm(u * 26, v * 1.2, 26, 3, 14), 2.6) * sstep(0.1, 0.7, 1 - v) * 1.5;
+      const streak = sstep(0.62, 0.8, fbm(u * 9, v * 0.8, 9, 3, 14)) * sstep(0.2, 0.9, 1 - v) * sstep(0.55, 0.7, fbm(u * 3, 0.5, 3, 2, 17)) * 0.9;
       let r = 150 + (n - 0.5) * 14 - big * 14 + (fine - 0.5) * 8, g = 152 + (n - 0.5) * 14 - big * 13 + (fine - 0.5) * 8, b = 143 + (n - 0.5) * 12 - big * 12 + (fine - 0.5) * 8;
       r -= streak * 40; g -= streak * 38; b -= streak * 42;
       const cr = 126 + (n - 0.5) * 26 + (fine - 0.5) * 20;
@@ -106,11 +109,16 @@ const GEN = {
     const c = field(S, (u, v) => {
       const n = fbm(u * 10, v * 10, 10, 4, 31), big = fbm(u * 2, v * 2, 2, 3, 32);
       const streak = Math.pow(fbm(u * 18, v * 1.2, 18, 3, 33), 2) * 1.3;
-      let g = 140 + (n - 0.5) * 30 - big * 20 - streak * 40;
-      const row = Math.floor(v * 10), bu = (u * 5 + (row % 2) * 0.5) % 1, bv = (v * 10) % 1;
-      const mortar = (bu < 0.03 || bu > 0.985 || bv < 0.05 || bv > 0.97) ? 1 : 0;
-      g = mortar ? g * 0.78 : g;
-      return [g + 6, g + 3, g - 4];
+      const row = Math.floor(v * 10), col = Math.floor(u * 5 + (row % 2) * 0.5);
+      const bu = (u * 5 + (row % 2) * 0.5) % 1, bv = (v * 10) % 1;
+      const id = vnoise(col * 3.1 + 0.5, row * 7.3 + 0.5, 1000, 35);
+      const chip = fbm(u * 40, v * 40, 40, 2, 36);
+      const mw = 0.025 + chip * 0.025;
+      const mortar = (bu < mw || bu > 1 - mw * 0.6 || bv < mw * 2 || bv > 1 - mw) ? 1 : 0;
+      let g = 132 + (id - 0.5) * 34 + (n - 0.5) * 30 - big * 22 - streak * 46;
+      g = mortar ? g * 0.86 : g;
+      const rust = sstep(0.7, 0.9, fbm(u * 12, v * 1.5, 12, 3, 37)) * sstep(0.3, 0.9, 1 - v) * 0.6;
+      return [g + 6 + rust * 30, g + 3 + rust * 8, g - 4 - rust * 18];
     });
     return c;
   },

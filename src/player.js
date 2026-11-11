@@ -61,7 +61,7 @@ export class Player {
   shotKick(scale) {
     const r = this.rng;
     this.camShake.v.add(V((2.6 + r() * 2.2) * scale, (r() - 0.5) * 3.4 * scale, (r() - 0.5) * 4.4 * scale));
-    this.camRecoil.v.add(V((0.55 + r() * 0.45) * scale, (r() - 0.5) * 0.5 * scale, (r() - 0.5) * 0.7 * scale));
+    this.camRecoil.v.add(V((1.1 + r() * 0.9) * scale, (r() - 0.5) * 1.2 * scale, (r() - 0.5) * 1.6 * scale));
     this.camOffset.v.add(V((r() - 0.5) * 0.3 * scale, 0.15 * scale, 0.5 * scale));
   }
 
