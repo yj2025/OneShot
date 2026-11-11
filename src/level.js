@@ -89,6 +89,10 @@ export class Level {
     M('rubber', { color: 0x1a1a1a, roughness: 0.9 }, { grime: 0.2 });
     M('skirt', { color: 0x4a4a44, roughness: 0.7 }, { grime: 0.8 });
     M('cable', { color: 0x161616, roughness: 0.5 }, { grime: 0.2 });
+    M('sign', { map: t.sign, roughness: 0.6 }, { grime: 0.4 });
+    M('acUnit', { color: 0xb8b6ac, roughness: 0.6, metalness: 0.2 }, { grime: 1 });
+    this.mats.weeds = bcMaterial({ map: t.weeds, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 1 }, { grime: 0.3 });
+    this.mats.sheet = bcMaterial({ color: 0xc8ccc8, transparent: true, opacity: 0.45, side: THREE.DoubleSide, roughness: 0.3, depthWrite: false }, { grime: 0.5 });
     M('bottle', { color: 0x5b6e4e, roughness: 0.15, metalness: 0.1, envMapIntensity: 1.2 }, { grime: 0.3 });
     M('drumBlue', { color: 0x2f4a6b, roughness: 0.6, metalness: 0.3 }, { grime: 0.8 });
     M('drumRed', { color: 0x7a2c22, roughness: 0.6, metalness: 0.3 }, { grime: 0.8 });
@@ -625,7 +629,61 @@ export class Level {
     }
   }
 
+  exteriorDetails() {
+    const r = this.rng;
+    // 외벽 위 갓돌(살짝 돌출), 홈통, 배수관
+    this.box('concrete', [-12.1, 3.9, -0.08], [12.1, 4.0, 0.1], { collide: false, tile: 2 });
+    this.box('concrete', [11.9, 3.9, -16.05], [12.1, 4.0, 0.1], { collide: false, tile: 2 });
+    this.box('concrete', [-12.1, 3.9, -6.6], [-11.9, 4.0, 0.1], { collide: false, tile: 2 });
+    this.box('concrete', [-12.1, CH + 0.4, -16.1], [-11.9, CH + 0.5, -6.6], { collide: false, tile: 2 });
+    this.box('concrete', [-12.1, CH + 0.4, -16.1], [4.7, CH + 0.5, -15.9], { collide: false, tile: 2 });
+    this.box('metalGalv', [-12.0, 3.72, 0.1], [12.0, 3.82, 0.22], { collide: false });
+    for (const [x, z] of [[-11.75, 0.16], [11.75, 0.16], [3.4, 0.16]]) {
+      this.cyl('metalGalv', [x, 1.9, z], 0.045, 3.6, { collide: false, seg: 10 });
+      this.cyl('metalGalv', [x, 0.1, z + 0.12], 0.045, 0.3, { collide: false, seg: 10, rotX: 0.9 });
+      for (const y of [0.9, 2.1, 3.2]) this.box('metalDark', [x - 0.06, y, z - 0.07], [x + 0.06, y + 0.03, z - 0.02], { collide: false });
+      this.stain(x, 0.023, z + 0.5, 1.1, r() * 3);
+    }
+    for (const [x, z] of [[12.16, -15.6], [-12.16, -15.6]]) this.cyl('metalGalv', [x, 2.0, z], 0.045, 3.8, { collide: false, seg: 10 });
+    // 실외기(동쪽 벽) + 냉매관
+    for (const z of [-9.0, -10.2]) {
+      this.box('acUnit', [12.05, 0.0, z - 0.42], [12.4, 0.65, z + 0.42], { mat: 'metal', tile: 1 });
+      this.cyl('metalDark', [12.42, 0.36, z], 0.24, 0.02, { collide: false, rotZ: Math.PI / 2, seg: 18 });
+      this.cyl('rubber', [12.08, 1.2, z - 0.3], 0.018, 1.3, { collide: false, seg: 6 });
+    }
+    // 정면: 계량기함, 외벽 전선, 외벽등, 안내판
+    this.box('acUnit', [-5.9, 1.2, 0.0], [-5.4, 1.75, 0.18], { collide: false, tile: 1 });
+    this.box('metalDark', [-5.85, 1.25, 0.18], [-5.45, 1.7, 0.185], { collide: false });
+    this.cyl('rubber', [-5.65, 2.7, 0.08], 0.012, 1.9, { collide: false, seg: 6 });
+    this.cyl('rubber', [-2.0, 3.55, 0.06], 0.01, 7.3, { collide: false, seg: 5, rotZ: Math.PI / 2 });
+    for (const x of [-7.5, 8]) { this.box('metalDark', [x - 0.12, 3.25, 0.0], [x + 0.12, 3.45, 0.16], { collide: false }); this.box('tubeDead', [x - 0.09, 3.23, 0.03], [x + 0.09, 3.25, 0.15], { collide: false }); }
+    { const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), this.mats.sign); sg.position.set(-2.9, 1.95, 0.03); sg.rotation.z = 0.012; this.group.add(sg);
+      this.box('metalDark', [-3.72, 1.53, 0.0], [-2.08, 1.56, 0.03], { collide: false }); }
+    // 창: 일부는 합판으로 막고, 일부는 비닐이 찢겨 걸려 있고, 일부는 방범창
+    this.box('plywoodC', [-11.25, FL + 0.95, 0.0], [-9.75, FL + 1.75, 0.03], { collide: false, tile: 2.44 });
+    for (let i = 0; i < 6; i++) this.cyl('metalDark', [-5.2 + i * 0.24, FL + 1.5, 0.05], 0.009, 1.2, { collide: false, seg: 5 });
+    this.box('metalDark', [-5.35, FL + 0.95, 0.03], [-3.85, FL + 0.98, 0.07], { collide: false });
+    this.box('metalDark', [-5.35, FL + 2.02, 0.03], [-3.85, FL + 2.05, 0.07], { collide: false });
+    { const g = new THREE.PlaneGeometry(1.3, 1.0, 6, 4); const p = g.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin(p.getX(i) * 7 + p.getY(i) * 3) * 0.04); g.translate(2.2, FL + 1.45, 0.04); const m = new THREE.Mesh(g, this.mats.sheet); this.group.add(m); }
+    // 서쪽 옆 차양(골판 지붕이 기울어진 헛간)
+    this.obox('roofMetal', [-14.0, 2.55, -10.5], [4.2, 0.05, 6.4], 0, { collide: false, tile: 2.4, rotZ: 0.18 });
+    for (const z of [-13.5, -10.5, -7.5]) this.cyl('metalDark', [-15.9, 1.1, z], 0.05, 2.2, { seg: 8, mat: 'metal' });
+    this.palletStack(-14.5, 0, -12.6, 3, 0.4);
+    this.cyl('drumBlue', [-15.2, 0.45, -8.4], 0.29, 0.9, { mat: 'metal' });
+    this.tire(-13.6, 0.11, -8.2, 1.0);
+    // 잡초: 벽 밑, 담장 밑, 갈라진 틈
+    const tufts = [];
+    const tuft = (x, z, s) => { for (const a of [0, Math.PI / 2]) { const g = new THREE.PlaneGeometry(0.5 * s, 0.4 * s); g.translate(0, 0.2 * s, 0); g.rotateY(a + r()); g.translate(x, 0.0, z); tufts.push(g); } };
+    for (let i = 0; i < 70; i++) tuft(-11.8 + r() * 23.6, 0.35 + r() * 0.25, 0.6 + r() * 0.8);
+    for (let i = 0; i < 40; i++) tuft(12.3 + r() * 0.4, -15.5 + r() * 15, 0.6 + r() * 0.9);
+    for (let i = 0; i < 40; i++) tuft(-12.3 - r() * 0.4, -15.5 + r() * 15, 0.6 + r() * 0.9);
+    for (let i = 0; i < 120; i++) { const e = r(); const x = e < 0.33 ? -23.7 + r() * 0.4 : e < 0.66 ? 23.4 + r() * 0.4 : -23 + r() * 46, z = e < 0.66 ? -19 + r() * 48 : -19.7 + r() * 0.4; tuft(x, z, 0.8 + r() * 1.2); }
+    for (let i = 0; i < 50; i++) tuft(-20 + r() * 40, 7.5 + r() * 20, 0.4 + r() * 0.5);
+    const m = new THREE.Mesh(mergeGeometries(tufts), this.mats.weeds); this.group.add(m);
+  }
+
   finish() {
+    this.exteriorDetails();
     this.missingTiles();
     this.wallClutter();
     this.contactShadows();

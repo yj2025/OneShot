@@ -115,8 +115,8 @@ const GEN = {
       const chip = fbm(u * 40, v * 40, 40, 2, 36);
       const mw = 0.025 + chip * 0.025;
       const mortar = (bu < mw || bu > 1 - mw * 0.6 || bv < mw * 2 || bv > 1 - mw) ? 1 : 0;
-      let g = 132 + (id - 0.5) * 34 + (n - 0.5) * 30 - big * 22 - streak * 46;
-      g = mortar ? g * 0.86 : g;
+      let g = 146 + (id - 0.5) * 22 + (n - 0.5) * 30 - big * 22 - streak * 46;
+      g = mortar ? g * 0.93 : g;
       const rust = sstep(0.7, 0.9, fbm(u * 12, v * 1.5, 12, 3, 37)) * sstep(0.3, 0.9, 1 - v) * 0.6;
       return [g + 6 + rust * 30, g + 3 + rust * 8, g - 4 - rust * 18];
     });
@@ -270,6 +270,30 @@ const GEN = {
       const edge = clamp(1 - Math.abs(a - 0.15) * 8) * 0.5;
       return [40, 36, 30, (a * 0.55 + edge * 0.3) * 255];
     });
+  },
+  weeds(rng, S = 256) {
+    // 잡초 덤불 (알파)
+    const c = canvas(S); const x = c.getContext('2d'); x.clearRect(0, 0, S, S);
+    for (let i = 0; i < 90; i++) {
+      const bx = S * (0.15 + rng() * 0.7), h = S * (0.3 + rng() * 0.65), lean = (rng() - 0.5) * S * 0.35;
+      const g = 70 + rng() * 50, r = g * (0.75 + rng() * 0.25), b = g * 0.45;
+      x.strokeStyle = `rgba(${r | 0},${g | 0},${b | 0},1)`; x.lineWidth = 1 + rng() * 2.2;
+      x.beginPath(); x.moveTo(bx, S); x.quadraticCurveTo(bx + lean * 0.3, S - h * 0.6, bx + lean, S - h); x.stroke();
+    }
+    for (let i = 0; i < 25; i++) { x.fillStyle = `rgba(${110 + rng() * 40 | 0},${100 + rng() * 30 | 0},${60 | 0},1)`; x.beginPath(); x.ellipse(S * (0.2 + rng() * 0.6), S * (0.3 + rng() * 0.5), 2 + rng() * 4, 1 + rng() * 2, rng() * 3, 0, 7); x.fill(); }
+    return c;
+  },
+  sign(rng, S = 512) {
+    const c = canvas(S, S / 2); const x = c.getContext('2d');
+    x.fillStyle = '#d9d5c8'; x.fillRect(0, 0, S, S / 2);
+    x.fillStyle = '#7a1f18'; x.fillRect(0, 0, S, S * 0.12);
+    x.fillStyle = '#f0ece0'; x.font = `bold ${S * 0.07}px "Malgun Gothic", sans-serif`; x.fillText('관계자 외 출입금지', S * 0.06, S * 0.09);
+    x.fillStyle = '#2a2a2a'; x.font = `bold ${S * 0.085}px "Malgun Gothic", sans-serif`; x.fillText('근접전 훈련장 3동', S * 0.06, S * 0.25);
+    x.font = `${S * 0.045}px "Malgun Gothic", sans-serif`; x.fillText('실탄 반입 금지 · 훈련 중 무단 진입 금지', S * 0.06, S * 0.34);
+    x.fillText('안전관리 담당 내선 214', S * 0.06, S * 0.42);
+    for (let i = 0; i < 1400; i++) { x.fillStyle = `rgba(${rng() < 0.5 ? '90,70,50' : '255,255,255'},${rng() * 0.12})`; x.fillRect(rng() * S, rng() * S / 2, 1 + rng() * 3, 1 + rng() * 3); }
+    const g = x.createLinearGradient(0, 0, 0, S / 2); g.addColorStop(0, 'rgba(80,60,40,0)'); g.addColorStop(1, 'rgba(80,60,40,0.35)'); x.fillStyle = g; x.fillRect(0, 0, S, S / 2);
+    return c;
   },
   paper(rng, S = 128) {
     const c = field(S, (u, v) => { const n = fbm(u * 5, v * 5, 5, 3, 141); const g = 205 + n * 30; return [g, g - 4, g - 16]; });
