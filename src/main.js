@@ -279,7 +279,7 @@ class Game {
     // 총구 화염, 탄피, 반동, 소리
     this.fx.muzzleFlash(origin, dir, vm.current === 'rifle' ? 0.55 : 0.4);
     this.flashLight.position.copy(origin).addScaledVector(dir, 0.15);
-    this.flashLight.intensity = 2.5 + r() * 3; this.flashT = 0.025;
+    this.flashLight.intensity = 5 + r() * 5; this.flashT = 0.03;
     this.flash = 1;
     vm.ejectCasing(this.fx, p.vel);
     p.shotKick(this.settings.shake * (vm.current === 'rifle' ? 1 : 0.8));

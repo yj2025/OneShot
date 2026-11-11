@@ -135,6 +135,7 @@ export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0 } = {}) {
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + VERT_BODY);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FRAG_HEAD)
       .replace('#include <map_fragment>', FRAG_GRIME)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = clamp(roughnessFactor + (bcFbm(vBcW.xz * 1.3 + vBcW.y * 0.7) - 0.5) * 0.55 * uGrime - smoothstep(0.62, 0.7, bcFbm(vBcW.xz * 0.5 + 9.0)) * 0.35 * uGrime, 0.04, 1.0);')
       .replace('#include <lights_fragment_end>', FRAG_LIGHT);
   };
   m.customProgramCacheKey = () => 'bc1';
