@@ -69,7 +69,7 @@ void main(){
   if (dot(N, -P) < 0.0) N = -N;
   vec3 T = normalize(abs(N.y) < 0.99 ? cross(N, vec3(0.0, 1.0, 0.0)) : cross(N, vec3(1.0, 0.0, 0.0)));
   vec3 Bt = cross(N, T);
-  float rad = 0.55;
+  float rad = 0.55 * clamp(dist / 9.0, 1.0, 3.0);
   float rnd = hh(vUv * uRes + uFrame * 0.37) * 6.2831;
   float occ = 0.0;
   for (int i = 0; i < 12; i++) {

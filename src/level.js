@@ -71,8 +71,8 @@ export class Level {
     M('plaster', { map: t.plaster, bumpMap: t.plaster, bumpScale: 2.5, roughness: 0.95 }, { damp: 1 });
     M('ceiling', { map: t.ceiling, bumpMap: t.ceiling, bumpScale: 2.0, roughness: 1.0 }, { grime: 0.5 });
     M('block', { map: t.block, bumpMap: t.block, bumpScale: 4.0, roughness: 0.95 }, { damp: 0.7 });
-    M('asphalt', { map: t.asphalt, bumpMap: t.asphalt, bumpScale: 2.0, roughness: 0.88 });
-    M('gravel', { map: t.gravel, bumpMap: t.gravel, bumpScale: 5.0, roughness: 1.0 });
+    M('asphalt', { map: t.asphalt, bumpMap: t.asphalt, bumpScale: 2.0, roughness: 0.92, color: 0xeee4d8, envMapIntensity: 0.2 });
+    M('gravel', { map: t.gravel, bumpMap: t.gravel, bumpScale: 5.0, roughness: 1.0, color: 0xf2eadc, envMapIntensity: 0.2 });
     M('contBlue', { map: t.corrugated, color: 0x5f7486, roughness: 0.7, metalness: 0.3 }, { grime: 0.6 });
     M('contRust', { map: t.corrugated, color: 0x8a4e36, roughness: 0.75, metalness: 0.3 }, { grime: 0.6 });
     M('roofMetal', { map: t.corrugated, color: 0x6a6e70, roughness: 0.7, metalness: 0.4 }, { grime: 0.4 });
@@ -567,13 +567,13 @@ export class Level {
       if (b.thin || w < 0.25 || d < 0.25 || w * d > 22 || h < 0.08 || h > 3.2) continue;
       const fy = Math.abs(b.min[1] - FL) < 0.06 ? FL : Math.abs(b.min[1]) < 0.06 ? 0.0 : null;
       if (fy === null) continue;
-      const pad = Math.min(0.35, 0.12 + h * 0.12);
+      const pad = Math.min(0.45, 0.15 + h * 0.15);
       const g = new THREE.PlaneGeometry(w + pad * 2, d + pad * 2); g.rotateX(-Math.PI / 2);
       g.translate((b.min[0] + b.max[0]) / 2, fy + (fy === 0 ? 0.024 : 0.004), (b.min[2] + b.max[2]) / 2);
       geos.push(g);
     }
     if (!geos.length) return;
-    const m = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.62, polygonOffset: true, polygonOffsetFactor: -3 }));
+    const m = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -3 }));
     m.renderOrder = 1; this.group.add(m);
   }
 

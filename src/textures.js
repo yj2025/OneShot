@@ -77,7 +77,7 @@ const GEN = {
       const peel = sstep(0.76, 0.78, chip * 0.7 + zone * 0.45);
       const edge = sstep(0.73, 0.76, chip * 0.7 + zone * 0.45) - peel;
       const streak = sstep(0.62, 0.8, fbm(u * 9, v * 0.8, 9, 3, 14)) * sstep(0.2, 0.9, 1 - v) * sstep(0.55, 0.7, fbm(u * 3, 0.5, 3, 2, 17)) * 0.9;
-      let r = 150 + (n - 0.5) * 14 - big * 14 + (fine - 0.5) * 8, g = 152 + (n - 0.5) * 14 - big * 13 + (fine - 0.5) * 8, b = 143 + (n - 0.5) * 12 - big * 12 + (fine - 0.5) * 8;
+      let r = 158 + (n - 0.5) * 16 - big * 22 + (fine - 0.5) * 8, g = 158 + (n - 0.5) * 16 - big * 20 + (fine - 0.5) * 8, b = 146 + (n - 0.5) * 12 - big * 12 + (fine - 0.5) * 8;
       r -= streak * 40; g -= streak * 38; b -= streak * 42;
       const cr = 126 + (n - 0.5) * 26 + (fine - 0.5) * 20;
       r = mix(r, cr + 4, peel) - edge * 30; g = mix(g, cr, peel) - edge * 30; b = mix(b, cr - 8, peel) - edge * 28;
@@ -116,7 +116,7 @@ const GEN = {
       const mw = 0.025 + chip * 0.025;
       const mortar = (bu < mw || bu > 1 - mw * 0.6 || bv < mw * 2 || bv > 1 - mw) ? 1 : 0;
       let g = 146 + (id - 0.5) * 22 + (n - 0.5) * 30 - big * 22 - streak * 46;
-      g = mortar ? g * 0.93 : g;
+      g = mortar ? g * 0.96 : g;
       const rust = sstep(0.7, 0.9, fbm(u * 12, v * 1.5, 12, 3, 37)) * sstep(0.3, 0.9, 1 - v) * 0.6;
       return [g + 6 + rust * 30, g + 3 + rust * 8, g - 4 - rust * 18];
     });

@@ -75,6 +75,25 @@ const FRAG_GRIME = `
   float dirt = mix(1.0, (0.74 + 0.36 * g) * (0.9 + 0.2 * g2), uGrime);
   float base = mix(1.0, mix(0.58, 1.0, smoothstep(0.0, 0.45 + g * 0.35, hF)), uGrime * wall);
   diffuseColor.rgb *= dirt * base;
+  if (uGrime > 0.5 && bcNg.y > 0.7 && ins < 0.5) {
+    vec2 q = vBcW.xz;
+    float soil = smoothstep(0.52, 0.72, bcFbm(q * 0.11 + 3.1)) * (0.6 + 0.4 * bcNoise(q * 1.7));
+    float wet = smoothstep(0.58, 0.66, bcFbm(q * 0.23 + 11.0));
+    float moss = smoothstep(0.62, 0.78, bcFbm(q * 0.4 + 7.0)) * 0.5;
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.165, 0.12) * (0.8 + 0.4 * bcNoise(q * 6.0)), soil * 0.55);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 0.9, 0.62), moss);
+    diffuseColor.rgb *= 1.0 - wet * 0.35;
+  }
+  if (uDamp > 0.9 && wall > 0.5 && ins > 0.5) {
+    float along2 = vBcW.x + vBcW.z;
+    float lineY = 1.18 + 0.006 * sin(along2 * 3.0);
+    float lower = 1.0 - smoothstep(lineY - 0.004, lineY + 0.004, hF);
+    float stripe = smoothstep(lineY - 0.02, lineY, hF) * (1.0 - smoothstep(lineY, lineY + 0.02, hF));
+    vec3 lowCol = diffuseColor.rgb * vec3(0.62, 0.7, 0.64);
+    vec3 upCol = diffuseColor.rgb * vec3(1.08, 1.04, 0.96);
+    diffuseColor.rgb = mix(upCol, lowCol, lower);
+    diffuseColor.rgb *= 1.0 - stripe * 0.4;
+  }
   if (uDamp > 0.0 && wall > 0.5) {
     float along = dot(vBcW.xz, vec2(0.71, 0.71)) + vBcW.x * 0.3;
     float line = 0.22 + 0.32 * bcFbm(vec2(along * 0.9, 1.3)) + 0.05 * bcNoise(vec2(along * 9.0, 4.0));
