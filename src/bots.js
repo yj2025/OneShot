@@ -46,14 +46,15 @@ export class Bot {
     this.group = grp;
     const box = (mat, sx, sy, sz) => new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
     this.parts = {
-      torsoLow: box(M.cloth, 0.34, 1, 0.21),
-      torsoUp: box(M.cloth, 0.38, 1, 0.23),
-      vest: box(M.vest, 0.42, 0.36, 0.3),
-      pouch: box(M.pouch, 0.34, 0.12, 0.08),
+      torsoLow: box(M.cloth, 0.36, 1, 0.24),
+      torsoUp: box(M.cloth, 0.42, 1, 0.26),
+      vest: box(M.vest, 0.46, 0.4, 0.34),
+      pouch: box(M.pouch, 0.36, 0.13, 0.09),
+      pack: box(M.pouch, 0.3, 0.38, 0.12),
       neck: limbMesh(M.face, 0.055, 0.05),
       head: new THREE.Group(),
-      uArmL: limbMesh(M.cloth, 0.07, 0.06), fArmL: limbMesh(M.cloth, 0.058, 0.048),
-      uArmR: limbMesh(M.cloth, 0.07, 0.06), fArmR: limbMesh(M.cloth, 0.058, 0.048),
+      uArmL: limbMesh(M.cloth, 0.078, 0.066), fArmL: limbMesh(M.cloth, 0.062, 0.05),
+      uArmR: limbMesh(M.cloth, 0.078, 0.066), fArmR: limbMesh(M.cloth, 0.062, 0.05),
       thighL: limbMesh(M.cloth, 0.105, 0.08), shinL: limbMesh(M.cloth, 0.075, 0.06),
       thighR: limbMesh(M.cloth, 0.105, 0.08), shinR: limbMesh(M.cloth, 0.075, 0.06),
       handL: box(M.glove, 0.08, 0.1, 0.035), handR: box(M.glove, 0.08, 0.1, 0.035),
@@ -175,7 +176,8 @@ export class Bot {
     placeBasis(P.torsoUp, mid.clone().lerp(j[J.chest], 0.5), side, up); P.torsoUp.scale.y = up.length() * 0.55;
     placeBasis(P.vest, mid.clone().lerp(j[J.chest], 0.42), side, up);
     const fwdT = new THREE.Vector3().crossVectors(side, up).normalize();
-    placeBasis(P.pouch, mid.clone().lerp(j[J.chest], 0.1).addScaledVector(fwdT, -0.17), side, up);
+    placeBasis(P.pouch, mid.clone().lerp(j[J.chest], 0.1).addScaledVector(fwdT, -0.19), side, up);
+    placeBasis(P.pack, mid.clone().lerp(j[J.chest], 0.55).addScaledVector(fwdT, 0.2), side, up);
     placeLimb(P.neck, j[J.chest], j[J.head]);
     const hu = j[J.head].clone().sub(j[J.chest]);
     placeBasis(P.head, j[J.head], side, hu);

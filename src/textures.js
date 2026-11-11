@@ -68,12 +68,16 @@ const GEN = {
     // 연한 회녹색 페인트, 벗겨진 곳은 회색 콘크리트, 위에서 흘러내린 물자국
     const c = field(S, (u, v) => {
       const n = fbm(u * 8, v * 8, 8, 4, 11), big = fbm(u * 2, v * 2, 2, 3, 12);
-      const peel = sstep(0.66, 0.69, fbm(u * 5, v * 5, 5, 5, 13) * 0.85 + big * 0.25);
-      const streak = Math.pow(fbm(u * 22, v * 1.4, 22, 3, 14), 2.2) * sstep(0.0, 0.5, 1 - v) * 1.4;
-      let r = 170 + (n - 0.5) * 18 - big * 18, g = 176 + (n - 0.5) * 18 - big * 16, b = 160 + (n - 0.5) * 16 - big * 14;
-      r -= streak * 46; g -= streak * 44; b -= streak * 46;
-      const cr = 132 + (n - 0.5) * 30;
-      r = mix(r, cr + 4, peel); g = mix(g, cr, peel); b = mix(b, cr - 10, peel);
+      const fine = vnoise(u * 180, v * 180, 180, 15);
+      const chip = fbm(u * 14, v * 14, 14, 4, 13);
+      const zone = fbm(u * 2.5, v * 2.5, 2.5, 3, 16);
+      const peel = sstep(0.76, 0.78, chip * 0.7 + zone * 0.45);
+      const edge = sstep(0.73, 0.76, chip * 0.7 + zone * 0.45) - peel;
+      const streak = Math.pow(fbm(u * 26, v * 1.2, 26, 3, 14), 2.6) * sstep(0.1, 0.7, 1 - v) * 1.5;
+      let r = 150 + (n - 0.5) * 14 - big * 14 + (fine - 0.5) * 8, g = 152 + (n - 0.5) * 14 - big * 13 + (fine - 0.5) * 8, b = 143 + (n - 0.5) * 12 - big * 12 + (fine - 0.5) * 8;
+      r -= streak * 40; g -= streak * 38; b -= streak * 42;
+      const cr = 126 + (n - 0.5) * 26 + (fine - 0.5) * 20;
+      r = mix(r, cr + 4, peel) - edge * 30; g = mix(g, cr, peel) - edge * 30; b = mix(b, cr - 8, peel) - edge * 28;
       return [r, g, b];
     });
     const ctx = c.getContext('2d');
@@ -95,8 +99,6 @@ const GEN = {
     const ctx = c.getContext('2d');
     ctx.fillStyle = 'rgba(150,150,145,1)';
     for (let i = 0; i <= 4; i++) { ctx.fillRect(i * S / 4 - 2, 0, 4, S); ctx.fillRect(0, i * S / 4 - 2, S, 4); }
-    // 깨지거나 빠진 타일 하나
-    ctx.fillStyle = 'rgba(30,28,26,0.92)'; ctx.fillRect(S / 4 + 3, S / 2 + 3, S / 4 - 6, S / 4 - 6);
     return c;
   },
   block(rng, S = 512) {
@@ -152,7 +154,7 @@ const GEN = {
       const grain = Math.sin((v * 60 + w * 12) * Math.PI) * 0.5 + 0.5;
       const n = fbm(u * 6, v * 6, 6, 4, 72);
       const dirt = sstep(0.55, 0.8, fbm(u * 3, v * 3, 3, 4, 73)) * 0.35 + sstep(0.7, 1, v) * 0.25;
-      let r = 176 + grain * 22 + (n - 0.5) * 30, g = 140 + grain * 18 + (n - 0.5) * 26, b = 98 + grain * 12 + (n - 0.5) * 20;
+      let r = 150 + grain * 18 + (n - 0.5) * 28, g = 132 + grain * 15 + (n - 0.5) * 24, b = 106 + grain * 10 + (n - 0.5) * 20;
       return [r * (1 - dirt), g * (1 - dirt * 1.05), b * (1 - dirt * 1.1)];
     });
     const ctx = c.getContext('2d');
@@ -176,13 +178,13 @@ const GEN = {
       const n = fbm(u * 30, v * 30, 30, 3, 81);
       const wear = sstep(0.45, 0.8, fbm(u * 3, v * 3, 3, 4, 82));
       const grout = ((u * 8) % 1 < 0.012 || (v * 8) % 1 < 0.012) ? 0.75 : 1;
-      let r = (alt ? 168 : 128) + (n - 0.5) * 20, g = (alt ? 160 : 122) + (n - 0.5) * 20, b = (alt ? 140 : 104) + (n - 0.5) * 18;
+      let r = (alt ? 150 : 128) + (n - 0.5) * 20, g = (alt ? 144 : 122) + (n - 0.5) * 20, b = (alt ? 128 : 106) + (n - 0.5) * 18;
       r = mix(r, 110, wear * 0.5); g = mix(g, 100, wear * 0.5); b = mix(b, 84, wear * 0.5);
       return [r * grout, g * grout, b * grout];
     });
   },
   cardboard(rng, S = 256) {
-    const c = field(S, (u, v) => { const n = fbm(u * 6, v * 6, 6, 4, 91); const g = 0.85 + n * 0.3; return [168 * g, 128 * g, 82 * g]; });
+    const c = field(S, (u, v) => { const n = fbm(u * 6, v * 6, 6, 4, 91); const g = 0.8 + n * 0.3; return [146 * g, 122 * g, 94 * g]; });
     const ctx = c.getContext('2d');
     ctx.fillStyle = 'rgba(190,170,130,0.8)'; ctx.fillRect(0, S * 0.46, S, S * 0.08);
     ctx.fillStyle = 'rgba(40,30,20,0.6)'; ctx.font = `${S * 0.08}px Arial`; ctx.fillText('↑↑  취급주의', S * 0.1, S * 0.3);

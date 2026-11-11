@@ -24,6 +24,7 @@ export class Player {
     this.stepPhase = 0; this.stepDist = 0; this.nextStepLen = 0.72;
     this.camShake = new Spring3(90, 9);    // 회전 흔들림 (pitch, yaw, roll)
     this.camOffset = new Spring3(80, 10);  // 위치 흔들림
+    this.camRecoil = new Spring3(140, 13);  // 사격 반동 (라디안)
     this.eyeSmooth = 0;
     this.exertion = 0;
     this.lastYaw = 0; this.lastPitch = 0; this.yawVel = 0; this.pitchVel = 0;
@@ -60,6 +61,7 @@ export class Player {
   shotKick(scale) {
     const r = this.rng;
     this.camShake.v.add(V((2.6 + r() * 2.2) * scale, (r() - 0.5) * 3.4 * scale, (r() - 0.5) * 4.4 * scale));
+    this.camRecoil.v.add(V((0.55 + r() * 0.45) * scale, (r() - 0.5) * 0.5 * scale, (r() - 0.5) * 0.7 * scale));
     this.camOffset.v.add(V((r() - 0.5) * 0.3 * scale, 0.15 * scale, 0.5 * scale));
   }
 
@@ -143,7 +145,7 @@ export class Player {
     this.yawVel = (ny - this.lastYaw) / Math.max(dt, 1e-3); this.pitchVel = (np - this.lastPitch) / Math.max(dt, 1e-3);
     this.lastYaw = ny; this.lastPitch = np;
 
-    this.camShake.step(dt); this.camOffset.step(dt);
+    this.camShake.step(dt); this.camOffset.step(dt); this.camRecoil.step(dt);
   }
 
   land(v) {
@@ -171,9 +173,9 @@ export class Player {
     pos.set(this.pos.x - sy * 0.1, this.eyeSmooth + eye + bobV * sh, this.pos.z - cy * 0.1);
     pos.x += cy * bobL * sh; pos.z -= sy * bobL * sh;
     pos.addScaledVector(this.camOffset.x, 0.02 * sh);
-    let pitch = this.camPitch + (this.camShake.x.x * 0.02 + idleN) * sh;
-    let yaw = this.bodyYaw + (this.camShake.x.y * 0.02 + noise1(t * 0.4, 14) * 0.004 * (1 + this.exertion)) * sh;
-    let rollF = roll;
+    let pitch = this.camPitch + (this.camShake.x.x * 0.02 + idleN + this.camRecoil.x.x) * sh;
+    let yaw = this.bodyYaw + (this.camShake.x.y * 0.02 + this.camRecoil.x.y + noise1(t * 0.4, 14) * 0.004 * (1 + this.exertion)) * sh;
+    let rollF = roll + this.camRecoil.x.z * sh;
     if (!this.alive) {
       // 쓰러짐: 무릎이 꺾이고 옆으로 넘어간다
       const k = Math.min(1, this.deathT / 0.9), e = k * k;

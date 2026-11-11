@@ -31,6 +31,7 @@ uniform vec4 uOpen[24];
 uniform int uOpenN;
 uniform float uGrime;
 uniform float uAO;
+uniform float uDamp;
 float bcHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float bcNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(bcHash(i), bcHash(i + vec2(1.0, 0.0)), f.x), mix(bcHash(i + vec2(0.0, 1.0)), bcHash(i + vec2(1.0, 1.0)), f.x), f.y); }
@@ -74,6 +75,18 @@ const FRAG_GRIME = `
   float dirt = mix(1.0, (0.74 + 0.36 * g) * (0.9 + 0.2 * g2), uGrime);
   float base = mix(1.0, mix(0.58, 1.0, smoothstep(0.0, 0.45 + g * 0.35, hF)), uGrime * wall);
   diffuseColor.rgb *= dirt * base;
+  if (uDamp > 0.0 && wall > 0.5) {
+    float along = dot(vBcW.xz, vec2(0.71, 0.71)) + vBcW.x * 0.3;
+    float line = 0.22 + 0.32 * bcFbm(vec2(along * 0.9, 1.3)) + 0.05 * bcNoise(vec2(along * 9.0, 4.0));
+    float damp = 1.0 - smoothstep(line - 0.02, line + 0.01, hF);
+    float tide = smoothstep(line - 0.05, line, hF) * (1.0 - smoothstep(line, line + 0.035, hF));
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.66, 0.62, 0.52), damp * uDamp);
+    diffuseColor.rgb *= 1.0 - tide * 0.35 * uDamp;
+    float salt = step(0.82, bcNoise(vec2(along * 40.0, hF * 40.0))) * smoothstep(line + 0.12, line, hF) * (1.0 - damp);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.75, 0.74, 0.7), salt * 0.25 * uDamp);
+    float hand = smoothstep(0.85, 1.05, hF) * (1.0 - smoothstep(1.35, 1.6, hF)) * smoothstep(0.45, 0.75, bcFbm(vec2(along * 1.7, 7.0)));
+    diffuseColor.rgb *= 1.0 - hand * 0.18 * uDamp;
+  }
 }
 `;
 
@@ -93,9 +106,9 @@ const FRAG_LIGHT = `
 #include <lights_fragment_end>
 `;
 
-export function bcMaterial(params = {}, { grime = 1, ao = 1 } = {}) {
+export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0 } = {}) {
   const m = new THREE.MeshStandardMaterial({ envMapIntensity: 0.5, ...params });
-  const local = { uGrime: { value: grime }, uAO: { value: ao } };
+  const local = { uGrime: { value: grime }, uAO: { value: ao }, uDamp: { value: damp } };
   m.userData.bc = local;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, envUniforms, local);

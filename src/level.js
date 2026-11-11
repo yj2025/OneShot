@@ -68,9 +68,9 @@ export class Level {
     const t = this.tex;
     const M = (k, p, o) => (this.mats[k] = bcMaterial(p, o));
     M('concrete', { map: t.concrete, roughness: 0.92, color: 0xffffff });
-    M('plaster', { map: t.plaster, roughness: 0.95 });
+    M('plaster', { map: t.plaster, roughness: 0.95 }, { damp: 1 });
     M('ceiling', { map: t.ceiling, roughness: 1.0 }, { grime: 0.5 });
-    M('block', { map: t.block, roughness: 0.95 });
+    M('block', { map: t.block, roughness: 0.95 }, { damp: 0.7 });
     M('asphalt', { map: t.asphalt, roughness: 0.88 });
     M('gravel', { map: t.gravel, roughness: 1.0 });
     M('contBlue', { map: t.corrugated, color: 0x5f7486, roughness: 0.7, metalness: 0.3 }, { grime: 0.6 });
@@ -522,7 +522,88 @@ export class Level {
     this.boxes.push({ min: [Math.min(x0, x1) - 0.05, 0, Math.min(z0, z1) - 0.05], max: [Math.max(x0, x1) + 0.05, 2.4, Math.max(z0, z1) + 0.05], mat: 'fence', thin: true });
   }
 
+  // 바닥에 놓인 물체 아래의 확산광 차폐(부드러운 사각 그림자)
+  contactShadows() {
+    const S = 64, c = document.createElement('canvas'); c.width = c.height = S;
+    const x = c.getContext('2d'); const img = x.createImageData(S, S);
+    for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+      const u = Math.abs(i / (S - 1) * 2 - 1), v = Math.abs(j / (S - 1) * 2 - 1);
+      const d = Math.max(u, v) * 0.6 + Math.hypot(u, v) * 0.4;
+      const a = Math.max(0, Math.min(1, (1 - d) / 0.55));
+      const o = (j * S + i) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = 0; img.data[o + 3] = a * a * 255;
+    }
+    x.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    const geos = [];
+    for (const b of this.boxes) {
+      const w = b.max[0] - b.min[0], d = b.max[2] - b.min[2], h = b.max[1] - b.min[1];
+      if (b.thin || w < 0.25 || d < 0.25 || w * d > 22 || h < 0.08 || h > 3.2) continue;
+      const fy = Math.abs(b.min[1] - FL) < 0.06 ? FL : Math.abs(b.min[1]) < 0.06 ? 0.0 : null;
+      if (fy === null) continue;
+      const pad = Math.min(0.35, 0.12 + h * 0.12);
+      const g = new THREE.PlaneGeometry(w + pad * 2, d + pad * 2); g.rotateX(-Math.PI / 2);
+      g.translate((b.min[0] + b.max[0]) / 2, fy + (fy === 0 ? 0.024 : 0.004), (b.min[2] + b.max[2]) / 2);
+      geos.push(g);
+    }
+    if (!geos.length) return;
+    const m = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.62, polygonOffset: true, polygonOffsetFactor: -3 }));
+    m.renderOrder = 1; this.group.add(m);
+  }
+
+  // 벽의 잡다한 것들: 전선관, 콘센트, 스위치, 게시물, 분전함, 소화기
+  wallClutter() {
+    const r = this.rng;
+    const conduitZ = (z, x0, x1, side) => { this.cyl('metalGalv', [(x0 + x1) / 2, CA - 0.25, z + side * 0.03], 0.012, x1 - x0, { rotZ: Math.PI / 2, collide: false, seg: 6 }); };
+    const conduitX = (x, z0, z1, side) => { this.cyl('metalGalv', [x + side * 0.03, CA - 0.25, (z0 + z1) / 2], 0.012, z1 - z0, { rotX: Math.PI / 2, collide: false, seg: 6 }); };
+    const dropZ = (x, z, side, y1) => { this.cyl('metalGalv', [x, (CA - 0.25 + y1) / 2, z + side * 0.03], 0.011, CA - 0.25 - y1, { collide: false, seg: 6 }); this.box('metalGalv', [x - 0.045, y1 - 0.06, z + (side > 0 ? 0 : -0.04)], [x + 0.045, y1 + 0.06, z + (side > 0 ? 0.04 : 0)], { collide: false }); };
+    const dropX = (x, z, side, y1) => { this.cyl('metalGalv', [x + side * 0.03, (CA - 0.25 + y1) / 2, z], 0.011, CA - 0.25 - y1, { collide: false, seg: 6 }); this.box('metalGalv', [x + (side > 0 ? 0 : -0.04), y1 - 0.06, z - 0.045], [x + (side > 0 ? 0.04 : 0), y1 + 0.06, z + 0.045], { collide: false }); };
+    // 복도 북쪽 벽(z=-5, 복도 쪽 면은 z=-5.075)
+    conduitZ(-5.075, -11.8, 11.8, -1);
+    for (const x of [-10.4, -4.6, -1.2, 3.5, 9.6]) dropZ(x, -5.075, -1, FL + 1.2);
+    for (const x of [-7.2, 2.2, 6.3]) dropZ(x, -5.075, -1, FL + 0.3);
+    // 복도 분전함
+    this.box('metalGalv', [-1.9, FL + 1.2, -6.53], [-1.3, FL + 1.95, -6.44], { collide: false });
+    this.box('metalDark', [-1.88, FL + 1.22, -6.441], [-1.32, FL + 1.93, -6.438], { collide: false });
+    // 로비·사무실·창고
+    conduitX(-11.7, -4.8, -0.4, 1); dropX(-11.7, -1.8, 1, FL + 1.25);
+    conduitZ(-0.3, -2.8, 3.8, -1); dropZ(-2.2, -0.3, -1, FL + 0.3); dropZ(3.0, -0.3, -1, FL + 1.2);
+    conduitX(11.7, -4.8, -0.4, -1); dropX(11.7, -3.5, -1, FL + 1.2);
+    // 화이트보드(사무실), 게시판(로비)
+    this.box('paper', [3.92, FL + 1.0, -4.2], [3.925, FL + 2.0, -2.6], { collide: false, tile: 1.6 });
+    this.box('metalGalv', [3.9, FL + 0.97, -4.23], [3.925, FL + 1.0, -2.57], { collide: false });
+    // 게시물: 벽에 붙은 종이 몇 장(살짝 기울어짐)
+    const notes = [[-11.83, -3.4, 'x'], [-11.83, -3.15, 'x'], [-3.08, -1.8, 'x'], [-6.0, -5.08, 'z'], [-5.6, -5.08, 'z'], [4.42, -9.0, 'x'], [-11.83, -12.0, 'x'], [-1.0, -6.52, 'z']];
+    for (const [a, b, ax] of notes) {
+      const y = FL + 1.35 + r() * 0.3;
+      if (ax === 'x') this.obox('paper', [a, y, b], [0.003, 0.297, 0.21], 0, { collide: false, tile: 0.3, rotX: (r() - 0.5) * 0.15 });
+      else this.obox('paper', [a, y, b], [0.21, 0.297, 0.003], 0, { collide: false, tile: 0.3, rotZ: (r() - 0.5) * 0.15 });
+    }
+    // 소화기 (벽 고리)
+    for (const [x, z] of [[-11.6, -5.4], [4.35, -7.2], [11.6, -8.0]]) { this.cyl('drumRed', [x, FL + 0.55, z], 0.08, 0.5, { collide: false, seg: 10 }); this.cyl('rubber', [x, FL + 0.85, z], 0.03, 0.1, { collide: false, seg: 6 }); }
+    // 바닥 쓰레기: 깨진 타일 조각, 캔, 전선
+    for (let i = 0; i < 40; i++) {
+      const inside = i < 28;
+      const x = inside ? -11.5 + r() * 23 : -15 + r() * 30, z = inside ? -15.5 + r() * 15.2 : 1 + r() * 20;
+      const y = (inside ? FL : 0.02) + 0.006;
+      if (r() < 0.5) this.obox(inside ? 'ceiling' : 'concrete', [x, y, z], [0.06 + r() * 0.2, 0.012, 0.05 + r() * 0.15], r() * 6, { collide: false, tile: 0.6 });
+      else this.cyl('metalGalv', [x, y + 0.025, z], 0.03, 0.11, { collide: false, seg: 8, rotX: Math.PI / 2, rotZ: r() * 6 });
+    }
+  }
+
+  missingTiles() {
+    // 빠진 천장 타일 몇 장 (검은 구멍 + 비스듬히 걸린 타일)
+    const spots = [[-9.9, -3.3], [1.5, -1.5], [-4.5, -5.7], [9.3, -3.9], [7.5, -13.8], [-0.3, -3.9]];
+    for (const [x, z] of spots) {
+      const gx = Math.round(x / 0.6) * 0.6, gz = Math.round(z / 0.6) * 0.6;
+      this.box('trash', [gx - 0.28, CA - 0.002, gz - 0.28], [gx + 0.28, CA + 0.01, gz + 0.28], { collide: false });
+      if (this.rng() < 0.5) this.obox('ceiling', [gx + 0.1, CA - 0.2, gz], [0.58, 0.015, 0.58], 0.1, { collide: false, tile: 2.4, rotX: 0.6, rotZ: 0.2 });
+    }
+  }
+
   finish() {
+    this.missingTiles();
+    this.wallClutter();
+    this.contactShadows();
     for (const [k, list] of this.buckets) {
       if (!list.length) continue;
       const g = mergeGeometries(list, false);
