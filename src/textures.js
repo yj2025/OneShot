@@ -169,8 +169,8 @@ const GEN = {
     });
     const ctx = c.getContext('2d');
     // 스프레이로 적은 구역 표시
-    ctx.save(); ctx.translate(S * 0.3, S * 0.4); ctx.rotate(-0.05);
-    ctx.font = `bold ${S * 0.2}px Arial`; ctx.fillStyle = 'rgba(160,40,30,0.75)'; ctx.shadowColor = 'rgba(160,40,30,0.5)'; ctx.shadowBlur = 6;
+    ctx.save(); ctx.translate(S * (0.1 + rng() * 0.5), S * (0.3 + rng() * 0.4)); ctx.rotate(-0.05 + (rng() - 0.5) * 0.2);
+    ctx.font = `bold ${S * 0.09}px Arial`; ctx.fillStyle = 'rgba(150,45,35,0.5)'; ctx.shadowColor = 'rgba(160,40,30,0.5)'; ctx.shadowBlur = 6;
     const marks = ['B2', 'C4', 'A1', '7', 'D3', '→ 2', 'X', '12'];
     ctx.fillText(marks[Math.floor(rng() * marks.length)], 0, 0);
     if (rng() < 0.6) { ctx.font = `${S * 0.07}px Arial`; ctx.fillStyle = 'rgba(30,30,30,0.6)'; ctx.fillText(['탄착 금지', 'STOP', '진입로', '사선 2'][Math.floor(rng() * 4)], S * 0.05, S * 0.32); }

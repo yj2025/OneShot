@@ -354,10 +354,13 @@ export class Level {
     const bg = [[-60, -55, 30, 9, 20], [-20, -48, 26, 12, 14], [25, -52, 34, 8, 18], [65, -30, 20, 14, 40], [-70, 0, 18, 7, 50], [62, 20, 22, 10, 26], [-40, 70, 40, 11, 14], [30, 75, 30, 8, 16]];
     for (const [x, z, w, h, d] of bg) this.box('backdrop', [x - w / 2, 0, z - d / 2], [x + w / 2, h, z + d / 2], { collide: false, tile: 4 });
     const tr = mulberry32(77);
-    for (let i = 0; i < 70; i++) {
-      const a = tr() * Math.PI * 2, d = 45 + tr() * 50;
-      const x = Math.cos(a) * d * 1.3, z = Math.sin(a) * d + 5;
-      const h = 7 + tr() * 9;
+    const clusters = Array.from({ length: 9 }, () => { const a = tr() * Math.PI * 2, d = 40 + tr() * 45; return [Math.cos(a) * d * 1.3, Math.sin(a) * d + 5]; });
+    for (let i = 0; i < 90; i++) {
+      const c = clusters[i % clusters.length];
+      const x = c[0] + (tr() - 0.5) * 22 * (0.4 + tr()), z = c[1] + (tr() - 0.5) * 16 * (0.4 + tr());
+      if (Math.abs(x) < 30 && z > -26 && z < 36) continue;
+      const h = 3.5 + tr() * tr() * 14;
+      if (h < 6) { for (let q = 0; q < 4; q++) { const g = new THREE.IcosahedronGeometry(0.8 + tr() * 1.4, 1); g.scale(1.2, 0.7, 1.1); g.translate(x + (tr() - 0.5) * 3, 0.6 + tr(), z + (tr() - 0.5) * 3); this.add('treeDark', g); } continue; }
       // 활엽수: 줄기에서 뻗은 가지 끝마다 성긴 잎 덩어리
       const nb = 4 + Math.floor(tr() * 4);
       for (let k = 0; k < nb; k++) {
@@ -707,7 +710,31 @@ export class Level {
     const m = new THREE.Mesh(mergeGeometries(tufts), this.mats.weeds); this.group.add(m);
   }
 
+  // 쓰던 물건이 흩어진 밀도: 마당과 실내 바닥
+  clutter() {
+    const r = this.rng;
+    const free = (x, z, y0, rad) => { for (const b of this.boxes) { if (b.max[1] < y0 + 0.05 || b.min[1] > y0 + 1.5) continue; if (x > b.min[0] - rad && x < b.max[0] + rad && z > b.min[2] - rad && z < b.max[2] + rad) return false; } return true; };
+    const place = (count, area, y0, fn) => { let n = 0, tries = 0; while (n < count && tries < count * 20) { tries++; const x = area[0] + r() * (area[2] - area[0]), z = area[1] + r() * (area[3] - area[1]); if (!free(x, z, y0, 0.35)) continue; if (Math.abs(x) < 4.2 && z > 7 && y0 === 0) continue; fn(x, z, y0); n++; } };
+    const yard = [-22.5, -18.5, 22.5, 28.5], inside = [-11.6, -15.6, 11.6, -0.4];
+    const cinder = (x, z, y) => { const a = r() * 6; this.obox('jersey', [x, y + 0.1, z], [0.39, 0.19, 0.19], a, { tile: 0.6, mat: 'concrete', round: 0.012 }); if (r() < 0.4) this.obox('jersey', [x + 0.05, y + 0.29, z], [0.39, 0.19, 0.19], a + (r() - 0.5) * 0.5, { tile: 0.6, collide: false, round: 0.012 }); };
+    const plank = (x, z, y) => this.obox(r() < 0.5 ? 'pallet' : 'plywoodB', [x, y + 0.012, z], [0.1 + r() * 0.15, 0.022, 1.2 + r() * 1.8], r() * 6, { tile: 1.2, collide: false, rotZ: (r() - 0.5) * 0.06, round: 0.006 });
+    const bucket = (x, z, y) => { const fall = r() < 0.4; this.cyl(r() < 0.5 ? 'cone' : 'drumBlue', [x, y + (fall ? 0.14 : 0.18), z], 0.15, 0.36, { r2: 0.13, seg: 12, collide: !fall, mat: 'plastic', rotX: fall ? Math.PI / 2 : 0, rotZ: fall ? r() * 6 : 0 }); };
+    const sandbag = (x, z, y) => { for (let i = 0; i < 3 + Math.floor(r() * 4); i++) { const g = new THREE.SphereGeometry(0.3, 8, 6); g.scale(1, 0.32, 0.55); g.rotateY(r() * 6); g.translate(x + (r() - 0.5) * 0.8, y + 0.08 + Math.floor(i / 3) * 0.16, z + (r() - 0.5) * 0.5); this.add('fabricChair', g); } this.boxes.push({ min: [x - 0.55, y, z - 0.4], max: [x + 0.55, y + 0.35, z + 0.4], mat: 'cloth' }); };
+    const mound = (x, z, y) => { const s = 0.8 + r() * 1.4; const g = new THREE.SphereGeometry(s, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const k = 0.8 + r() * 0.35; p.setXYZ(i, p.getX(i) * k, p.getY(i) * 0.32 * k, p.getZ(i) * k); } g.computeVertexNormals(); g.translate(x, y - 0.03, z); this.add('gravel', g); };
+    const tarp = (x, z, y) => { const g = new THREE.PlaneGeometry(1.4 + r(), 1.0 + r(), 8, 6); const p = g.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.abs(Math.sin(p.getX(i) * 4 + p.getY(i) * 3)) * 0.08 + r() * 0.03); g.rotateX(-Math.PI / 2); g.rotateY(r() * 6); g.translate(x, y + 0.02, z); this.add('drumBlue', g); };
+    const rebar = (x, z, y) => { for (let i = 0; i < 4; i++) this.cyl('metalDark', [x + (r() - 0.5) * 0.3, y + 0.02, z + (r() - 0.5) * 0.3], 0.008, 1.5 + r() * 2, { collide: false, seg: 4, rotX: Math.PI / 2, rotZ: r() * 0.3 }); };
+    const can = (x, z, y) => this.cyl('metalGalv', [x, y + 0.035, z], 0.033, 0.12, { collide: false, seg: 8, rotX: Math.PI / 2, rotZ: r() * 6 });
+    const brokenChair = (x, z, y) => { this.obox('fabricChair', [x, y + 0.2, z], [0.46, 0.06, 0.46], r() * 6, { tile: 1, collide: false, rotX: 1.3 }); this.cyl('metalDark', [x + 0.3, y + 0.05, z], 0.025, 0.5, { collide: false, rotZ: Math.PI / 2 }); };
+    const cardboardSheet = (x, z, y) => this.obox('cardboardC', [x, y + 0.004, z], [0.6 + r() * 0.5, 0.006, 0.4 + r() * 0.4], r() * 6, { tile: 0.6, collide: false });
+    const debrisPile = (x, z, y) => { for (let i = 0; i < 9; i++) this.obox(r() < 0.5 ? 'ceiling' : 'concrete', [x + (r() - 0.5) * 0.7, y + 0.02 + r() * 0.05, z + (r() - 0.5) * 0.7], [0.06 + r() * 0.25, 0.02 + r() * 0.05, 0.05 + r() * 0.2], r() * 6, { collide: false, tile: 0.6, rotX: (r() - 0.5) * 0.6, rotZ: (r() - 0.5) * 0.6 }); };
+    place(26, yard, 0, cinder); place(16, yard, 0, plank); place(9, yard, 0, bucket); place(6, yard, 0, sandbag);
+    place(7, yard, 0, mound); place(4, yard, 0, tarp); place(4, yard, 0, rebar); place(30, yard, 0, can);
+    place(14, inside, FL, plank); place(8, inside, FL, bucket); place(10, inside, FL, cardboardSheet); place(12, inside, FL, debrisPile);
+    place(4, inside, FL, brokenChair); place(20, inside, FL, can); place(8, inside, FL, cinder);
+  }
+
   finish() {
+    this.clutter();
     this.exteriorDetails();
     this.missingTiles();
     this.wallClutter();
