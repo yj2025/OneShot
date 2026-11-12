@@ -954,6 +954,12 @@ export class Level {
         piece.lite = w.lite || (low && w.kind !== 'ground');
         if (s.key === 'contBlue' || s.key === 'contRust') piece.reliefK = 3; else if (s.key === 'locker') piece.reliefK = 1.6;
         if (s.erode && !low && !piece.m && !piece.warp) { piece.warp = erodeWarp(s); piece.wearAdd = piece.warp.wear; }
+        // 방호벽: 상자 셋을 쌓은 계단 모양이 아니라 아래가 넓고 위로 갈수록 좁아지는 비탈면이다(아래 상자 0.6 → 0.34 m, 가운데 상자 0.34 → 0.24 m)
+        if (s.key === 'jersey' && piece.m && piece.h[2] >= 1 && !piece.warp && !low) {
+          const hx = piece.h[0], hy = piece.h[1];
+          if (hx > 0.25) piece.warp = (x, y, z) => [x * (1 - 0.43 * (y / hy * 0.5 + 0.5)), y, z];
+          else if (hx > 0.12) piece.warp = (x, y, z) => [x * (1.14 - 0.34 * (y / hy * 0.5 + 0.5)), y, z];
+        }
         // 선반 위의 종이 상자처럼 돌려 놓은 무른 상자도 눌려 있다
         if (w.kind === 'soft' && !piece.warp && !w.lite && piece.m) { const e = piece.m.elements, sd = Math.round(e[12] * 131 + e[13] * 71 + e[14] * 37); piece.warp = crushWarp(piece.h, (n) => hash(sd, n, 9)); }
         const wg = tool.build(piece, WEAR[w.kind]); this.add(s.key, wg, false);
