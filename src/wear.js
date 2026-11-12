@@ -15,13 +15,13 @@ import * as THREE from 'three';
 // off: 모서리에서 격자선을 두는 거리(깎인 단면을 표현할 해상도), seg: 그 사이의 격자 간격,
 // relief: 큰 면의 굴곡 [높이(m), 물결 길이(m)]
 export const WEAR = {
-  masonry: { r: 0.011, chip: [0.55, 0.03, 0.09], brk: [0.07, 0.12, 0.3], tint: 0.6, spread: 2.6, off: [0.035, 0.08, 0.16, 0.3], seg: 0.16, relief: [0.004, 0.9] },
-  plaster: { r: 0.006, chip: [0.35, 0.03, 0.09], brk: [0.05, 0.12, 0.35], tint: -0.6, spread: 4.5, off: [0.04, 0.12], seg: 0.2, relief: [0.007, 0.7] },
-  wood: { r: 0.004, chip: [0.8, 0.015, 0.05], brk: [0.08, 0.06, 0.15], tint: 0.45, spread: 2.5, off: [0.025, 0.07], seg: 0.12, relief: [0.0, 1] },
-  metal: { r: 0.003, chip: [0.5, 0.01, 0.03], brk: [0.03, 0.04, 0.08], tint: -0.5, spread: 3.5, off: [0.03], seg: 0.2, relief: [0.005, 0.45] },
+  masonry: { r: 0.011, chip: [0.6, 0.03, 0.09], brk: [0.09, 0.12, 0.3], tint: 0.7, spread: 3.4, off: [0.035, 0.08, 0.16, 0.3], seg: 0.16, relief: [0.004, 0.9] },
+  plaster: { r: 0.006, chip: [0.45, 0.03, 0.09], brk: [0.09, 0.12, 0.35], tint: -0.7, spread: 5.0, off: [0.04, 0.12], seg: 0.2, relief: [0.009, 0.7], cap: 28 },
+  wood: { r: 0.004, chip: [0.9, 0.015, 0.05], brk: [0.12, 0.06, 0.15], tint: 0.55, spread: 3.2, off: [0.025, 0.07], seg: 0.12, relief: [0.0, 1] },
+  metal: { r: 0.003, chip: [0.9, 0.012, 0.035], brk: [0.12, 0.04, 0.09], tint: -0.6, spread: 4.5, off: [0.03], seg: 0.2, relief: [0.005, 0.45] },
   soft: { r: 0.014, chip: [0.8, 0.015, 0.05], brk: [0.1, 0.05, 0.1], tint: 0.25, spread: 2.0, off: [0.04], seg: 0.1, relief: [0.006, 0.22] },
   // 땅: 모서리는 닳지 않고 면만 울퉁불퉁하다. 굴곡은 위쪽으로만 준다(놓인 물건이 뜨지 않고 조금 묻힌다). cap: 긴 면을 나누는 칸 수의 상한
-  ground: { r: 0.004, chip: [0, 0, 0], brk: [0, 0, 0], tint: 0, spread: 0, off: [], seg: 0.45, relief: [0.022, 2.3], reliefUp: true, cap: 110 },
+  ground: { r: 0.004, chip: [0, 0, 0], brk: [0, 0, 0], tint: 0, spread: 0, off: [], seg: 0.45, relief: [0.05, 2.6], reliefUp: true, cap: 110 },
 };
 
 // 면: [법선 축, 부호, u축, v축, uv 함수] (boxGeometry와 같은 월드 좌표 UV)
@@ -96,9 +96,63 @@ export class WearTool {
     const rb = Math.min(Math.max(P.r, spec.round || 0), Math.min(h[0], h[1], h[2]) * 0.45);
     const dims = [h[0], h[1], h[2]].sort((a, b) => b - a);
     const cap = P.cap || (dims[1] > 1.25 ? 16 : 44);   // 넓은 판(벽, 바닥)은 굵게 나눈다
+    const tintK = Math.sign(P.tint) * Math.min(1, Math.abs(P.tint) * 1.6);   // 닳음 표시의 부호(밝게/어둡게)와 세기
     const relief = !lite && spec.relief !== false && P.relief[0] > 0 && dims[1] > 0.25 ? [P.relief[0] * (spec.reliefK || 1), P.relief[1]] : null;
 
-    // 축마다 격자선: 양 끝은 모서리 가까이 촘촘하게, 가운데는 seg 간격
+    // 모서리 하나의 씨앗. 축 정렬 상자는 모서리 선의 월드 좌표로 정한다(같은 선을 나눠 가진 두 상자가 같은 닳음을 얻는다)
+    const edgeSeed = (a, sb, sc) => { const b = (a + 1) % 3, cc = (a + 2) % 3; return (me ? hash(seedBox, a * 4 + (sb > 0 ? 2 : 0) + (sc > 0 ? 1 : 0), 3) : hash(a + 1, Math.round((c[b] + sb * h[b]) * 500), Math.round((c[cc] + sc * h[cc]) * 500))) * 1e9 | 0; };
+    const sOf = (a, v) => me ? v : v + c[a];   // 모서리를 따라가는 좌표(축 정렬 상자는 월드 좌표)
+    const CL = 0.22, BL = 1.1;                 // 이 빠짐과 큰 깨짐이 일어날 수 있는 칸의 길이
+    // 좌표 s에서 깎이는 깊이(이 빠짐과 큰 깨짐 가운데 큰 쪽)
+    const biteAt = (seed, s, use) => {
+      let bite = 0;
+      const k0 = Math.floor(s / CL), j0 = Math.floor(s / BL);
+      for (let k = k0 - 1; k <= k0 + 1; k++) {
+        if (hash(seed, k, 1) > P.chip[0] * CL * use) continue;
+        const size = P.chip[1] + (P.chip[2] - P.chip[1]) * hash(seed, k, 3) ** 2, span = size * (1.2 + 1.6 * hash(seed, k, 4));
+        bite = Math.max(bite, size * Math.max(0, 1 - Math.abs(s - (k + hash(seed, k, 2)) * CL) / span) ** 0.8);
+      }
+      for (let k = j0 - 1; k <= j0 + 1; k++) {
+        if (hash(seed, k, 11) > P.brk[0] * BL * use) continue;
+        const size = P.brk[1] + (P.brk[2] - P.brk[1]) * hash(seed, k, 13), span = size * (0.9 + hash(seed, k, 14));
+        bite = Math.max(bite, size * Math.max(0, 1 - Math.abs(s - (k + hash(seed, k, 12)) * BL) / span) ** 0.6 * (0.7 + 0.6 * vnoise(seed + 5, s / 0.07)));
+      }
+      return bite;
+    };
+    // 구간 [s0, s1] 안에서 깎이는 자리 목록 [가운데, 폭, 크기]. 그 자리에 격자선을 놓으려고 쓴다
+    const events = (seed, s0, s1, useOf) => {
+      const out = [];
+      for (let k = Math.floor(s0 / CL); k <= Math.floor(s1 / CL); k++) {
+        const cs = (k + hash(seed, k, 2)) * CL;
+        if (cs < s0 || cs > s1 || hash(seed, k, 1) > P.chip[0] * CL * useOf(cs)) continue;
+        const size = P.chip[1] + (P.chip[2] - P.chip[1]) * hash(seed, k, 3) ** 2;
+        out.push([cs, size * (1.2 + 1.6 * hash(seed, k, 4)), size]);
+      }
+      for (let k = Math.floor(s0 / BL); k <= Math.floor(s1 / BL); k++) {
+        const cs = (k + hash(seed, k, 12)) * BL;
+        if (cs < s0 || cs > s1 || hash(seed, k, 11) > P.brk[0] * BL * useOf(cs)) continue;
+        const size = P.brk[1] + (P.brk[2] - P.brk[1]) * hash(seed, k, 13);
+        out.push([cs, size * (0.9 + hash(seed, k, 14)), size]);
+      }
+      return out;
+    };
+    const eps = 0.012, p3 = [0, 0, 0];
+    // 모서리의 한 점이 드러나 있는가: 둘레의 세 방향(면 b의 바깥, 면 c의 바깥, 대각선 바깥)이 모두 비어 있어야 한다
+    const exposed = (a, sb, sc, v) => {
+      const b = (a + 1) % 3, cc = (a + 2) % 3;
+      p3[a] = Math.max(-h[a] + 0.015, Math.min(h[a] - 0.015, v)); p3[b] = sb * h[b]; p3[cc] = sc * h[cc];
+      for (const [kb, kc] of [[1, 1], [1, -1], [-1, 1]]) {
+        const q = [p3[0], p3[1], p3[2]]; q[b] += kb * sb * eps; q[cc] += kc * sc * eps;
+        const w = toWorld(q);
+        if (this.solid(w[0], w[1], w[2], self)) return false;
+      }
+      return true;
+    };
+    // 사람 손과 발이 닿는 높이(바닥에서 1.3 m 안쪽)의 모서리가 더 닳는다
+    const useAt = (a, sb, sc, v) => { p3[a] = v; p3[(a + 1) % 3] = sb * h[(a + 1) % 3]; p3[(a + 2) % 3] = sc * h[(a + 2) % 3]; return toWorld(p3)[1] < 2.0 ? 1.6 : 0.8; };
+
+    // 축마다 격자선: 양 끝은 모서리 가까이 촘촘하게, 가운데는 seg 간격, 그리고 깎이는 자리마다 세 줄(시작, 가운데, 끝).
+    // 깎이는 자리에 줄을 놓지 않으면 폭이 몇 cm인 이 빠짐은 격자선 사이로 빠져 거의 나타나지 않는다
     const L = [0, 1, 2].map(a => {
       const half = h[a], offs = [0, ...(rb >= 0.006 ? [rb * 0.45] : []), rb, ...(lite ? [] : P.off)].filter((o, i, arr) => o < half * 0.92 && (i === 0 || o > arr[i - 1] + 1e-4));
       const lines = offs.map(o => -half + o);
@@ -106,54 +160,34 @@ export class WearTool {
       const n = lite ? 1 : Math.min(cap, Math.max(1, Math.round(span / (P.seg * this.segScale))));
       for (let i = 1; i < n; i++) lines.push(-half + last + span * i / n);
       for (let i = offs.length - 1; i >= 0; i--) lines.push(half - offs[i]);
+      if (!lite && P.chip[0] > 0) {
+        // 이 축을 따라 뻗은 네 모서리의 드러난 자리에서, 큰 것부터 고른다
+        const ev = [];
+        for (const sb of [-1, 1]) for (const sc of [-1, 1]) {
+          const seed = edgeSeed(a, sb, sc), off = me ? 0 : c[a];
+          for (const [cs, sp, size] of events(seed, sOf(a, -half + 0.02), sOf(a, half - 0.02), (s) => useAt(a, sb, sc, s - off))) if (exposed(a, sb, sc, cs - off)) ev.push([cs - off, sp, size]);
+        }
+        ev.sort((x, y) => y[2] - x[2]);
+        for (const [v, sp] of ev.slice(0, Math.max(2, Math.round(6 / this.segScale)))) for (const t of [v - sp, v, v + sp]) if (t > -half + last + 0.004 && t < half - last - 0.004) lines.push(t);
+        lines.sort((x, y) => x - y);
+        for (let i = lines.length - 2; i > 0; i--) if (lines[i + 1] - lines[i] < 0.006) lines.splice(i, 1);
+      }
       return lines;
     });
 
     // 모서리 12개: 축 a를 따라 뻗고, 나머지 두 축 b, c의 부호로 구분한다. rad[e][i] = 격자선 i에서의 깎인 폭, pat[e][i] = 그 둘레의 벗겨진 범위
     const rad = [], pat = [];
-    const eps = 0.012;
-    const p3 = [0, 0, 0];
     for (let a = 0; a < 3; a++) {
       const b = (a + 1) % 3, cc = (a + 2) % 3;
       for (const sb of [-1, 1]) for (const sc of [-1, 1]) {
         const n = L[a].length, ex = new Uint8Array(n), r = new Float32Array(n), pt = new Float32Array(n);
-        // 모서리의 씨앗: 축 정렬 상자는 모서리 선의 월드 좌표로 정한다. 같은 선을 나눠 가진 두 상자가 같은 닳음을 얻는다
-        let seed;
-        if (me) seed = hash(seedBox, a * 4 + (sb > 0 ? 2 : 0) + (sc > 0 ? 1 : 0), 3) * 1e9 | 0;
-        else seed = hash(a + 1, Math.round((c[b] + sb * h[b]) * 500), Math.round((c[cc] + sc * h[cc]) * 500)) * 1e9 | 0;
-        const rmax = Math.min(h[b], h[cc]) * 0.34;
+        const seed = edgeSeed(a, sb, sc), rmax = Math.min(h[b], h[cc]) * 0.34;
         for (let i = 0; i < n; i++) {
-          p3[a] = Math.max(-h[a] + 0.015, Math.min(h[a] - 0.015, L[a][i])); p3[b] = sb * h[b]; p3[cc] = sc * h[cc];
-          // 모서리 둘레의 세 방향(면 b의 바깥, 면 c의 바깥, 대각선 바깥)이 모두 비어 있어야 드러난 모서리다
-          let open = true;
-          for (const [kb, kc] of [[1, 1], [1, -1], [-1, 1]]) {
-            const q = [p3[0], p3[1], p3[2]]; q[b] += kb * sb * eps; q[cc] += kc * sc * eps;
-            const w = toWorld(q);
-            if (this.solid(w[0], w[1], w[2], self)) { open = false; break; }
-          }
-          ex[i] = open ? 1 : 0;
-          if (!open) continue;
-          const wp = toWorld(p3), s = me ? L[a][i] : wp[a];
-          // 사람 손과 발이 닿는 높이(바닥에서 1.3 m 안쪽)의 모서리가 더 닳는다
-          const use = wp[1] < 2.0 ? 1.6 : 0.8;
+          ex[i] = exposed(a, sb, sc, L[a][i]) ? 1 : 0;
+          if (!ex[i]) continue;
+          const s = sOf(a, L[a][i]);
           let v = rb * (0.55 + 0.9 * vnoise(seed, s / 0.35));
-          if (!lite) {
-            let bite = 0;
-            const cl = 0.22, k0 = Math.floor(s / cl);
-            for (let k = k0 - 1; k <= k0 + 1; k++) {
-              if (hash(seed, k, 1) > P.chip[0] * cl * use) continue;
-              const size = P.chip[1] + (P.chip[2] - P.chip[1]) * hash(seed, k, 3) ** 2, span = size * (1.2 + 1.6 * hash(seed, k, 4));
-              bite = Math.max(bite, size * Math.max(0, 1 - Math.abs(s - (k + hash(seed, k, 2)) * cl) / span) ** 0.8);
-            }
-            const bl = 1.1, j0 = Math.floor(s / bl);
-            for (let k = j0 - 1; k <= j0 + 1; k++) {
-              if (hash(seed, k, 11) > P.brk[0] * bl * use) continue;
-              const size = P.brk[1] + (P.brk[2] - P.brk[1]) * hash(seed, k, 13), span = size * (0.9 + hash(seed, k, 14));
-              bite = Math.max(bite, size * Math.max(0, 1 - Math.abs(s - (k + hash(seed, k, 12)) * bl) / span) ** 0.6 * (0.7 + 0.6 * vnoise(seed + 5, s / 0.07)));
-            }
-            v += bite;
-            pt[i] = Math.min(0.6, bite * P.spread);
-          }
+          if (!lite) { const bite = biteAt(seed, s, useAt(a, sb, sc, L[a][i])); v += bite; pt[i] = Math.min(0.7, bite * P.spread); }
           r[i] = Math.min(v, rmax);
         }
         // 이음으로 넘어가는 자리에서 폭이 갑자기 0이 되지 않게 이웃 격자선의 드러남과 맞춘다
@@ -234,7 +268,7 @@ export class WearTool {
         lp[k * 3] = x; lp[k * 3 + 1] = y; lp[k * 3 + 2] = z; ln[k * 3] = nrm[0]; ln[k * 3 + 1] = nrm[1]; ln[k * 3 + 2] = nrm[2];
         const t = uvf(me ? p : [p[0] + c[0], p[1] + c[1], p[2] + c[2]]);
         uv.push(t[0] / tile, t[1] / tile);
-        wear.push(wv * P.tint + shade);
+        wear.push(wv * tintK + shade);
       }
       // 삼각형의 감는 방향: u × v 가 법선 쪽을 향하게
       const flip = ((fu + 1) % 3 === fv ? 1 : -1) * fs < 0;

@@ -18,7 +18,7 @@ const WEAR_KEYS = {
   plywood: 'wood', plywoodB: 'wood', plywoodC: 'wood', pallet: 'wood', deskTop: 'wood', doorPaint: 'wood',
   metalDark: 'metal', metalGalv: 'metal', locker: 'metal', roofMetal: 'metal', contBlue: 'metal', contRust: 'metal', steelGrate: 'metal', acUnit: 'metal',
   cardboard: 'soft', cardboardB: 'soft', cardboardC: 'soft', fabricChair: 'soft',
-  gravel: 'ground', asphalt: 'ground',
+  gravel: 'ground', asphalt: 'ground', skirt: 'wood',
 };
 
 // 상자 (월드 좌표 UV, tile = 텍스처 1장이 덮는 미터)
@@ -796,11 +796,16 @@ export class Level {
       return [piece(s.min, s.max, (hsh(0, 22) - 0.5) * 0.018 * k, (hsh(0, 21) - 0.5) * 0.07, (hsh(0, 23) - 0.5) * 0.018 * k, [0, 0, 0], kind === 'soft' ? { warp: crushWarp(size.map(v => v / 2), (n) => hsh(0, 30 + n)) } : {})];
     }
     const t = size[0] < size[2] ? 0 : 2, u = 2 - t;   // 얇은 축과 가로축
+    // 문짝: 벽에 딱 붙어 있지 않고 조금 벌어져 있고, 경첩이 늘어져 한쪽으로 처져 있다
+    if (s.key === 'doorPaint' && size[t] <= 0.07 && size[1] >= 1.6) {
+      const ajar = (0.03 + hsh(0, 51) * 0.09) * (hsh(0, 52) < 0.5 ? -1 : 1), droop = (hsh(0, 53) - 0.5) * 0.03;
+      return [piece(s.min, s.max, t === 0 ? droop : 0, ajar, t === 2 ? droop : 0, [0, -0.004, 0], {})];
+    }
     if (kind === 'wood' && size[t] <= 0.07 && size[1] >= 1.0 && size[u] >= 1.3) {
       const n = Math.ceil(size[u] / 1.22), out = [];
       for (let i = 0; i < n; i++) {
         const min = [...s.min], max = [...s.max];
-        min[u] = s.min[u] + size[u] * i / n + (i ? 0.002 : 0); max[u] = s.min[u] + size[u] * (i + 1) / n - (i < n - 1 ? 0.002 : 0);
+        min[u] = s.min[u] + size[u] * i / n + (i ? 0.004 : 0); max[u] = s.min[u] + size[u] * (i + 1) / n - (i < n - 1 ? 0.004 : 0);
         const bow = (hsh(i, 1) < 0.5 ? -1 : 1) * (0.012 + hsh(i, 1) * 0.02), ph = hsh(i, 2) * 6, hu = (max[u] - min[u]) / 2, hy = size[1] / 2;
         const off = [0, 0, 0]; off[t] = (hsh(i, 3) - 0.5) * 0.008;
         const lean = (hsh(i, 4) - 0.5) * 0.036, yaw = (hsh(i, 5) - 0.5) * 0.024;
@@ -811,12 +816,23 @@ export class Level {
       return out;
     }
     const long = size[0] > size[2] ? 0 : 2, w = 2 - long;
+    // 걸레받이처럼 길고 얇은 띠: 토막으로 나뉘어 있고, 여섯 토막에 하나는 떨어져 나갔고, 가끔 한쪽이 벽에서 들떠 있다
+    if (s.key === 'skirt' && size[long] >= 1.2) {
+      const out = []; let a = s.min[long], i = 0;
+      while (a < s.max[long] - 0.05) {
+        const b = a + Math.min(s.max[long] - a, 1.3 + hsh(i, 61) * 1.4), e = hsh(i, 62);
+        const min = [...s.min], max = [...s.max]; min[long] = a + 0.003; max[long] = b - 0.003;
+        if (e > 0.17) { const loose = e > 0.86 ? (hsh(i, 63) - 0.5) * 0.1 : 0; out.push(piece(min, max, 0, loose, 0, [0, 0, 0], {})); }
+        a = b; i++;
+      }
+      return out;
+    }
     if (kind === 'metal' && size[long] >= 4 && size[1] <= 0.15 && size[w] <= 0.15) {
       const out = []; let a = s.min[long], i = 0;
       while (a < s.max[long] - 0.05) {
         const b = a + Math.min(s.max[long] - a, 2.4 + hsh(i, 41) * 1.1), hl = (b - a) / 2;
         const min = [...s.min], max = [...s.max]; min[long] = a + 0.004; max[long] = b - 0.004;
-        const sag = 0.012 + hsh(i, 42) * 0.035, droop = hsh(i, 43) < 0.16 ? (0.05 + hsh(i, 44) * 0.09) * (hsh(i, 45) < 0.5 ? -1 : 1) : (hsh(i, 46) - 0.5) * 0.012;
+        const sag = 0.015 + hsh(i, 42) * 0.045, droop = hsh(i, 43) < 0.22 ? (0.07 + hsh(i, 44) * 0.15) * (hsh(i, 45) < 0.5 ? -1 : 1) : (hsh(i, 46) - 0.5) * 0.02;
         // 가운데가 처진다. 고정이 풀린 토막은 한쪽 끝을 축으로 늘어진다(끝이 내려간 만큼 중심을 내린다)
         const warp = (x, y, z) => { const t = (long === 0 ? x : z) / hl; return [x, y - sag * (1 - t * t), z]; };
         out.push(piece(min, max, long === 2 ? droop : 0, 0, long === 0 ? droop : 0, [0, -Math.abs(Math.sin(droop)) * hl, 0], { warp }));
@@ -845,20 +861,25 @@ export class Level {
     const tool = new WearTool({ high: 1, medium: 1.5, low: 2.4 }[this.quality] || 1);
     for (const s of this.specs) s.self = tool.addSolid(s);
     const stat = {};   // 재질별 삼각형 수(살펴보기용)
+    const low = this.quality === 'low';
+    this.wornStat = {};   // 재질별 [닳음 표시가 있는 꼭짓점, 전체 꼭짓점] (살펴보기용)
     for (const s of this.specs) {
       const plain = cleanGeo(s.m ? boxGeometry(s.h.map(v => -v), s.h, s.tile, s.m) : boxGeometry(s.min, s.max, s.tile));
       this.casterGeos.push({ key: s.key, geo: plain });
       // 천장 판: 타일마다 처지고 기운 정도가 다르다
       if (s.key === 'ceiling' && !s.m && Math.max(s.max[0] - s.min[0], s.max[2] - s.min[2]) > 1.2) { this.add(s.key, ceilingTiles(s), false); continue; }
       const w = this.wearKind(s);
-      if (!w) { this.add(s.key, plain, false); continue; }
+      // 품질 낮음: 작은 것과 얇은 것은 반듯한 상자 그대로 두고, 나머지도 모서리만 깎는다(이 빠짐, 면의 굴곡 없음). 땅의 굴곡은 남긴다
+      if (!w || (low && w.lite)) { this.add(s.key, plain, false); continue; }
       const t0 = tool.tris;
       for (const piece of this.splitSpec(s, w.kind)) {
-        piece.lite = w.lite;
+        piece.lite = w.lite || (low && w.kind !== 'ground');
         if (s.key === 'contBlue' || s.key === 'contRust') piece.reliefK = 3; else if (s.key === 'locker') piece.reliefK = 1.6;
         // 선반 위의 종이 상자처럼 돌려 놓은 무른 상자도 눌려 있다
         if (w.kind === 'soft' && !piece.warp && !w.lite && piece.m) { const e = piece.m.elements, sd = Math.round(e[12] * 131 + e[13] * 71 + e[14] * 37); piece.warp = crushWarp(piece.h, (n) => hash(sd, n, 9)); }
-        this.add(s.key, tool.build(piece, WEAR[w.kind]), false);
+        const wg = tool.build(piece, WEAR[w.kind]); this.add(s.key, wg, false);
+        const wa = wg.attributes.aWear.array; let wn = 0; for (let i = 0; i < wa.length; i++) if (Math.abs(wa[i]) > 0.2) wn++;
+        const ws = (this.wornStat[s.key] = this.wornStat[s.key] || [0, 0]); ws[0] += wn; ws[1] += wa.length;
       }
       stat[s.key] = (stat[s.key] || 0) + tool.tris - t0;
     }

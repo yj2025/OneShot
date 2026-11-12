@@ -494,7 +494,7 @@ class Game {
       ready: false,
       bake() { return g.bake || null; },
       // 형상 도구가 만든 삼각형 수와 한 프레임에 그린 삼각형 수(살펴보기용)
-      geo() { return { wearTris: g.level.wearTris, byKey: g.level.wearStat, boxes: g.level.specs.length }; },
+      geo() { return { wearTris: g.level.wearTris, byKey: g.level.wearStat, worn: g.level.wornStat, boxes: g.level.specs.length }; },
       // 조도 볼륨을 한 점에서 읽는다(검사와 살펴보기용)
       light(x, y, z) { return probeLight(g.renderer, x, y, z); },
       state() {
