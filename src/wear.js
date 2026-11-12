@@ -35,7 +35,7 @@ function h1(n) { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n
 export const hash = (a, b = 0, c = 0) => h1(Math.imul(a | 0, 73856093) ^ Math.imul(b | 0, 19349663) ^ Math.imul(c | 0, 83492791));
 export function vnoise(seed, x) { const i = Math.floor(x), f = x - i, t = f * f * (3 - 2 * f); return hash(seed, i, 7) * (1 - t) + hash(seed, i + 1, 7) * t; }
 // 월드 좌표의 매끄러운 잡음(0~1)
-function noise3(x, y, z) {
+export function noise3(x, y, z) {
   const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
   let fx = x - ix, fy = y - iy, fz = z - iz; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
   const c = (a, b, d) => hash(ix + a, iy + b, iz + d);
@@ -149,6 +149,7 @@ export class WearTool {
 
   // 닳은 상자 하나. spec: { min, max } 또는 { m, h }, 그리고
   //  tile, self(이웃 판정에서 뺄 등록 번호), lite(얇거나 작은 것: 모서리만 살짝), round(기본 폭을 이 값 이상으로),
+  //  coreAt(x, y, z) → 0보다 크면 그 점은 드러난 속(회벽 밑의 블록). erode, parentBox, skip은 Level.splitSpec이 채운다
   //  wearAdd(x, y, z) → 닳음 표시에 더할 값(국소 좌표. 떨어져 나간 단면을 어둡게 할 때 쓴다)
   //  uvo(텍스처 좌표를 미는 거리), round(0보다 크면 면 하나에 텍스처 한 장)
   //  warp(x, y, z) → [x, y, z] (국소 좌표를 받아 휘게 하는 함수), relief(false면 면의 굴곡을 끈다), shade(상자 전체의 밝기 차이, aWear에 더한다)
@@ -159,6 +160,9 @@ export class WearTool {
     const me = m ? m.elements : null;
     const toWorld = (p) => me ? [me[0] * p[0] + me[4] * p[1] + me[8] * p[2] + me[12], me[1] * p[0] + me[5] * p[1] + me[9] * p[2] + me[13], me[2] * p[0] + me[6] * p[1] + me[10] * p[2] + me[14]] : [p[0] + c[0], p[1] + c[1], p[2] + c[2]];
     const self = spec.self ?? -1, lite = !!spec.lite, shade = spec.shade || 0;
+    // 한 상자를 여러 조각으로 나눠 만들 때: 원래 상자(parentBox)의 나머지 부분도 막힌 것으로 본다(조각 사이 이음에 홈이 생기지 않게). skip: 만들지 않을 면 [[축, ±1]]
+    const pb = spec.parentBox, inParent = pb ? (w) => w[0] > pb.min[0] - 1e-4 && w[0] < pb.max[0] + 1e-4 && w[1] > pb.min[1] - 1e-4 && w[1] < pb.max[1] + 1e-4 && w[2] > pb.min[2] - 1e-4 && w[2] < pb.max[2] + 1e-4 : null;
+    const blocked = (w) => this.solid(w[0], w[1], w[2], self) || (inParent !== null && inParent(w));
     const uvo = spec.uvo || 0;   // 텍스처 좌표를 밀어 놓는 거리(m). 천장 타일 조각의 줄눈을 조각 가장자리에 맞출 때 쓴다
     const uvFace = !!(m && spec.round > 0);   // 나무 상자와 종이 상자: 면 하나에 텍스처 한 장(접힌 선과 테이프가 면에 맞게 놓인다)
     const seedBox = (Math.round((me ? me[12] : c[0]) * 131) * 31 + Math.round((me ? me[13] : c[1]) * 173) * 17 + Math.round((me ? me[14] : c[2]) * 197)) | 0;
@@ -213,7 +217,7 @@ export class WearTool {
       for (const [kb, kc] of [[1, 1], [1, -1], [-1, 1]]) {
         const q = [p3[0], p3[1], p3[2]]; q[b] += kb * sb * eps; q[cc] += kc * sc * eps;
         const w = toWorld(q);
-        if (this.solid(w[0], w[1], w[2], self)) return false;
+        if (blocked(w)) return false;
       }
       return true;
     };
@@ -229,6 +233,11 @@ export class WearTool {
       const n = lite ? 1 : Math.min(cap, Math.max(1, Math.round(span / (P.seg * this.segScale))));
       for (let i = 1; i < n; i++) lines.push(-half + last + span * i / n);
       for (let i = offs.length - 1; i >= 0; i--) lines.push(half - offs[i]);
+      // 파손된 끝(spec.erode): 끝에서 0.7 m 안쪽과, 파손이 있는 범위를 촘촘하게(4~5 cm) 나눈다. 성긴 격자에 실으면 깨진 윤곽이 격자선 사이에서 직선이 된다
+      if (spec.erode && spec.coreAt) for (const z of spec.erode) {
+        if (a === z.ax) { const st = 0.04 * this.segScale; for (let d = st; d < Math.min(0.7, 2 * half - 0.01); d += st) lines.push(z.side * (half - d)); }
+        if (a === z.along) { const st = 0.05 * this.segScale, l0 = Math.max(-half + 0.01, z.lo - 0.08 - c[a]), l1 = Math.min(half - 0.01, z.hi + 0.3 - c[a]); for (let v = l0; v <= l1; v += st) lines.push(v); }
+      }
       if (!lite && P.chip[0] > 0) {
         // 이 축을 따라 뻗은 네 모서리의 드러난 자리에서, 큰 것부터 고른다
         const ev = [];
@@ -238,9 +247,9 @@ export class WearTool {
         }
         ev.sort((x, y) => y[2] - x[2]);
         for (const [v, sp] of ev.slice(0, Math.max(2, Math.round(6 / this.segScale)))) for (const t of [v - sp, v, v + sp]) if (t > -half + last + 0.004 && t < half - last - 0.004) lines.push(t);
-        lines.sort((x, y) => x - y);
-        for (let i = lines.length - 2; i > 0; i--) if (lines[i + 1] - lines[i] < 0.006) lines.splice(i, 1);
       }
+      lines.sort((x, y) => x - y);
+      for (let i = lines.length - 2; i > 0; i--) if (lines[i + 1] - lines[i] < 0.006) lines.splice(i, 1);
       return lines;
     });
 
@@ -312,12 +321,13 @@ export class WearTool {
     const p = [0, 0, 0], ix = [0, 0, 0], o = [0, 0, 0];
     const fd = !!(relief || spec.warp);   // 면이 평면이 아니면 법선을 격자에서 다시 구한다
     for (const [fn, fs, fu, fv, uvf] of FACES) {
+      if (spec.skip && spec.skip.some(([sa, sd]) => sa === fn && sd === fs)) continue;
       // 다른 상자에 완전히 묻힌 면은 만들지 않는다
       let hidden = self >= 0 && !(spec.erode && spec.erode.some(z => z.ax === fn));   // 윤곽이 떨어져 나가는 끝 면은 묻혀 있어도(문틀 뒤) 그 윤곽을 따라가야 하므로 격자로 만든다
       if (hidden) for (const [tu, tv] of [[0, 0], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7], [0.92, 0], [-0.92, 0], [0, 0.92], [0, -0.92]]) {
         o[fn] = fs * (h[fn] + eps); o[fu] = tu * h[fu]; o[fv] = tv * h[fv];
         const w = toWorld(o);
-        if (!this.solid(w[0], w[1], w[2], self)) { hidden = false; break; }
+        if (!blocked(w)) { hidden = false; break; }
       }
       if (hidden) {
         // 묻힌 면은 굴곡도 깎임도 없는 사각형 한 장으로 남긴다. 아예 빼면 앞을 가린 면에 실틈이 하나만 있어도 그 틈으로 벽 너머의 하늘이 비친다(어두운 실내에서는 한 화소 폭의 흰 선이 된다)
@@ -358,7 +368,8 @@ export class WearTool {
         lp[k * 3] = x; lp[k * 3 + 1] = y; lp[k * 3 + 2] = z; ln[k * 3] = nrm[0]; ln[k * 3 + 1] = nrm[1]; ln[k * 3 + 2] = nrm[2];
         const t = uvf(me ? p : [p[0] + c[0], p[1] + c[1], p[2] + c[2]]);
         if (uvFace) uv.push(t[0] / (2 * h[fu]) + 0.5, t[1] / (2 * h[fv]) + 0.5); else uv.push((t[0] + uvo) / tile, (t[1] + uvo) / tile);
-        wear.push(wv * tintK + shade + (spec.wearAdd ? spec.wearAdd(p[0], p[1], p[2]) : 0));
+        // 드러난 속(spec.coreAt)은 aWear를 6.5로 둔다. 재질 셰이더가 1.2보다 큰 값을 '드러난 속'으로 읽는다
+        wear.push(spec.coreAt && spec.coreAt(p[0], p[1], p[2]) > 0 ? 6.5 : wv * tintK + shade + (spec.wearAdd ? spec.wearAdd(p[0], p[1], p[2]) : 0));
       }
       // 삼각형의 감는 방향: u × v 가 법선 쪽을 향하게
       const flip = ((fu + 1) % 3 === fv ? 1 : -1) * fs < 0;

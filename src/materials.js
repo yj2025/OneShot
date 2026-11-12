@@ -75,6 +75,20 @@ const FRAG_GRIME = `
   float hF = vBcW.y - mix(0.0, uFL, ins);
   float wall = 1.0 - abs(bcNg.y);
   // 얼룩의 깊이: 계조 곡선을 바로잡은 뒤로 같은 반사율 차이가 화면에서 더 옅게 보인다. 이전만큼 읽히도록 깊이를 키웠다(평균 밝기는 같다)
+  // 드러난 속(aWear > 1.2): 떨어져 나간 회벽 밑의 블록. 줄눈 있는 회색 블록을 월드 좌표로 그린다(벽면이면 벽을 따라, 수평면이면 바닥 좌표로)
+  float bcCore = smoothstep(1.2, 5.5, vBcWear);
+  if (bcCore > 0.0) {
+    bool vert = abs(bcNg.y) < 0.7;
+    vec2 tw = vert ? normalize(vec2(-bcNg.z, bcNg.x) + 1e-5) : vec2(1.0, 0.0);
+    float bu = dot(vBcW.xz, tw), bv = vert ? vBcW.y : vBcW.z;
+    float row = floor(bv / 0.2), bu2 = bu / 0.4 + 0.5 * mod(row, 2.0);
+    vec2 bf = vec2(fract(bu2) * 0.4, fract(bv / 0.2) * 0.2);
+    float mortar = 1.0 - step(0.01, min(min(bf.x, 0.4 - bf.x), min(bf.y, 0.2 - bf.y)));
+    float bn = bcNoise(vec2(floor(bu2), row) * 3.7 + 1.3);
+    vec3 blk = vec3(0.25, 0.245, 0.23) * (0.8 + 0.4 * bn) * (0.8 + 0.4 * bcNoise(vBcW.xz * 37.0 + vBcW.y * 31.0));
+    vec3 mor = vec3(0.33, 0.32, 0.29) * (0.85 + 0.3 * bcNoise(vBcW.xz * 53.0 + vBcW.y * 47.0));
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(blk, mor, mortar), bcCore);
+  }
   float dirt = mix(1.0, (0.6 + 0.64 * g) * (0.84 + 0.32 * g2), uGrime);
   float base = mix(1.0, mix(0.45, 1.0, smoothstep(0.0, 0.45 + g * 0.35, hF)), uGrime * wall);
   diffuseColor.rgb *= dirt * base;
@@ -110,11 +124,13 @@ const FRAG_GRIME = `
     diffuseColor.rgb *= 1.0 - hand * 0.18 * uDamp;
   }
   // 닳은 자리(형상 도구가 꼭짓점에 표시한다): 양수는 밝게(깨진 콘크리트, 생나무), 음수는 어둡게(벗겨져 드러난 바탕, 녹)
-  if (abs(vBcWear) > 0.01) {
-    float w = clamp(abs(vBcWear) * (0.55 + 0.9 * bcNoise(vBcW.xz * 21.0 + vBcW.y * 29.0)), 0.0, 1.0);
+  // 닳음 표시의 값은 -2~1이다. 드러난 속(6.5)과 이웃한 삼각형에서는 그 사이 값이 보간되므로 1.05보다 큰 값은 닳음으로 읽지 않는다(밝은 테두리가 생긴다)
+  float bcWv = vBcWear > 1.05 ? 0.0 : vBcWear;
+  if (abs(bcWv) > 0.01) {
+    float w = clamp(abs(bcWv) * (0.55 + 0.9 * bcNoise(vBcW.xz * 21.0 + vBcW.y * 29.0)), 0.0, 1.0);
     w = smoothstep(0.18, 0.6, w);
     float wl = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
-    vec3 wc = vBcWear > 0.0 ? mix(diffuseColor.rgb, vec3(wl) * 1.25 + 0.035, 0.8) : diffuseColor.rgb * vec3(0.4, 0.38, 0.36);
+    vec3 wc = bcWv > 0.0 ? mix(diffuseColor.rgb, vec3(wl) * 1.25 + 0.035, 0.8) : diffuseColor.rgb * vec3(0.4, 0.38, 0.36);
     diffuseColor.rgb = mix(diffuseColor.rgb, wc, w);
   }
   if (uClay > 0.5) diffuseColor.rgb = vec3(0.45);
