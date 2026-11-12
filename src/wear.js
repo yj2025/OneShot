@@ -33,7 +33,7 @@ const FACES = [
 
 function h1(n) { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; }
 export const hash = (a, b = 0, c = 0) => h1(Math.imul(a | 0, 73856093) ^ Math.imul(b | 0, 19349663) ^ Math.imul(c | 0, 83492791));
-function vnoise(seed, x) { const i = Math.floor(x), f = x - i, t = f * f * (3 - 2 * f); return hash(seed, i, 7) * (1 - t) + hash(seed, i + 1, 7) * t; }
+export function vnoise(seed, x) { const i = Math.floor(x), f = x - i, t = f * f * (3 - 2 * f); return hash(seed, i, 7) * (1 - t) + hash(seed, i + 1, 7) * t; }
 // 월드 좌표의 매끄러운 잡음(0~1)
 function noise3(x, y, z) {
   const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
@@ -149,6 +149,7 @@ export class WearTool {
 
   // 닳은 상자 하나. spec: { min, max } 또는 { m, h }, 그리고
   //  tile, self(이웃 판정에서 뺄 등록 번호), lite(얇거나 작은 것: 모서리만 살짝), round(기본 폭을 이 값 이상으로),
+  //  wearAdd(x, y, z) → 닳음 표시에 더할 값(국소 좌표. 떨어져 나간 단면을 어둡게 할 때 쓴다)
   //  uvo(텍스처 좌표를 미는 거리), round(0보다 크면 면 하나에 텍스처 한 장)
   //  warp(x, y, z) → [x, y, z] (국소 좌표를 받아 휘게 하는 함수), relief(false면 면의 굴곡을 끈다), shade(상자 전체의 밝기 차이, aWear에 더한다)
   build(spec, P) {
@@ -312,7 +313,7 @@ export class WearTool {
     const fd = !!(relief || spec.warp);   // 면이 평면이 아니면 법선을 격자에서 다시 구한다
     for (const [fn, fs, fu, fv, uvf] of FACES) {
       // 다른 상자에 완전히 묻힌 면은 만들지 않는다
-      let hidden = self >= 0;
+      let hidden = self >= 0 && !(spec.erode && spec.erode.some(z => z.ax === fn));   // 윤곽이 떨어져 나가는 끝 면은 묻혀 있어도(문틀 뒤) 그 윤곽을 따라가야 하므로 격자로 만든다
       if (hidden) for (const [tu, tv] of [[0, 0], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7], [0.92, 0], [-0.92, 0], [0, 0.92], [0, -0.92]]) {
         o[fn] = fs * (h[fn] + eps); o[fu] = tu * h[fu]; o[fv] = tv * h[fv];
         const w = toWorld(o);
@@ -357,7 +358,7 @@ export class WearTool {
         lp[k * 3] = x; lp[k * 3 + 1] = y; lp[k * 3 + 2] = z; ln[k * 3] = nrm[0]; ln[k * 3 + 1] = nrm[1]; ln[k * 3 + 2] = nrm[2];
         const t = uvf(me ? p : [p[0] + c[0], p[1] + c[1], p[2] + c[2]]);
         if (uvFace) uv.push(t[0] / (2 * h[fu]) + 0.5, t[1] / (2 * h[fv]) + 0.5); else uv.push((t[0] + uvo) / tile, (t[1] + uvo) / tile);
-        wear.push(wv * tintK + shade);
+        wear.push(wv * tintK + shade + (spec.wearAdd ? spec.wearAdd(p[0], p[1], p[2]) : 0));
       }
       // 삼각형의 감는 방향: u × v 가 법선 쪽을 향하게
       const flip = ((fu + 1) % 3 === fv ? 1 : -1) * fs < 0;

@@ -2,7 +2,7 @@
 // 좌표: y 위, 건물은 x[-12,12] z[-16,0], 정면(z=0)이 마당(+z) 쪽. 실내 바닥 높이 FL = 0.7 m.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { WearTool, WEAR, hash } from './wear.js';
+import { WearTool, WEAR, hash, vnoise } from './wear.js';
 import { bcMaterial } from './materials.js';
 import { setLightSlots, volUniforms } from './lightbake.js';
 import { mulberry32 } from './rng.js';
@@ -60,6 +60,48 @@ function cleanGeo(g) {
 const PROP_KEYS = ['locker', 'metalGalv', 'deskTop', 'cardboard', 'cardboardB', 'cardboardC', 'acUnit'];
 
 // 무른 상자(종이 상자, 방석)가 눌린 모양: 윗면이 주저앉고 옆면이 불룩하다. h: 반치수, rnd(n): 0~1
+// 개구부의 윤곽: 회벽의 끝(문과 창의 옆, 위, 아래)은 곧은 선이 아니라 군데군데 떨어져 나가 있다.
+// 상자의 끝에서 W 안쪽의 점을 안으로 당기는 휨 함수를 돌려준다. 떨어진 깊이는 끝을 따라가는 좌표만의 함수라서 벽 두께 전체가 같이 잘리고,
+// 두 겹 외벽에서는 그 자리로 뒤의 블록이 드러난다. s.erode: [{ ax(끝 면의 법선 축), side(±1), along(끝을 따라가는 축), lo, hi(그 축의 드러난 범위, 월드 좌표), fr(문틀이 있으면 얕게) }]
+function erodeWarp(s) {
+  const c = [0, 1, 2].map(a => (s.min[a] + s.max[a]) / 2), h = [0, 1, 2].map(a => (s.max[a] - s.min[a]) / 2), CL = 0.42;
+  const zones = s.erode.map((z) => {
+    const d0 = z.fr ? 0.085 : 0.2, W = Math.min(2.6 * d0, h[z.ax] * 0.9);
+    const seed = hash(Math.round((c[z.ax] + z.side * h[z.ax]) * 100), Math.round(z.lo * 100) + z.ax * 7 + (z.side > 0 ? 3 : 0), Math.round(c[3 - z.ax - z.along] * 100)) * 1e9 | 0;
+    return { ...z, dmax: d0 * W / (2.6 * d0), W, seed };
+  });
+  const depth = (z, sw) => {
+    const t = Math.min(1, (sw - z.lo) / 0.07, (z.hi - sw) / 0.07); if (t <= 0) return 0;
+    let e = 0.002 + 0.006 * vnoise(z.seed, sw / 0.09);
+    // 덩어리째 떨어진 자리: 깊이가 한 구간에서 거의 같고 구간 끝에서 갑자기 바뀐다(격자에서 읽히면 각진 사다리꼴이 된다)
+    const k0 = Math.floor(sw / CL);
+    for (let k = k0 - 1; k <= k0 + 1; k++) {
+      if (hash(z.seed, k, 1) > 0.3) continue;
+      const D = z.dmax * (0.3 + 0.7 * hash(z.seed, k, 2) ** 1.5), ext = 0.07 + D * (0.5 + hash(z.seed, k, 3));
+      if (Math.abs(sw - (k + hash(z.seed, k, 4)) * CL) < ext) e = Math.max(e, D * (0.8 + 0.4 * vnoise(z.seed + 9, sw / 0.11)));
+    }
+    return e * t;
+  };
+  const warp = (x, y, z) => {
+    const p = [x, y, z];
+    for (const zn of zones) {
+      const dEnd = h[zn.ax] - zn.side * p[zn.ax];
+      if (dEnd < zn.W) p[zn.ax] -= zn.side * depth(zn, p[zn.along] + c[zn.along]) * (1 - Math.max(0, dEnd) / zn.W);
+    }
+    return p;
+  };
+  // 떨어져 나간 단면과 그 둘레 5 cm는 드러난 바탕이라 어둡다
+  warp.wear = (x, y, z) => {
+    const p = [x, y, z]; let w = 0;
+    for (const zn of zones) {
+      if (h[zn.ax] - zn.side * p[zn.ax] > 0.05) continue;
+      const e = depth(zn, p[zn.along] + c[zn.along]);
+      if (e > 0.025) w = Math.min(w, -0.9 * Math.min(1, e / 0.06));
+    }
+    return w;
+  };
+  return warp;
+}
 function crushWarp(h, rnd) {
   const dip = Math.min(h[1] * 0.3, 0.012 + rnd(1) * 0.035), bulge = 0.006 + rnd(2) * 0.014, cx = (rnd(3) - 0.5) * 1.2, cz = (rnd(4) - 0.5) * 1.2;
   return (x, y, z) => {
@@ -202,12 +244,14 @@ export class Level {
   // z 방향에 수직인 벽(x로 뻗음). openings: {c, w, b, t}
   wallZ(z0, z1, x0, x1, y0, y1, openings, matKey, frameMat = 'metalDark') {
     const ops = [...openings].sort((a, b) => a.c - b.c);
-    let x = x0;
+    // 회벽은 개구부에 닿은 끝이 어디인지 형상 도구에 알려 준다(그 끝의 윤곽이 떨어져 나간다)
+    const er = (zone) => { if (matKey === 'plaster') { const sp = this.specs[this.specs.length - 1]; (sp.erode = sp.erode || []).push(zone); } };
+    let x = x0, prev = null;
     for (const o of ops) {
-      const ox0 = o.c - o.w / 2, ox1 = o.c + o.w / 2;
-      if (ox0 > x) this.box(matKey, [x, y0, z0], [ox0, y1, z1], { tile: 3, mat: 'concrete' });
-      if (o.b > y0) this.box(matKey, [ox0, y0, z0], [ox1, o.b, z1], { tile: 3, mat: 'concrete' });
-      if (o.t < y1) this.box(matKey, [ox0, o.t, z0], [ox1, y1, z1], { tile: 3, mat: 'concrete' });
+      const ox0 = o.c - o.w / 2, ox1 = o.c + o.w / 2, fr = !!(frameMat && !o.noFrame);
+      if (ox0 > x) { this.box(matKey, [x, y0, z0], [ox0, y1, z1], { tile: 3, mat: 'concrete' }); er({ ax: 0, side: 1, along: 1, lo: o.b, hi: o.t, fr }); if (prev) er({ ax: 0, side: -1, along: 1, lo: prev.b, hi: prev.t, fr: prev.fr }); }
+      if (o.b > y0) { this.box(matKey, [ox0, y0, z0], [ox1, o.b, z1], { tile: 3, mat: 'concrete' }); er({ ax: 1, side: 1, along: 0, lo: ox0, hi: ox1, fr }); }
+      if (o.t < y1) { this.box(matKey, [ox0, o.t, z0], [ox1, y1, z1], { tile: 3, mat: 'concrete' }); er({ ax: 1, side: -1, along: 0, lo: ox0, hi: ox1, fr }); }
       if (frameMat && !o.noFrame) {
         const f = 0.07, pr = 0.025;
         this.box(frameMat, [ox0 - 0.02, o.b, z0 - pr], [ox0 + f - 0.02, o.t + 0.02, z1 + pr], { collide: false });
@@ -215,9 +259,9 @@ export class Level {
         this.box(frameMat, [ox0 - 0.02, o.t - f + 0.02, z0 - pr], [ox1 + 0.02, o.t + 0.02, z1 + pr], { collide: false });
         if (o.b > y0 + 0.2) this.box(frameMat, [ox0 - 0.03, o.b - 0.03, z0 - 0.06], [ox1 + 0.03, o.b + 0.01, z1 + 0.06], { collide: false });
       }
-      x = Math.max(x, ox1);
+      x = Math.max(x, ox1); prev = { b: o.b, t: o.t, fr };
     }
-    if (x1 > x) this.box(matKey, [x, y0, z0], [x1, y1, z1], { tile: 3, mat: 'concrete' });
+    if (x1 > x) { this.box(matKey, [x, y0, z0], [x1, y1, z1], { tile: 3, mat: 'concrete' }); if (prev) er({ ax: 0, side: -1, along: 1, lo: prev.b, hi: prev.t, fr: prev.fr }); }
     if (matKey === 'plaster' && Math.abs(y0 - FL) < 0.01) {
       let xs = x0;
       for (const o of ops) { const a = o.c - o.w / 2; if (a > xs + 0.05) this.skirtZ(z0, z1, xs, a); xs = Math.max(xs, o.c + o.w / 2); }
@@ -229,12 +273,13 @@ export class Level {
   // x 방향에 수직인 벽(z로 뻗음)
   wallX(x0, x1, z0, z1, y0, y1, openings, matKey, frameMat = 'metalDark') {
     const ops = [...openings].sort((a, b) => a.c - b.c);
-    let z = z0;
+    const er = (zone) => { if (matKey === 'plaster') { const sp = this.specs[this.specs.length - 1]; (sp.erode = sp.erode || []).push(zone); } };
+    let z = z0, prev = null;
     for (const o of ops) {
-      const oz0 = o.c - o.w / 2, oz1 = o.c + o.w / 2;
-      if (oz0 > z) this.box(matKey, [x0, y0, z], [x1, y1, oz0], { tile: 3, mat: 'concrete' });
-      if (o.b > y0) this.box(matKey, [x0, y0, oz0], [x1, o.b, oz1], { tile: 3, mat: 'concrete' });
-      if (o.t < y1) this.box(matKey, [x0, o.t, oz0], [x1, y1, oz1], { tile: 3, mat: 'concrete' });
+      const oz0 = o.c - o.w / 2, oz1 = o.c + o.w / 2, fr = !!(frameMat && !o.noFrame);
+      if (oz0 > z) { this.box(matKey, [x0, y0, z], [x1, y1, oz0], { tile: 3, mat: 'concrete' }); er({ ax: 2, side: 1, along: 1, lo: o.b, hi: o.t, fr }); if (prev) er({ ax: 2, side: -1, along: 1, lo: prev.b, hi: prev.t, fr: prev.fr }); }
+      if (o.b > y0) { this.box(matKey, [x0, y0, oz0], [x1, o.b, oz1], { tile: 3, mat: 'concrete' }); er({ ax: 1, side: 1, along: 2, lo: oz0, hi: oz1, fr }); }
+      if (o.t < y1) { this.box(matKey, [x0, o.t, oz0], [x1, y1, oz1], { tile: 3, mat: 'concrete' }); er({ ax: 1, side: -1, along: 2, lo: oz0, hi: oz1, fr }); }
       if (frameMat && !o.noFrame) {
         const f = 0.07, pr = 0.025;
         this.box(frameMat, [x0 - pr, o.b, oz0 - 0.02], [x1 + pr, o.t + 0.02, oz0 + f - 0.02], { collide: false });
@@ -242,9 +287,9 @@ export class Level {
         this.box(frameMat, [x0 - pr, o.t - f + 0.02, oz0 - 0.02], [x1 + pr, o.t + 0.02, oz1 + 0.02], { collide: false });
         if (o.b > y0 + 0.2) this.box(frameMat, [x0 - 0.06, o.b - 0.03, oz0 - 0.03], [x1 + 0.06, o.b + 0.01, oz1 + 0.03], { collide: false });
       }
-      z = Math.max(z, oz1);
+      z = Math.max(z, oz1); prev = { b: o.b, t: o.t, fr };
     }
-    if (z1 > z) this.box(matKey, [x0, y0, z], [x1, y1, z1], { tile: 3, mat: 'concrete' });
+    if (z1 > z) { this.box(matKey, [x0, y0, z], [x1, y1, z1], { tile: 3, mat: 'concrete' }); if (prev) er({ ax: 2, side: -1, along: 1, lo: prev.b, hi: prev.t, fr: prev.fr }); }
     if (matKey === 'plaster' && Math.abs(y0 - FL) < 0.01) {
       let zs = z0;
       for (const o of ops) { const a = o.c - o.w / 2; if (a > zs + 0.05) this.skirtX(x0, x1, zs, a); zs = Math.max(zs, o.c + o.w / 2); }
@@ -908,6 +953,7 @@ export class Level {
       for (const piece of this.splitSpec(s, w.kind)) {
         piece.lite = w.lite || (low && w.kind !== 'ground');
         if (s.key === 'contBlue' || s.key === 'contRust') piece.reliefK = 3; else if (s.key === 'locker') piece.reliefK = 1.6;
+        if (s.erode && !low && !piece.m && !piece.warp) { piece.warp = erodeWarp(s); piece.wearAdd = piece.warp.wear; }
         // 선반 위의 종이 상자처럼 돌려 놓은 무른 상자도 눌려 있다
         if (w.kind === 'soft' && !piece.warp && !w.lite && piece.m) { const e = piece.m.elements, sd = Math.round(e[12] * 131 + e[13] * 71 + e[14] * 37); piece.warp = crushWarp(piece.h, (n) => hash(sd, n, 9)); }
         const wg = tool.build(piece, WEAR[w.kind]); this.add(s.key, wg, false);
