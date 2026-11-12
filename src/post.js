@@ -8,14 +8,16 @@ function pass(fs, uniforms) {
 }
 
 const LUM_FS = `
-uniform sampler2D tScene; varying vec2 vUv;
+uniform sampler2D tScene; uniform sampler2D tPrev; uniform float uInit; varying vec2 vUv;
 void main(){
   // 중앙 가중 평균 로그 휘도 (r: w*log, g: w)
   vec3 c = texture2D(tScene, vUv).rgb;
   vec3 c2 = texture2D(tScene, vUv + vec2(0.006, 0.004)).rgb;
   float l = dot(mix(c, c2, 0.5), vec3(0.2126, 0.7152, 0.0722));
+  // 날아간 부분은 날아간 만큼만 센다. 센서는 포화된 화소가 얼마나 더 밝은지 모른다
+  if (uInit < 0.5) l = min(l, texture2D(tPrev, vec2(0.5)).r * 6.0);
   vec2 d = (vUv - 0.5) * vec2(1.6, 1.2);
-  float w = mix(0.3, 1.0, exp(-dot(d, d) * 3.0)) * (vUv.y > 0.6 ? 0.4 : 1.0);
+  float w = mix(0.3, 1.0, exp(-dot(d, d) * 3.0)) * mix(1.0, 0.3, smoothstep(0.5, 0.7, vUv.y));
   gl_FragColor = vec4(w * log(max(l, 1e-4)), w, 0.0, 1.0);
 }`;
 const ADAPT_FS = `
@@ -25,7 +27,7 @@ void main(){
   float avg = exp(m.r / max(m.g, 1e-4));
   float prev = texture2D(tPrev, vec2(0.5)).r;
   // 어두워질 때보다 밝아질 때 조금 빠르게, 그래도 느리게 따라온다
-  float speed = avg > prev ? 1.15 : 0.6;
+  float speed = avg > prev ? 2.2 : 0.9;
   float a = uInit > 0.5 ? 1.0 : 1.0 - exp(-uDt * speed);
   float v = exp(mix(log(max(prev, 1e-4)), log(avg), a));
   gl_FragColor = vec4(v, avg, 0.0, 1.0);
@@ -34,7 +36,7 @@ const BRIGHT_FS = `
 uniform sampler2D tScene; uniform sampler2D tAdapt; uniform float uKey; uniform vec2 uTexel; varying vec2 vUv;
 void main(){
   float ad = texture2D(tAdapt, vec2(0.5)).r;
-  float ex = clamp(uKey / ad, 0.35, 7.0);
+  float ex = clamp(uKey / ad, 0.03, 7.0);
   vec3 c = vec3(0.0);
   c += texture2D(tScene, vUv + uTexel * vec2(-1.0, -1.0)).rgb; c += texture2D(tScene, vUv + uTexel * vec2(1.0, -1.0)).rgb;
   c += texture2D(tScene, vUv + uTexel * vec2(-1.0, 1.0)).rgb; c += texture2D(tScene, vUv + uTexel * vec2(1.0, 1.0)).rgb;
@@ -51,7 +53,8 @@ void main(){
   gl_FragColor = vec4(c, 1.0);
 }`;
 
-// 화면 공간 차폐(접지 그림자, 구석 어둠)
+// 화면 공간 차폐: 조도 볼륨의 격자(0.2 m)보다 작은 접촉부만 맡는다(물체와 바닥이 닿은 선, 좁은 틈).
+// 넓은 그늘은 볼륨이 계산하므로 반경을 0.4 m로 줄였다
 const AO_FS = `
 uniform sampler2D tDepth; uniform mat4 uProj; uniform mat4 uInvProj; uniform vec2 uRes; uniform float uFrame; varying vec2 vUv;
 vec3 vpos(vec2 uv){ float d = texture2D(tDepth, uv).r; vec4 p = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return p.xyz / p.w; }
@@ -69,7 +72,7 @@ void main(){
   if (dot(N, -P) < 0.0) N = -N;
   vec3 T = normalize(abs(N.y) < 0.99 ? cross(N, vec3(0.0, 1.0, 0.0)) : cross(N, vec3(1.0, 0.0, 0.0)));
   vec3 Bt = cross(N, T);
-  float rad = 0.7 * clamp(dist / 9.0, 1.0, 3.0);
+  float rad = 0.4 * clamp(dist / 7.0, 1.0, 3.0);
   float rnd = hh(vUv * uRes + uFrame * 0.37) * 6.2831;
   float occ = 0.0;
   for (int i = 0; i < 12; i++) {
@@ -85,7 +88,7 @@ void main(){
     occ += (sz >= S.z + 0.025 ? 1.0 : 0.0) * range;
   }
   float ao = 1.0 - occ / 12.0;
-  gl_FragColor = vec4(vec3(pow(ao, 2.0)), 1.0);
+  gl_FragColor = vec4(vec3(pow(ao, 1.8)), 1.0);
 }`;
 
 // 렌즈 + 센서
@@ -149,15 +152,21 @@ void main(){
   vec3 bloom = texture2D(tBloomA, uvG).rgb * 0.45 + texture2D(tBloomB, uvG).rgb * 0.55 + texture2D(tBloomC, uvG).rgb * 0.75;
   // --- 센서: 자동 노출
   float ad = texture2D(tAdapt, vec2(0.5)).r;
-  float ex = clamp(uKey / ad, 0.35, 7.0);
-  col = col * ex + bloom * 0.55 + uFlash * vec3(1.0, 0.85, 0.6) * 0.02;
+  float ex = clamp(uKey / ad, 0.03, 7.0);
+  col = col * ex + bloom * 0.32 + uFlash * vec3(1.0, 0.85, 0.6) * 0.02;
   // 렌즈 주변부 광량 저하
   col *= mix(1.0, 0.55, smoothstep(0.35, 1.0, r));
   // 좁은 계조: 빠르게 하얗게 날아가는 어깨, 뭉개지는 그늘
-  vec3 x = col;
-  x = 1.0 - exp(-x * 1.25);
-  x = smoothstep(0.035, 0.97, x);
-  x = pow(x, vec3(1.08));
+  // 렌즈 안에서 흩어진 빛이 가장 어두운 곳을 조금 띄운다
+  vec3 x = col + 0.002;
+  // 센서 포화: 평균보다 3~4스톱 밝으면 하얗게 날아간다
+  x = 1.0 - exp(-x * 0.85);
+  // 화면 인코딩. 지수 0.7은 표준 감마(1/2.2)에 카메라의 대비 보정을 곱한 값이다.
+  // 이전 곡선은 감마 없이 S자 곡선만 써서 어두운 쪽이 입력의 제곱으로 뭉개졌다(평균보다 1스톱 어두우면 8/255).
+  // 지금은 평균이 76/255, 2스톱 아래가 27/255, 4스톱 아래가 6/255쯤에 놓인다. 레퍼런스 프레임의 밝기 분포에 맞춘 값이다(scripts/tones.mjs)
+  x = pow(x, vec3(0.7));
+  // 검정 기준점: 가장 깊은 그늘은 뭉개진다(레퍼런스의 하위 2% 밝기가 11/255쯤이다)
+  x = max((x - 0.03) / 0.97, 0.0);
   // 채도 낮춤 + 약한 녹/청 캐스트
   float l = dot(x, vec3(0.2126, 0.7152, 0.0722));
   x = mix(vec3(l), x, uSat);
@@ -225,7 +234,7 @@ export class Post {
     this.rtAdapt = [new THREE.WebGLRenderTarget(1, 1, HF), new THREE.WebGLRenderTarget(1, 1, HF)];
     this.rtB = [0, 1, 2].map(() => [new THREE.WebGLRenderTarget(4, 4, HF), new THREE.WebGLRenderTarget(4, 4, HF)]);
     this.rtCam = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];
-    this.mLum = pass(LUM_FS, { tScene: { value: null } });
+    this.mLum = pass(LUM_FS, { tScene: { value: null }, tPrev: { value: null }, uInit: { value: 1 } });
     this.mAdapt = pass(ADAPT_FS, { tLum: { value: null }, tPrev: { value: null }, uDt: { value: 0.016 }, uInit: { value: 1 } });
     this.mBright = pass(BRIGHT_FS, { tScene: { value: null }, tAdapt: { value: null }, uKey: { value: 0.2 }, uTexel: { value: new THREE.Vector2() } });
     this.mBlur = pass(BLUR_FS, { tIn: { value: null }, uDir: { value: new THREE.Vector2() } });
@@ -262,8 +271,8 @@ export class Post {
     const R = this.r, P = this.params;
     R.setRenderTarget(this.rtScene); R.render(scene, camera);
     // 노출 측정
-    this.mLum.uniforms.tScene.value = this.rtScene.texture; this.run(this.mLum, this.rtLum);
     const a0 = this.rtAdapt[this.ping], a1 = this.rtAdapt[1 - this.ping];
+    this.mLum.uniforms.tScene.value = this.rtScene.texture; this.mLum.uniforms.tPrev.value = a0.texture; this.mLum.uniforms.uInit.value = this.init ? 1 : 0; this.run(this.mLum, this.rtLum);
     this.mAdapt.uniforms.tLum.value = this.rtLum.texture; this.mAdapt.uniforms.tPrev.value = a0.texture; this.mAdapt.uniforms.uDt.value = dt; this.mAdapt.uniforms.uInit.value = this.init ? 1 : 0;
     this.run(this.mAdapt, a1); this.init = false;
     const adapt = a1.texture;
@@ -287,7 +296,7 @@ export class Post {
     }
     // 렌즈 + 센서
     const U = this.mCam.uniforms;
-    U.tAO.value = this.rtAO[0].texture; U.uAOAmt.value = this.aoEnabled ? 0.9 : 0.0;
+    U.tAO.value = this.rtAO[0].texture; U.uAOAmt.value = this.aoEnabled ? 1.0 : 0.0;
     const cur = this.rtCam[this.ping], prev = this.rtCam[1 - this.ping];
     U.tScene.value = this.rtScene.texture; U.tBloomA.value = this.rtB[0][0].texture; U.tBloomB.value = this.rtB[1][0].texture; U.tBloomC.value = this.rtB[2][0].texture;
     U.tAdapt.value = adapt; U.tPrev.value = prev.texture; U.tDepth.value = this.rtScene.depthTexture; U.uNear.value = camera.near; U.uFar.value = camera.far;

@@ -1,5 +1,6 @@
 // 탄흔, 먼지·파편, 탄피, 총구 화염 (유혈 표현 없음)
 import * as THREE from 'three';
+import { bcMaterial } from './materials.js';
 
 const HOLE_UV = { concrete: [0, 0.5], wood: [0.5, 0.5], metal: [0, 0], gravel: [0.5, 0], asphalt: [0, 0.5], rubber: [0, 0], cloth: [0.5, 0], plastic: [0, 0], fence: null, body: null };
 const DUST = {
@@ -19,7 +20,7 @@ const DUST = {
 export class FX {
   constructor(scene, tex, level, rng) {
     this.scene = scene; this.level = level; this.rng = rng;
-    this.holeMat = new THREE.MeshStandardMaterial({ map: tex.holes, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 1 });
+    this.holeMat = bcMaterial({ map: tex.holes, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 1 }, { grime: 0 });
     this.decals = [];
     this.puffMat = tex.puff;
     this.particles = [];
@@ -33,7 +34,7 @@ export class FX {
     this.chips = [];
     // 탄피
     this.casingGeo = { rifle: new THREE.CylinderGeometry(0.0048, 0.0048, 0.045, 6), pistol: new THREE.CylinderGeometry(0.005, 0.005, 0.019, 6) };
-    this.casingMat = new THREE.MeshStandardMaterial({ color: 0xb08a3c, metalness: 0.9, roughness: 0.35 });
+    this.casingMat = bcMaterial({ color: 0xb08a3c, metalness: 0.9, roughness: 0.35 }, { grime: 0 });
     this.casings = [];
     this.onCasingLand = null;
     // 총구 화염
@@ -72,7 +73,7 @@ export class FX {
       this.particles.push({ m, v, life: p.life * (0.5 + this.rng() * 0.8), age: 0, s0: s * 0.4, s1: s * (2.0 + this.rng()), op: p.spark && i < 2 ? 1 : 0.55, drag: 3.5, grav: p.spark ? -6 : -0.4, rot: this.rng() * 6 });
     }
     for (let i = 0; i < (p.chips || 0); i++) {
-      const mm = new THREE.Mesh(this.chipGeo, new THREE.MeshStandardMaterial({ color: p.chipColor, roughness: 1 }));
+      const mm = new THREE.Mesh(this.chipGeo, bcMaterial({ color: p.chipColor, roughness: 1 }, { grime: 0 }));
       mm.position.copy(point).addScaledVector(normal, 0.02);
       const v = normal.clone().multiplyScalar(1.5 + this.rng() * 2.5).add(new THREE.Vector3(this.rng() - 0.5, this.rng(), this.rng() - 0.5).multiplyScalar(2.2));
       mm.scale.setScalar(0.5 + this.rng() * 1.5);

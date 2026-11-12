@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { bcMaterial, envUniforms, setOpenings } from './materials.js';
+import { bcMaterial } from './materials.js';
+import { setLightSlots, volUniforms } from './lightbake.js';
 import { mulberry32 } from './rng.js';
 
 export const FL = 0.7;
@@ -56,7 +57,8 @@ export class Level {
     this.mats = {};
     this.lights = [];
     this.fixtures = [];
-    this.openings = [];
+    this.occ = [];            // 빛 굽기용: 반사광을 막는 큰 형상(축 정렬 상자 {min,max} 또는 회전 상자 {m,h})
+    this.lightBaked = false;
     this.nodes = [];
     this.puddles = [];
     this.decalSpots = [];
@@ -109,17 +111,17 @@ export class Level {
     M('treeDark', { color: 0x2c3328, roughness: 1 }, { grime: 1, ao: 0 });
     M('grass', { map: t.gravel, color: 0x7d8466, roughness: 1 }, { grime: 1, ao: 0 });
     M('cone', { color: 0xb8541f, roughness: 0.7 }, { grime: 0.8 });
-    this.mats.chain = new THREE.MeshStandardMaterial({ map: t.chainlink, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.6, color: 0x9a9a96 });
+    this.mats.chain = bcMaterial({ map: t.chainlink, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.6, color: 0x9a9a96 }, { grime: 0 });
     this.mats.tube = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xeef3ff, emissiveIntensity: 3.5 });
-    this.mats.tubeDead = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.4 });
+    this.mats.tubeDead = bcMaterial({ color: 0x9a9a9a, roughness: 0.4 }, { grime: 0 });
     this.mats.puddle = bcMaterial({ color: 0x17191a, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.8 }, { grime: 0 });
-    this.mats.stain = new THREE.MeshStandardMaterial({ map: t.stain, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 });
+    this.mats.stain = bcMaterial({ map: t.stain, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 }, { grime: 0 });
   }
 
   // ---- 기본 도형 ----
   add(matKey, geo) { cleanGeo(geo); if (!this.buckets.has(matKey)) this.buckets.set(matKey, []); this.buckets.get(matKey).push(geo); }
   box(matKey, min, max, { tile = 2, collide = true, mat = 'concrete', cover = false, visual = true } = {}) {
-    if (visual) this.add(matKey, boxGeometry(min, max, tile));
+    if (visual) { this.add(matKey, boxGeometry(min, max, tile)); this.occ.push({ min: [...min], max: [...max] }); }
     if (collide) this.boxes.push({ min: [...min], max: [...max], mat, cover });
   }
   collider(min, max, mat = 'concrete') { this.boxes.push({ min, max, mat }); }
@@ -127,6 +129,7 @@ export class Level {
   obox(matKey, center, size, rotY, { tile = 2, collide = true, mat = 'metal', rotX = 0, rotZ = 0, round = 0 } = {}) {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(...center), new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, rotY, rotZ)), new THREE.Vector3(1, 1, 1));
     const h = size.map(s => s / 2);
+    this.occ.push({ m, h });
     if (round > 0) {
       // 모서리가 닳은 상자: 둥근 모서리 + 면마다 살짝 찌그러짐
       const g = new RoundedBoxGeometry(size[0], size[1], size[2], 2, Math.min(round, Math.min(...size) * 0.3));
@@ -142,8 +145,10 @@ export class Level {
   }
   cyl(matKey, center, r, h, { seg = 14, collide = true, mat = 'metal', rotX = 0, rotZ = 0, r2 } = {}) {
     const g = new THREE.CylinderGeometry(r2 ?? r, r, h, seg);
-    g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(...center), new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, 0, rotZ)), new THREE.Vector3(1, 1, 1)));
+    const cm = new THREE.Matrix4().compose(new THREE.Vector3(...center), new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, 0, rotZ)), new THREE.Vector3(1, 1, 1));
+    g.applyMatrix4(cm);
     this.add(matKey, g);
+    this.occ.push({ m: cm, h: [r * 0.85, h / 2, r * 0.85] });
     if (collide) { const bb = new THREE.Box3().setFromBufferAttribute(g.attributes.position); this.boxes.push({ min: bb.min.toArray(), max: bb.max.toArray(), mat }); }
   }
 
@@ -215,8 +220,6 @@ export class Level {
     this.wallX(xo0, xo1, z0, z1, 0, y1, ops, 'block');
     this.wallX(xi0, xi1, z0, z1, FL, yIn1 ?? y1, ops.map(o => ({ ...o, b: Math.max(o.b, FL), noFrame: true })), 'plaster', null);
   }
-  opening(x, y, z, r) { this.openings.push([x, y, z, r]); }
-
   fluorescent(x, z, y, { dead = false, flicker = false, along = 'x', color = 0xe4ecff, intensity = 13 } = {}) {
     const L = 1.25;
     const sx = along === 'x' ? L : 0.22, sz = along === 'x' ? 0.22 : L;
@@ -230,7 +233,7 @@ export class Level {
       light.position.set(x, y - 0.25, z);
       this.group.add(light);
       this.lights.push(light);
-      this.fixtures.push({ light, tube, tube2, base: intensity, flicker, phase: this.rng() * 100 });
+      this.fixtures.push({ light, tube, tube2, base: intensity, flicker, phase: this.rng() * 100, along, chan: this.fixtures.length });
     }
   }
 
@@ -279,15 +282,6 @@ export class Level {
     // 홀 위쪽(로커룸 지붕 위로 드러난 벽)
     this.box('block', [4.5, CA + 0.4, -16], [4.65, CH + 0.4, -6.6], { tile: 2, mat: 'concrete' });
     this.box('block', [-12, CA + 0.4, -6.75], [4.65, CH + 0.4, -6.6], { tile: 2, mat: 'concrete' });
-
-    // 하늘 가시도용 개구부 (실내 쪽으로 조금 들인 위치, 반경)
-    const op = (x, y, z, rad) => this.opening(x, y, z, rad);
-    op(-10.5, FL + 1.5, -0.7, 2.4); op(-7.5, FL + 1.1, -0.7, 2.0); op(-4.6, FL + 1.5, -0.7, 2.4);
-    op(-1.2, FL + 1.5, -0.7, 2.4); op(2.2, FL + 1.5, -0.7, 2.4); op(8, FL + 1.4, -0.9, 3.6);
-    op(-9, FL + 3.0, -15.0, 3.0); op(-5, FL + 3.0, -15.0, 3.0); op(-1, FL + 3.0, -15.0, 3.0); op(8, FL + 2.0, -15.3, 1.6);
-    op(-11.3, FL + 1.5, -2.5, 2.2); op(-11.2, FL + 1.6, -9.5, 2.8); op(-11.2, FL + 1.6, -13, 2.8);
-    op(11.3, FL + 1.5, -2.5, 2.2); op(11.3, FL + 1.1, -5.8, 1.7); op(11.3, FL + 1.5, -12, 1.8);
-    setOpenings(this.openings);
 
     // ===== 내벽 =====
     const it = 0.075;
@@ -562,34 +556,6 @@ export class Level {
     this.boxes.push({ min: [Math.min(x0, x1) - 0.05, 0, Math.min(z0, z1) - 0.05], max: [Math.max(x0, x1) + 0.05, 2.4, Math.max(z0, z1) + 0.05], mat: 'fence', thin: true });
   }
 
-  // 바닥에 놓인 물체 아래의 확산광 차폐(부드러운 사각 그림자)
-  contactShadows() {
-    const S = 64, c = document.createElement('canvas'); c.width = c.height = S;
-    const x = c.getContext('2d'); const img = x.createImageData(S, S);
-    for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
-      const u = Math.abs(i / (S - 1) * 2 - 1), v = Math.abs(j / (S - 1) * 2 - 1);
-      const d = Math.max(u, v) * 0.6 + Math.hypot(u, v) * 0.4;
-      const a = Math.max(0, Math.min(1, (1 - d) / 0.55));
-      const o = (j * S + i) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = 0; img.data[o + 3] = a * a * 255;
-    }
-    x.putImageData(img, 0, 0);
-    const tex = new THREE.CanvasTexture(c);
-    const geos = [];
-    for (const b of this.boxes) {
-      const w = b.max[0] - b.min[0], d = b.max[2] - b.min[2], h = b.max[1] - b.min[1];
-      if (b.thin || w < 0.25 || d < 0.25 || w * d > 22 || h < 0.08 || h > 3.2) continue;
-      const fy = Math.abs(b.min[1] - FL) < 0.06 ? FL : Math.abs(b.min[1]) < 0.06 ? 0.0 : null;
-      if (fy === null) continue;
-      const pad = Math.min(0.45, 0.15 + h * 0.15);
-      const g = new THREE.PlaneGeometry(w + pad * 2, d + pad * 2); g.rotateX(-Math.PI / 2);
-      g.translate((b.min[0] + b.max[0]) / 2, fy + (fy === 0 ? 0.024 : 0.004), (b.min[2] + b.max[2]) / 2);
-      geos.push(g);
-    }
-    if (!geos.length) return;
-    const m = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -3 }));
-    m.renderOrder = 1; this.group.add(m);
-  }
-
   // 벽의 잡다한 것들: 전선관, 콘센트, 스위치, 게시물, 분전함, 소화기
   wallClutter() {
     const r = this.rng;
@@ -738,21 +704,30 @@ export class Level {
     this.exteriorDetails();
     this.missingTiles();
     this.wallClutter();
-    this.contactShadows();
+    // 빛을 가리는 메시 목록(빛 굽기용). 멀리 있는 것은 형광등을 가릴 일이 없다
+    this.casters = []; this.nearCasters = [];
     for (const [k, list] of this.buckets) {
       if (!list.length) continue;
       const g = mergeGeometries(list, false);
       const mesh = new THREE.Mesh(g, this.mats[k]);
       mesh.matrixAutoUpdate = false;
       this.group.add(mesh);
+      this.casters.push(mesh);
+      if (!['treeDark', 'backdrop', 'grass'].includes(k)) this.nearCasters.push(mesh);
     }
     this.buckets.clear();
     // 품질 낮음: 형광등 일부 끔(광원 수를 줄임)
     this.buildNav();
   }
 
+  // 빛 굽기에 넘길 형광등 목록
+  bakeLights() { return this.fixtures.map(f => ({ pos: f.light.position.clone(), along: f.along, intensity: f.base, chan: f.chan })); }
+
   setQuality(q) {
     this.fixtures.forEach((f, i) => { f.light.visible = q === 'high' || (q === 'medium' ? i % 3 !== 2 : i % 2 === 0); });
+    // 켜진 형광등이 셰이더의 점광원 자리에 놓이는 순서대로 가시도 채널을 연결한다. 품질 '낮음'에서는 가시도 조회를 끈다
+    setLightSlots(this.fixtures.filter(f => f.light.visible).map(f => f.chan));
+    volUniforms.uLmOn.value = this.lightBaked && q !== 'low' ? 1 : 0;
   }
 
   update(t, dt) {

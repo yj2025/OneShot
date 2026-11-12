@@ -10,6 +10,7 @@ import { Bot, angDiff } from './bots.js';
 import { Sound } from './audio.js';
 import { Post } from './post.js';
 import { OSD } from './osd.js';
+import { bakeLight, skyGain, volUniforms, probeLight } from './lightbake.js';
 
 const Q = new URLSearchParams(location.search);
 const TEST = Q.get('test') === '1';
@@ -18,6 +19,8 @@ const MANUAL = TEST && Q.get('clock') === 'manual';
 const SEED = +(Q.get('seed') || 1);
 const VIEW = Q.has('view') ? +Q.get('view') : null;
 const TOUR = Q.get('tour') === '1';
+// 살펴보기용 임의 시점(테스트 진입 경로 전용): ?vp=x,z,yaw,pitch
+const VP = TEST && Q.get('vp') ? Q.get('vp').split(',').map(Number) : null;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = (id) => document.getElementById(id);
 
@@ -66,9 +69,9 @@ const SCALE = { high: 1.0, medium: 0.8, low: 0.62 };
 function makeSky() {
   const m = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { uTime: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uGain: { value: skyGain } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
-    fragmentShader: `varying vec3 vDir; uniform float uTime;
+    fragmentShader: `varying vec3 vDir; uniform float uTime; uniform float uGain;
       float h(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5); }
       float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
       float fbm(vec2 p){ float s=0., a=.5; for(int i=0;i<5;i++){ s+=a*n(p); p*=2.1; a*=.5; } return s; }
@@ -84,7 +87,8 @@ function makeSky() {
         vec3 sunDir = normalize(vec3(-0.6, 0.25, 0.75));
         c += vec3(1.0, 0.95, 0.85) * pow(max(dot(d, sunDir), 0.0), 6.0) * 1.2;
         c = mix(vec3(1.6, 1.6, 1.6), c, smoothstep(-0.1, 0.05, d.y));
-        gl_FragColor = vec4(c, 1.0);
+        // 밝기 배율은 빛 굽기(lightbake.js)의 하늘빛과 같은 값을 쓴다. 보이는 하늘과 그 하늘이 비추는 땅의 비율을 맞추려는 것이다
+        gl_FragColor = vec4(c * uGain, 1.0);
       }`,
   });
   const s = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), m);
@@ -103,7 +107,7 @@ class Game {
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0xb4b8bb, 0.0085);
+    this.scene.fog = new THREE.FogExp2(new THREE.Color(0xb4b8bb).multiplyScalar(skyGain), 0.0085);   // 안개는 하늘빛이 흩어진 것이라 하늘 밝기를 따른다
     this.camera = new THREE.PerspectiveCamera(80, 16 / 9, 0.04, 420);
     this.input = new Input(this.canvas);
     this.osd = new OSD($('osd'), SEED, TEST);
@@ -129,13 +133,11 @@ class Game {
     this.level = new Level(this.tex, SEED, this.settings.quality);
     this.scene.add(this.level.group);
     this.sky = makeSky(); this.scene.add(this.sky);
-    this.hemi = new THREE.HemisphereLight(0xdfe4ea, 0x6a665c, 6.2);
-    this.scene.add(this.hemi);
-    // 흐린 하늘 반사용 환경맵 (실내에서는 셰이더가 줄인다)
+    // 하늘빛과 반사광은 조도 볼륨이 맡는다(lightbake.js). 환경맵은 하늘이 비치는 반사에만 쓴다
     const pm = new THREE.PMREMGenerator(this.renderer);
     const envScene = new THREE.Scene();
     const envSky = makeSky(); envScene.add(envSky);
-    const gnd = new THREE.Mesh(new THREE.CircleGeometry(250, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3a3833 })); gnd.position.y = -2; envScene.add(gnd);
+    const gnd = new THREE.Mesh(new THREE.CircleGeometry(250, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(0.42 * skyGain, 0.4 * skyGain, 0.36 * skyGain) })); gnd.position.y = -2; envScene.add(gnd);
     this.scene.environment = pm.fromScene(envScene, 0.02).texture;
     pm.dispose();
     this.flashLight = new THREE.PointLight(0xffb36a, 0, 10, 1.8); this.scene.add(this.flashLight);
@@ -144,7 +146,7 @@ class Game {
     this.fx.onCasingLand = (pos, mat, b) => this.sound.play('tink_' + (mat === 'metal' ? 'metal' : (mat === 'gravel' || mat === 'water') ? 'gravel' : 'concrete'), { gain: 0.16 / (b + 1), send: 0.15 });
     this.vm = new Viewmodel(this.scene, this.rng);
     this.player = new Player(this.level, this.rng);
-    this.setLoad(0.9, '훈련 상대 배치 중');
+    this.setLoad(0.88, '훈련 상대 배치 중');
     const B = [
       { spawn: [-15.5, 2.6, Math.PI * 0.9], patrol: [[-13, 3.0], [-16, 10.5], [-12, 12], [-20, 4]], role: 'hold' },
       { spawn: [8, -2.6, 0.2], patrol: [[8, -2.6], [5.5, -2.8], [10, -0.8], [8, -4.3]], role: 'hold' },
@@ -153,6 +155,15 @@ class Game {
     ];
     this.bots = B.map((b, i) => new Bot(this, i, b.spawn, b.patrol, b.role));
     this.post = new Post(this.renderer);
+    // 빛 굽기: 하늘빛 가시도, 형광등 그림자, 반사광을 한 번 계산한다
+    this.setLoad(0.9, '빛 계산 중: 하늘빛');
+    await new Promise(r => setTimeout(r, 0));
+    this.bake = await bakeLight(this.renderer, {
+      casters: this.level.casters, nearCasters: this.level.nearCasters, occ: this.level.occ, lights: this.level.bakeLights(),
+      onProgress: (p, k) => this.setLoad(0.9 + p * 0.06, `빛 계산 중: ${k}`),
+    });
+    this.level.lightBaked = this.bake.ok;
+    if (TEST && Q.get('clay') === '1') volUniforms.uClay.value = 1;
     this.resize();
     addEventListener('resize', () => this.resize());
     this.setLoad(0.96, '셰이더 준비 중');
@@ -226,7 +237,7 @@ class Game {
     for (const b of this.bots) b.reset();
     this.vm.reset();
     this.playTime = 0; this.stats.kills = 0; this.wonAt = null; this.deadAt = null; this.deadFade = 0;
-    const v = VIEW !== null ? VIEWS[VIEW] : null;
+    const v = VIEW !== null ? VIEWS[VIEW] : VP ? { pos: [VP[0], VP[1]], yaw: VP[2] || 0, pitch: VP[3] || 0 } : null;
     if (v) {
       this.player.spawn(v.pos[0], v.pos[1], v.yaw, v.pitch || 0);
       for (const b of this.bots) b.dormant = 'idle';
@@ -481,6 +492,9 @@ class Game {
     const g = this;
     return {
       ready: false,
+      bake() { return g.bake || null; },
+      // 조도 볼륨을 한 점에서 읽는다(검사와 살펴보기용)
+      light(x, y, z) { return probeLight(g.renderer, x, y, z); },
       state() {
         const p = g.player, vm = g.vm;
         if (!p) return { phase: g.phase };

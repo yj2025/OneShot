@@ -1,6 +1,6 @@
 // 상대 봇: 사람 비율의 관절 인형, 절차 보행, 상태기계 AI(순찰·경계·교전·엄폐·측면 우회), 버렛 래그돌
 import * as THREE from 'three';
-import { bcMaterial } from './materials.js';
+import { shadowMaterial, bcMaterial } from './materials.js';
 import { noise1 } from './rng.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
@@ -105,8 +105,9 @@ export class Bot {
     grp.add(gun);
     grp.traverse(m => { if (m.isMesh) m.frustumCulled = false; });
     game.scene.add(grp);
-    // 그림자 대신 발밑 접지 얼룩
-    this.blob = new THREE.Mesh(new THREE.CircleGeometry(0.45, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false, map: game.tex.puff }));
+    // 바닥 그림자: 몸이 가린 빛만큼 바닥을 어둡게 하는 판(materials.js shadowMaterial)
+    this.blob = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 3.6).rotateX(-Math.PI / 2), shadowMaterial());
+    this.blob.frustumCulled = false;
     this.blob.renderOrder = 1;
     game.scene.add(this.blob);
     this.J = Array.from({ length: 15 }, () => V(0, 0, 0));
@@ -250,8 +251,13 @@ export class Bot {
       this.gun.position.copy(gp.pos);
     }
     const gh = this.alive ? this.pos.y : this.g.level.groundHeight(j[J.pelvis].x, j[J.pelvis].z, j[J.pelvis].y + 0.3, 0.05, 0.4);
-    this.blob.position.set(j[J.pelvis].x, gh + 0.012, j[J.pelvis].z);
-    this.blob.scale.setScalar(this.alive ? 1 : 1.6);
+    // 그림자 캡슐: 두 발 사이에서 머리까지. 쓰러지면 누운 몸을 따라간다
+    const su = this.blob.material.userData.local;
+    su.uCA.value.copy(j[J.ftL]).add(j[J.ftR]).multiplyScalar(0.5); su.uCA.value.y = Math.max(su.uCA.value.y, gh + 0.1);
+    su.uCB.value.copy(j[J.head]); su.uCB.value.y = Math.max(su.uCB.value.y, gh + 0.12);
+    this.blob.position.set((su.uCA.value.x + su.uCB.value.x) / 2, gh + 0.012, (su.uCA.value.z + su.uCB.value.z) / 2);
+    const fx = this.g.level.fixtures;
+    for (let i = 0; i < 8; i++) { const f = fx[i]; if (f) { su.uLP.value[i].copy(f.light.position); su.uLI.value[i] = f.light.visible ? f.light.intensity : 0; } }
   }
 
   muzzleWorld() { const m = this.gunMuzzle.clone(); return m.applyQuaternion(this.gun.quaternion).add(this.gun.position); }
