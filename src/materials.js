@@ -50,7 +50,9 @@ float bcIrr(vec4 sh, vec3 n) {
   float c0 = max(sh.w, 1e-5), l1 = length(sh.xyz);
   float lin = max(c0 + dot(sh.xyz, n), 0.0);
   float r = clamp(l1 / (2.0 * c0), 0.0, 1.0);
-  float q = 0.5 * (1.0 + dot(sh.xyz / max(l1, 1e-5), n));
+  // 0~1로 묶는다. 면이 빛의 정반대를 향하면 반올림 오차로 음수가 되고, 음수의 거듭제곱은 NaN이다.
+  // NaN 화소 하나는 번짐 단계에서 네모난 검은 구역으로 퍼진다(1단계 ① 끝 평가에서 걷기 연속 프레임에 찍혔다)
+  float q = clamp(0.5 * (1.0 + dot(sh.xyz / max(l1, 1e-5), n)), 0.0, 1.0);
   float p = 1.0 + 2.0 * r, a = (1.0 - r) / (1.0 + r);
   float geo = c0 * (a + (1.0 - a) * (p + 1.0) * pow(q, p));
   return mix(lin, geo, smoothstep(0.55, 0.9, r));

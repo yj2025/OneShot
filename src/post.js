@@ -13,7 +13,8 @@ void main(){
   // 중앙 가중 평균 로그 휘도 (r: w*log, g: w)
   vec3 c = texture2D(tScene, vUv).rgb;
   vec3 c2 = texture2D(tScene, vUv + vec2(0.006, 0.004)).rgb;
-  float l = dot(mix(c, c2, 0.5), vec3(0.2126, 0.7152, 0.0722));
+  // 0~1e4로 묶는다. 재질 셰이더에서 NaN이나 음수가 한 화소라도 나오면 평균 휘도와 번짐을 거쳐 화면 전체로 퍼진다
+  float l = clamp(dot(mix(c, c2, 0.5), vec3(0.2126, 0.7152, 0.0722)), 0.0, 1e4);
   // 날아간 부분은 날아간 만큼만 센다. 센서는 포화된 화소가 얼마나 더 밝은지 모른다
   if (uInit < 0.5) l = min(l, texture2D(tPrev, vec2(0.5)).r * 6.0);
   vec2 d = (vUv - 0.5) * vec2(1.6, 1.2);
@@ -29,7 +30,7 @@ void main(){
   // 어두워질 때보다 밝아질 때 조금 빠르게, 그래도 느리게 따라온다
   float speed = avg > prev ? 2.2 : 0.9;
   float a = uInit > 0.5 ? 1.0 : 1.0 - exp(-uDt * speed);
-  float v = exp(mix(log(max(prev, 1e-4)), log(avg), a));
+  float v = clamp(exp(mix(log(max(prev, 1e-4)), log(max(avg, 1e-4)), a)), 1e-4, 1e4);
   gl_FragColor = vec4(v, avg, 0.0, 1.0);
 }`;
 const BRIGHT_FS = `
@@ -40,7 +41,7 @@ void main(){
   vec3 c = vec3(0.0);
   c += texture2D(tScene, vUv + uTexel * vec2(-1.0, -1.0)).rgb; c += texture2D(tScene, vUv + uTexel * vec2(1.0, -1.0)).rgb;
   c += texture2D(tScene, vUv + uTexel * vec2(-1.0, 1.0)).rgb; c += texture2D(tScene, vUv + uTexel * vec2(1.0, 1.0)).rgb;
-  c *= 0.25 * ex;
+  c = clamp(c * (0.25 * ex), 0.0, 1e4);   // NaN 화소 하나가 저해상도 번짐에서 네모난 검은 구역으로 퍼지지 않게 묶는다
   float l = dot(c, vec3(0.333));
   gl_FragColor = vec4(c * smoothstep(0.75, 2.2, l), 1.0);
 }`;
