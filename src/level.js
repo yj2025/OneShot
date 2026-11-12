@@ -2,7 +2,7 @@
 // 좌표: y 위, 건물은 x[-12,12] z[-16,0], 정면(z=0)이 마당(+z) 쪽. 실내 바닥 높이 FL = 0.7 m.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { WearTool, WEAR, hash } from './wear.js';
 import { bcMaterial } from './materials.js';
 import { setLightSlots, volUniforms } from './lightbake.js';
 import { mulberry32 } from './rng.js';
@@ -12,6 +12,14 @@ const CA = FL + 2.8;   // 일반 천장
 const CH = FL + 4.6;   // 창고 홀 천장
 const DOOR_H = FL + 2.05;
 const BLDG = { x0: -12, z0: -16, x1: 12, z1: 0 };
+// 재질 키 → 닳는 방식(wear.js의 WEAR). 여기에 없는 재질(땅, 고무, 종이 등)은 반듯한 상자 그대로 둔다
+const WEAR_KEYS = {
+  block: 'masonry', concrete: 'masonry', jersey: 'masonry', plaster: 'plaster', ceiling: 'plaster',
+  plywood: 'wood', plywoodB: 'wood', plywoodC: 'wood', pallet: 'wood', deskTop: 'wood', doorPaint: 'wood',
+  metalDark: 'metal', metalGalv: 'metal', locker: 'metal', roofMetal: 'metal', contBlue: 'metal', contRust: 'metal', steelGrate: 'metal', acUnit: 'metal',
+  cardboard: 'soft', cardboardB: 'soft', cardboardC: 'soft', fabricChair: 'soft',
+  gravel: 'ground', asphalt: 'ground',
+};
 
 // 상자 (월드 좌표 UV, tile = 텍스처 1장이 덮는 미터)
 function boxGeometry(min, max, tile, matrix) {
@@ -41,8 +49,46 @@ function boxGeometry(min, max, tile, matrix) {
 }
 
 function cleanGeo(g) {
-  for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+  for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'aWear'].includes(k)) g.deleteAttribute(k);
+  // aWear: 닳은 자리 표시(형상 도구가 채운다). 한 재질의 형상을 합치려면 모든 형상에 같은 속성이 있어야 한다
+  if (!g.attributes.aWear) g.setAttribute('aWear', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count), 1));
   if (!g.index) { const n = g.attributes.position.count; const a = []; for (let i = 0; i < n; i++) a.push(i); g.setIndex(a); }
+  return g;
+}
+
+// 바닥에 놓여 조금씩 비뚤어지는 소품의 재질
+const PROP_KEYS = ['locker', 'metalGalv', 'deskTop', 'cardboard', 'cardboardB', 'cardboardC', 'acUnit'];
+
+// 무른 상자(종이 상자, 방석)가 눌린 모양: 윗면이 주저앉고 옆면이 불룩하다. h: 반치수, rnd(n): 0~1
+function crushWarp(h, rnd) {
+  const dip = Math.min(h[1] * 0.3, 0.012 + rnd(1) * 0.035), bulge = 0.006 + rnd(2) * 0.014, cx = (rnd(3) - 0.5) * 1.2, cz = (rnd(4) - 0.5) * 1.2;
+  return (x, y, z) => {
+    const u = x / h[0], v = z / h[2], t = (y / h[1] + 1) / 2, side = Math.sin(t * Math.PI) * bulge;
+    return [x + u * side * (1 - v * v * 0.6), y - t * t * dip * Math.max(0, 1 - ((u - cx) ** 2 + (v - cz) ** 2) * 0.45), z + v * side * (1 - u * u * 0.6)];
+  };
+}
+
+// 천장 판 하나를 0.6 m 타일로 나눈다. 타일마다 처진 깊이와 기울기가 달라서 등 가까이에서 타일 사이에 턱과 밝기 차이가 생긴다
+function ceilingTiles(s) {
+  const T = 0.6, y = s.min[1], pos = [], nor = [], uv = [], idx = [];
+  for (let i = Math.floor(s.min[0] / T); i * T < s.max[0]; i++) for (let k = Math.floor(s.min[2] / T); k * T < s.max[2]; k++) {
+    const xa = Math.max(s.min[0], i * T), xb = Math.min(s.max[0], (i + 1) * T), za = Math.max(s.min[2], k * T), zb = Math.min(s.max[2], (k + 1) * T);
+    if (xb - xa < 0.02 || zb - za < 0.02) continue;
+    const sag = -(0.002 + hash(i, k, 41) ** 2 * 0.014), tx = (hash(i, k, 42) - 0.5) * 0.03, tz = (hash(i, k, 43) - 0.5) * 0.03;
+    const xc = (i + 0.5) * T, zc = (k + 0.5) * T, nl = Math.hypot(tx, 1, tz), b = pos.length / 3;
+    const loose = hash(i, k, 44) < 0.035 ? Math.floor(hash(i, k, 45) * 4) : -1, drop = 0.05 + hash(i, k, 46) * 0.09;   // 서른 장에 하나는 한쪽 모서리가 빠져 걸려 있다
+    [[xa, za], [xb, za], [xb, zb], [xa, zb]].forEach(([x, z], ci) => { pos.push(x, y + sag + tx * (x - xc) + tz * (z - zc) - (ci === loose ? drop : 0), z); nor.push(tx / nl, -1 / nl, tz / nl); uv.push(x / s.tile, z / s.tile); });
+    idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  // 타일 위의 몸통(옆면과 윗면). 타일 틈으로 보이는 면은 타일보다 3 cm 위에 둔다
+  const body = boxGeometry([s.min[0], y + 0.03, s.min[2]], s.max, s.tile), n0 = pos.length / 3, bp = body.attributes.position, bn = body.attributes.normal, bu = body.attributes.uv;
+  for (let i = 0; i < bp.count; i++) { pos.push(bp.getX(i), bp.getY(i), bp.getZ(i)); nor.push(bn.getX(i), bn.getY(i), bn.getZ(i)); uv.push(bu.getX(i), bu.getY(i)); }
+  for (let i = 0; i < body.index.count; i++) idx.push(n0 + body.index.getX(i));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
   return g;
 }
 
@@ -57,6 +103,8 @@ export class Level {
     this.mats = {};
     this.lights = [];
     this.fixtures = [];
+    this.specs = [];          // 상자 목록. 형상은 finish()에서 형상 도구(wear.js)로 한꺼번에 만든다
+    this.casterGeos = [];     // 빛을 가리는 형상(반듯한 상자와 그 밖의 도형)
     this.occ = [];            // 빛 굽기용: 반사광을 막는 큰 형상(축 정렬 상자 {min,max} 또는 회전 상자 {m,h})
     this.lightBaked = false;
     this.nodes = [];
@@ -119,9 +167,9 @@ export class Level {
   }
 
   // ---- 기본 도형 ----
-  add(matKey, geo) { cleanGeo(geo); if (!this.buckets.has(matKey)) this.buckets.set(matKey, []); this.buckets.get(matKey).push(geo); }
+  add(matKey, geo, caster = true) { cleanGeo(geo); if (!this.buckets.has(matKey)) this.buckets.set(matKey, []); this.buckets.get(matKey).push(geo); if (caster) this.casterGeos.push({ key: matKey, geo }); }
   box(matKey, min, max, { tile = 2, collide = true, mat = 'concrete', cover = false, visual = true } = {}) {
-    if (visual) { this.add(matKey, boxGeometry(min, max, tile)); this.occ.push({ min: [...min], max: [...max] }); }
+    if (visual) { this.specs.push({ key: matKey, min: [...min], max: [...max], tile }); this.occ.push({ min: [...min], max: [...max] }); }
     if (collide) this.boxes.push({ min: [...min], max: [...max], mat, cover });
   }
   collider(min, max, mat = 'concrete') { this.boxes.push({ min, max, mat }); }
@@ -130,14 +178,9 @@ export class Level {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(...center), new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, rotY, rotZ)), new THREE.Vector3(1, 1, 1));
     const h = size.map(s => s / 2);
     this.occ.push({ m, h });
-    if (round > 0) {
-      // 모서리가 닳은 상자: 둥근 모서리 + 면마다 살짝 찌그러짐
-      const g = new RoundedBoxGeometry(size[0], size[1], size[2], 2, Math.min(round, Math.min(...size) * 0.3));
-      const p = g.attributes.position;
-      for (let i = 0; i < p.count; i++) { const k = 1 + (this.rng() - 0.5) * 0.025; p.setXYZ(i, p.getX(i) * k, p.getY(i) * (1 + (this.rng() - 0.5) * 0.015), p.getZ(i) * k); }
-      g.computeVertexNormals(); g.applyMatrix4(m);
-      this.add(matKey, g);
-    } else this.add(matKey, boxGeometry([-h[0], -h[1], -h[2]], h, tile, m));
+    this.specs.push({ key: matKey, m, h, tile, round });
+    // 이전에는 둥근 상자의 꼭짓점 900개마다 난수를 두 번씩 썼다. 형상 도구로 바꾼 뒤에도 같은 횟수를 써서 그 뒤의 무작위 배치가 달라지지 않게 한다
+    if (round > 0) for (let i = 0; i < 1800; i++) this.rng();
     if (collide) {
       const bb = new THREE.Box3().setFromBufferAttribute(boxGeometry([-h[0], -h[1], -h[2]], h, tile, m).attributes.position);
       this.boxes.push({ min: bb.min.toArray(), max: bb.max.toArray(), mat });
@@ -473,7 +516,7 @@ export class Level {
     }
     const h = n * 0.144;
     this.obox('pallet', [x, y + h / 2, z], [1.2, h, 1.0], a, { tile: 1.2, mat: 'wood' });
-    this.buckets.get('pallet').pop(); // 충돌용 상자만 남기고 겉면은 판재로
+    this.specs.pop(); // 충돌용 상자만 남기고 겉면은 판재로
     this.boxes[this.boxes.length - 1].cover = h > 0.8;
   }
   crate(x, z, s, a) { this.obox(['plywood', 'plywoodB', 'plywoodC'][Math.floor(this.rng() * 3)], [x, FL + s / 2, z], [s, s, s], a, { tile: 1.2, mat: 'wood', round: 0.025 }); this.boxes[this.boxes.length - 1].cover = true; }
@@ -704,20 +747,122 @@ export class Level {
     this.exteriorDetails();
     this.missingTiles();
     this.wallClutter();
-    // 빛을 가리는 메시 목록(빛 굽기용). 멀리 있는 것은 형광등을 가릴 일이 없다
-    this.casters = []; this.nearCasters = [];
+    this.buildBoxes();
     for (const [k, list] of this.buckets) {
       if (!list.length) continue;
       const g = mergeGeometries(list, false);
       const mesh = new THREE.Mesh(g, this.mats[k]);
       mesh.matrixAutoUpdate = false;
       this.group.add(mesh);
-      this.casters.push(mesh);
-      if (!['treeDark', 'backdrop', 'grass'].includes(k)) this.nearCasters.push(mesh);
     }
     this.buckets.clear();
+    // 빛을 가리는 메시(빛 굽기용): 형상 도구를 거치지 않은 반듯한 상자와 그 밖의 도형. 멀리 있는 것은 형광등을 가릴 일이 없다
+    const posOnly = (g) => { const n = new THREE.BufferGeometry(); n.setAttribute('position', g.attributes.position); n.setIndex(g.index); return n; };
+    const far = ['treeDark', 'backdrop', 'grass'];
+    this.casters = [new THREE.Mesh(mergeGeometries(this.casterGeos.map(c => posOnly(c.geo)), false))];
+    this.nearCasters = [new THREE.Mesh(mergeGeometries(this.casterGeos.filter(c => !far.includes(c.key)).map(c => posOnly(c.geo)), false))];
+    this.casterGeos = null;
     // 품질 낮음: 형광등 일부 끔(광원 수를 줄임)
     this.buildNav();
+  }
+
+  // ---- 형상 도구 적용 ----
+  // 상자 하나가 어떤 방식으로 닳는지. null이면 반듯한 상자 그대로 둔다
+  wearKind(s) {
+    const kind = WEAR_KEYS[s.key]; if (!kind) return null;
+    const size = s.m ? s.h.map(v => v * 2) : [0, 1, 2].map(a => s.max[a] - s.min[a]);
+    const c = s.m ? [s.m.elements[12], s.m.elements[13], s.m.elements[14]] : [0, 1, 2].map(a => (s.min[a] + s.max[a]) / 2);
+    const mn = Math.min(...size), mx = Math.max(...size);
+    if (kind === 'ground') return mx > 8 && Math.abs(c[0]) < 27 && c[2] > -23 && c[2] < 33 ? { kind, lite: false } : null;   // 마당의 땅과 포장
+    if (mx < 0.1 || mn < 0.004) return null;                            // 종이, 캔 같은 잔것
+    if (Math.abs(c[0]) > 27 || c[2] < -23 || c[2] > 33) return null;    // 담장 밖
+    if (s.key === 'ceiling' && mx > 1.2) return null;                   // 천장 판 전체
+    return { kind, lite: mn < 0.035 || mx < 0.45 };
+  }
+  // 넓고 얇은 판은 규격 크기(1.22 m)로 나눠 이음을 두고 판마다 조금씩 휘게 한다. 길고 가는 석재(갓돌)는 토막으로 나눈다
+  splitSpec(s, kind) {
+    if (s.m) return [s];
+    const size = [0, 1, 2].map(a => s.max[a] - s.min[a]);
+    const hsh = (i, k) => { let n = Math.imul((Math.round(s.min[0] * 97) * 31 + Math.round(s.min[2] * 89) * 17 + Math.round(s.min[1] * 83) + i * 7919 + k * 104729) | 0, 0x9e3779b1); n ^= n >>> 15; n = Math.imul(n, 0x85ebca6b); n ^= n >>> 13; return (n >>> 0) / 4294967296; };
+    const piece = (min, max, rx, ry, rz, off, extra) => {
+      const c = new THREE.Vector3((min[0] + max[0]) / 2 + off[0], (min[1] + max[1]) / 2 + off[1], (min[2] + max[2]) / 2 + off[2]);
+      const m = new THREE.Matrix4().compose(c, new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(1, 1, 1));
+      return { ...s, min: undefined, max: undefined, m, h: [0, 1, 2].map(a => (max[a] - min[a]) / 2), ...extra };
+    };
+    // 바닥에 놓인 소품(사물함, 캐비닛, 접수대, 종이 상자, 실외기)은 줄 맞춰 반듯하게 놓여 있지 않다. 조금씩 돌아가고 기울어 있다
+    const onFloor = Math.abs(s.min[1] - FL) < 0.03 || Math.abs(s.min[1]) < 0.03;
+    if (onFloor && PROP_KEYS.includes(s.key) && size[1] >= 0.2 && size[1] <= 2.3 && Math.min(size[0], size[2]) >= 0.25 && Math.max(size[0], size[2]) <= 2.6) {
+      const k = kind === 'soft' ? 2.2 : 1;
+      return [piece(s.min, s.max, (hsh(0, 22) - 0.5) * 0.018 * k, (hsh(0, 21) - 0.5) * 0.07, (hsh(0, 23) - 0.5) * 0.018 * k, [0, 0, 0], kind === 'soft' ? { warp: crushWarp(size.map(v => v / 2), (n) => hsh(0, 30 + n)) } : {})];
+    }
+    const t = size[0] < size[2] ? 0 : 2, u = 2 - t;   // 얇은 축과 가로축
+    if (kind === 'wood' && size[t] <= 0.07 && size[1] >= 1.0 && size[u] >= 1.3) {
+      const n = Math.ceil(size[u] / 1.22), out = [];
+      for (let i = 0; i < n; i++) {
+        const min = [...s.min], max = [...s.max];
+        min[u] = s.min[u] + size[u] * i / n + (i ? 0.002 : 0); max[u] = s.min[u] + size[u] * (i + 1) / n - (i < n - 1 ? 0.002 : 0);
+        const bow = (hsh(i, 1) < 0.5 ? -1 : 1) * (0.012 + hsh(i, 1) * 0.02), ph = hsh(i, 2) * 6, hu = (max[u] - min[u]) / 2, hy = size[1] / 2;
+        const off = [0, 0, 0]; off[t] = (hsh(i, 3) - 0.5) * 0.008;
+        const lean = (hsh(i, 4) - 0.5) * 0.036, yaw = (hsh(i, 5) - 0.5) * 0.024;
+        // 판이 휜다: 가운데가 불룩하고, 묶이지 않은 위쪽으로 갈수록 더 벌어진다
+        const warp = (x, y, z) => { const p = [x, y, z]; p[t] += bow * Math.cos(p[u] / hu * 1.5708) * (0.75 + 0.25 * Math.sin(y / hy * 1.3 + ph)) + bow * 0.25 * (y / hy + 1); return p; };
+        out.push(piece(min, max, t === 2 ? lean : 0, yaw, t === 0 ? lean : 0, off, { warp }));
+      }
+      return out;
+    }
+    const long = size[0] > size[2] ? 0 : 2, w = 2 - long;
+    if (kind === 'metal' && size[long] >= 4 && size[1] <= 0.15 && size[w] <= 0.15) {
+      const out = []; let a = s.min[long], i = 0;
+      while (a < s.max[long] - 0.05) {
+        const b = a + Math.min(s.max[long] - a, 2.4 + hsh(i, 41) * 1.1), hl = (b - a) / 2;
+        const min = [...s.min], max = [...s.max]; min[long] = a + 0.004; max[long] = b - 0.004;
+        const sag = 0.012 + hsh(i, 42) * 0.035, droop = hsh(i, 43) < 0.16 ? (0.05 + hsh(i, 44) * 0.09) * (hsh(i, 45) < 0.5 ? -1 : 1) : (hsh(i, 46) - 0.5) * 0.012;
+        // 가운데가 처진다. 고정이 풀린 토막은 한쪽 끝을 축으로 늘어진다(끝이 내려간 만큼 중심을 내린다)
+        const warp = (x, y, z) => { const t = (long === 0 ? x : z) / hl; return [x, y - sag * (1 - t * t), z]; };
+        out.push(piece(min, max, long === 2 ? droop : 0, 0, long === 0 ? droop : 0, [0, -Math.abs(Math.sin(droop)) * hl, 0], { warp }));
+        a = b; i++;
+      }
+      return out;
+    }
+    if (kind === 'masonry' && size[long] >= 4 && size[1] <= 0.4 && size[w] <= 0.4) {
+      const out = []; let a = s.min[long], i = 0;
+      while (a < s.max[long] - 0.05) {
+        const b = a + Math.min(s.max[long] - a, 0.85 + hsh(i, 1) * 0.5), e = hsh(i, 2);
+        const min = [...s.min], max = [...s.max]; min[long] = a + 0.002; max[long] = b - 0.002;
+        if (e > 0.05) {   // 스무 토막에 하나는 빠져 있다
+          const loose = e > 0.9;   // 열 토막에 하나는 들떠서 비뚤다
+          const off = [0, (hsh(i, 3) - 0.5) * 0.012 + (loose ? 0.012 : 0), 0]; off[w] = (hsh(i, 4) - 0.5) * (loose ? 0.05 : 0.01);
+          const tilt = (hsh(i, 5) - 0.5) * (loose ? 0.09 : 0.016), yaw = (hsh(i, 6) - 0.5) * (loose ? 0.06 : 0.008);
+          out.push(piece(min, max, long === 2 ? tilt * 0.3 : tilt, yaw, long === 0 ? tilt * 0.3 : tilt, off, {}));
+        }
+        a = b; i++;
+      }
+      return out;
+    }
+    return [s];
+  }
+  buildBoxes() {
+    const tool = new WearTool({ high: 1, medium: 1.5, low: 2.4 }[this.quality] || 1);
+    for (const s of this.specs) s.self = tool.addSolid(s);
+    const stat = {};   // 재질별 삼각형 수(살펴보기용)
+    for (const s of this.specs) {
+      const plain = cleanGeo(s.m ? boxGeometry(s.h.map(v => -v), s.h, s.tile, s.m) : boxGeometry(s.min, s.max, s.tile));
+      this.casterGeos.push({ key: s.key, geo: plain });
+      // 천장 판: 타일마다 처지고 기운 정도가 다르다
+      if (s.key === 'ceiling' && !s.m && Math.max(s.max[0] - s.min[0], s.max[2] - s.min[2]) > 1.2) { this.add(s.key, ceilingTiles(s), false); continue; }
+      const w = this.wearKind(s);
+      if (!w) { this.add(s.key, plain, false); continue; }
+      const t0 = tool.tris;
+      for (const piece of this.splitSpec(s, w.kind)) {
+        piece.lite = w.lite;
+        if (s.key === 'contBlue' || s.key === 'contRust') piece.reliefK = 3; else if (s.key === 'locker') piece.reliefK = 1.6;
+        // 선반 위의 종이 상자처럼 돌려 놓은 무른 상자도 눌려 있다
+        if (w.kind === 'soft' && !piece.warp && !w.lite && piece.m) { const e = piece.m.elements, sd = Math.round(e[12] * 131 + e[13] * 71 + e[14] * 37); piece.warp = crushWarp(piece.h, (n) => hash(sd, n, 9)); }
+        this.add(s.key, tool.build(piece, WEAR[w.kind]), false);
+      }
+      stat[s.key] = (stat[s.key] || 0) + tool.tris - t0;
+    }
+    this.wearTris = tool.tris; this.wearStat = stat;
   }
 
   // 빛 굽기에 넘길 형광등 목록

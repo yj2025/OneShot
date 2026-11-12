@@ -32,6 +32,8 @@ for (const a of args.filter(x => !x.startsWith('--'))) {
   await page.screenshot({ path: path.join(dir, name) });
   const bake = await page.evaluate(() => window.__bc.bake ? window.__bc.bake() : null);
   console.log(name, '로딩', loadMs, 'ms, 굽기', bake ? (bake.ok ? Math.round(bake.ms) + ' ms' : '실패: ' + bake.error) : '없음');
+  const geo = await page.evaluate(() => window.__bc.geo ? window.__bc.geo() : null);
+  if (geo) console.log('    형상 도구 삼각형', geo.wearTris, '상자', geo.boxes, JSON.stringify(Object.entries(geo.byKey || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ':' + Math.round(v / 1000) + 'k')));
   for (const m of [...new Set(msgs)].slice(0, 12)) console.log('   ', m);
   await page.close();
 }

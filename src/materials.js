@@ -10,6 +10,8 @@ export const envUniforms = {
 
 const VERT_HEAD = `
 varying vec3 vBcW;
+attribute float aWear;
+varying float vBcWear;
 `;
 const VERT_BODY = `
   {
@@ -18,11 +20,13 @@ const VERT_BODY = `
       bcw = instanceMatrix * bcw;
     #endif
     vBcW = (modelMatrix * bcw).xyz;
+    vBcWear = aWear;
   }
 `;
 
 const FRAG_HEAD = `
 varying vec3 vBcW;
+varying float vBcWear;
 uniform vec4 uBldg;
 uniform float uRoofY;
 uniform float uFL;
@@ -105,6 +109,14 @@ const FRAG_GRIME = `
     float hand = smoothstep(0.85, 1.05, hF) * (1.0 - smoothstep(1.35, 1.6, hF)) * smoothstep(0.45, 0.75, bcFbm(vec2(along * 1.7, 7.0)));
     diffuseColor.rgb *= 1.0 - hand * 0.18 * uDamp;
   }
+  // 닳은 자리(형상 도구가 꼭짓점에 표시한다): 양수는 밝게(깨진 콘크리트, 생나무), 음수는 어둡게(벗겨져 드러난 바탕, 녹)
+  if (abs(vBcWear) > 0.01) {
+    float w = clamp(abs(vBcWear) * (0.55 + 0.9 * bcNoise(vBcW.xz * 21.0 + vBcW.y * 29.0)), 0.0, 1.0);
+    w = smoothstep(0.18, 0.6, w);
+    float wl = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
+    vec3 wc = vBcWear > 0.0 ? mix(diffuseColor.rgb, vec3(wl) * 1.45 + 0.08, 0.9) : diffuseColor.rgb * vec3(0.4, 0.38, 0.36);
+    diffuseColor.rgb = mix(diffuseColor.rgb, wc, w);
+  }
   if (uClay > 0.5) diffuseColor.rgb = vec3(0.45);
 }
 `;
@@ -167,7 +179,7 @@ export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0 } = {}) {
       .replace('#include <lights_fragment_begin>', FRAG_PRE + LIGHTS_BEGIN)
       .replace('#include <lights_fragment_end>', FRAG_LIGHT);
   };
-  m.customProgramCacheKey = () => 'bc2';
+  m.customProgramCacheKey = () => 'bc3';
   return m;
 }
 
