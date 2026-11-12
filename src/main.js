@@ -495,6 +495,25 @@ class Game {
       bake() { return g.bake || null; },
       // 형상 도구가 만든 삼각형 수와 한 프레임에 그린 삼각형 수(살펴보기용)
       geo() { return { wearTris: g.level.wearTris, byKey: g.level.wearStat, worn: g.level.wornStat, boxes: g.level.specs.length }; },
+      // 형상 점검: 재질별로 [법선이 면의 실제 방향과 어긋난 삼각형, 넓이가 0인 삼각형, 전체 삼각형]. 법선이 뒤집히면 조도 볼륨을 물체 안쪽에서 읽어 면이 검게 나온다
+      normals() {
+        const out = {}, keyOf = new Map(Object.entries(g.level.mats).map(([k, m]) => [m, k]));
+        g.level.group.traverse((o) => {
+          const ge = o.geometry; if (!o.isMesh || !ge || !ge.index || !ge.attributes.aWear) return;
+          const p = ge.attributes.position.array, n = ge.attributes.normal.array, ix = ge.index.array;
+          let bad = 0, zero = 0;
+          for (let t = 0; t < ix.length; t += 3) {
+            const a = ix[t] * 3, b = ix[t + 1] * 3, c = ix[t + 2] * 3;
+            const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2], vx = p[c] - p[a], vy = p[c + 1] - p[a + 1], vz = p[c + 2] - p[a + 2];
+            const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx, gl = Math.hypot(gx, gy, gz);
+            if (gl < 1e-12) { zero++; continue; }
+            const d = (gx * (n[a] + n[b] + n[c]) + gy * (n[a + 1] + n[b + 1] + n[c + 1]) + gz * (n[a + 2] + n[b + 2] + n[c + 2])) / (3 * gl);
+            if (!(d > 0.2)) bad++;
+          }
+          const k = keyOf.get(o.material) || '?'; const e = out[k] || (out[k] = [0, 0, 0]); e[0] += bad; e[1] += zero; e[2] += ix.length / 3;
+        });
+        return out;
+      },
       // 조도 볼륨을 한 점에서 읽는다(검사와 살펴보기용)
       light(x, y, z) { return probeLight(g.renderer, x, y, z); },
       state() {

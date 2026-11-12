@@ -20,7 +20,7 @@ export const WEAR = {
   wood: { r: 0.004, chip: [0.9, 0.015, 0.05], brk: [0.12, 0.06, 0.15], tint: 0.55, spread: 3.2, off: [0.025, 0.07], seg: 0.12, relief: [0.0, 1] },
   metal: { r: 0.003, chip: [0.9, 0.012, 0.035], brk: [0.12, 0.04, 0.09], tint: -0.6, spread: 4.5, off: [0.03], seg: 0.2, relief: [0.005, 0.45] },
   soft: { r: 0.014, chip: [0.8, 0.015, 0.05], brk: [0.1, 0.05, 0.1], tint: 0.25, spread: 2.0, off: [0.04], seg: 0.1, relief: [0.006, 0.22] },
-  // 땅: 모서리는 닳지 않고 면만 울퉁불퉁하다. 굴곡은 위쪽으로만 준다(놓인 물건이 뜨지 않고 조금 묻힌다). cap: 긴 면을 나누는 칸 수의 상한
+  // 땅: 모서리는 닳지 않고 윗면만 솟는다(groundRise). 굴곡은 위쪽으로만 준다(놓인 물건이 뜨지 않고 조금 묻힌다). cap: 긴 면을 나누는 칸 수의 상한
   ground: { r: 0.004, chip: [0, 0, 0], brk: [0, 0, 0], tint: 0, spread: 0, off: [], seg: 0.45, relief: [0.05, 2.6], reliefUp: true, cap: 110 },
 };
 
@@ -82,6 +82,18 @@ export class WearTool {
     return false;
   }
 
+  // 땅이 솟은 높이. 대부분은 평평하고 군데군데 낮게 솟는다. 포장이나 물건에 덮인 자리는 솟지 않고, 그 가장자리로는 흙이 넘어온다.
+  // 그래서 포장의 곧은 경계가 흙에 묻혀 들쭉날쭉해지고, 바닥에 깔린 전선과 물웅덩이는 솟은 자리에서만 묻힌다
+  groundRise(w, n1, relief, self) {
+    const L = relief[1], A = relief[0], y = w[1] + 0.012;
+    const b = n1 + 0.3 * (noise3(w[0] / (L * 0.27) + 1.7, 0.5, w[2] / (L * 0.27) + 9.2) - 0.5) - 0.42;
+    const bump = b > 0 ? b * b * 3.6 * A : 0;
+    let un = 0;
+    for (let i = 0; i < 8; i++) if (!this.solid(w[0] + Math.cos(i * 0.7854) * 0.45, y, w[2] + Math.sin(i * 0.7854) * 0.45, self)) un++;
+    const u = un / 8, s = Math.min(1, Math.max(0, (noise3(w[0] / 1.1 + 3.3, 0.7, w[2] / 1.1 + 8.1) - 0.3) / 0.4));
+    return this.solid(w[0], y, w[2], self) ? u * (1.8 * A * s + 0.5 * bump) : bump + A * (1 - u) * s;
+  }
+
   // 벽 밑동에 쌓인 흙과 먼지. 축 정렬 상자의 아래쪽 네 모서리 가운데 바닥과 만나는 곳을 따라, 높이와 폭이 들쭉날쭉한 턱을 만든다.
   // 벽과 바닥이 만나는 선은 화면에서 가장 길게 이어지는 직선이다. 쓰는 건물에서는 그 선이 깨끗하지만 버려진 건물에서는 쌓인 것 때문에 고르지 않다.
   // opt: { hMax(턱의 최대 높이), tile, dark(aWear에 넣을 어두운 정도) }. 턱이 하나도 없으면 null
@@ -137,6 +149,7 @@ export class WearTool {
 
   // 닳은 상자 하나. spec: { min, max } 또는 { m, h }, 그리고
   //  tile, self(이웃 판정에서 뺄 등록 번호), lite(얇거나 작은 것: 모서리만 살짝), round(기본 폭을 이 값 이상으로),
+  //  uvo(텍스처 좌표를 미는 거리), round(0보다 크면 면 하나에 텍스처 한 장)
   //  warp(x, y, z) → [x, y, z] (국소 좌표를 받아 휘게 하는 함수), relief(false면 면의 굴곡을 끈다), shade(상자 전체의 밝기 차이, aWear에 더한다)
   build(spec, P) {
     const m = spec.m || null;
@@ -145,6 +158,8 @@ export class WearTool {
     const me = m ? m.elements : null;
     const toWorld = (p) => me ? [me[0] * p[0] + me[4] * p[1] + me[8] * p[2] + me[12], me[1] * p[0] + me[5] * p[1] + me[9] * p[2] + me[13], me[2] * p[0] + me[6] * p[1] + me[10] * p[2] + me[14]] : [p[0] + c[0], p[1] + c[1], p[2] + c[2]];
     const self = spec.self ?? -1, lite = !!spec.lite, shade = spec.shade || 0;
+    const uvo = spec.uvo || 0;   // 텍스처 좌표를 밀어 놓는 거리(m). 천장 타일 조각의 줄눈을 조각 가장자리에 맞출 때 쓴다
+    const uvFace = !!(m && spec.round > 0);   // 나무 상자와 종이 상자: 면 하나에 텍스처 한 장(접힌 선과 테이프가 면에 맞게 놓인다)
     const seedBox = (Math.round((me ? me[12] : c[0]) * 131) * 31 + Math.round((me ? me[13] : c[1]) * 173) * 17 + Math.round((me ? me[14] : c[2]) * 197)) | 0;
     const rb = Math.min(Math.max(P.r, spec.round || 0), Math.min(h[0], h[1], h[2]) * 0.45);
     const dims = [h[0], h[1], h[2]].sort((a, b) => b - a);
@@ -259,6 +274,9 @@ export class WearTool {
     const pos = [], nor = [], uv = [], wear = [], idx = [];
     const tile = spec.tile || 2, sg = [1, 1, 1], d = [0, 0, 0], q = [0, 0, 0], out = [0, 0, 0], nrm = [0, 0, 0];
     let fade = 1;   // 드러난 모서리 가까이에서는 면의 굴곡을 줄인다(깎인 띠와 이어지도록)
+    // 면의 굴곡은 면의 가장자리에서 0이 된다. 굴곡은 면의 법선 쪽으로 밀기 때문에, 깎이지 않은 모서리에서 두 면이 서로 다른 쪽으로 밀리면 모서리를 따라 실틈이 벌어진다.
+    // 이웃 상자와 같은 평면을 나눠 가진 이음에서도 격자가 달라 어긋난다. 가장자리에서 0이면 어느 쪽이든 원래 상자의 선에서 만난다
+    const fadeW = relief ? Math.max(0.08, relief[0] * 6) : 0.08;
     // 격자점 → 깎인 위치와 법선. 면과 무관하게 점의 위치와 모서리 폭만으로 정해진다. 돌려주는 값은 닳음 표시(0~1), 깎인 띠 안이면 음수가 아닌 값에 1을 더해 알린다
     const shape = (p, ix, fn, fs) => {
       for (let a = 0; a < 3; a++) { sg[a] = p[a] >= 0 ? 1 : -1; d[a] = h[a] - Math.abs(p[a]); }
@@ -300,7 +318,24 @@ export class WearTool {
         const w = toWorld(o);
         if (!this.solid(w[0], w[1], w[2], self)) { hidden = false; break; }
       }
-      if (hidden) continue;
+      if (hidden) {
+        // 묻힌 면은 굴곡도 깎임도 없는 사각형 한 장으로 남긴다. 아예 빼면 앞을 가린 면에 실틈이 하나만 있어도 그 틈으로 벽 너머의 하늘이 비친다(어두운 실내에서는 한 화소 폭의 흰 선이 된다)
+        const b0 = pos.length / 3;
+        for (const [su, sv] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          p[fn] = fs * h[fn]; p[fu] = su * h[fu]; p[fv] = sv * h[fv];
+          let x = p[0], y = p[1], z = p[2];
+          if (spec.warp) { const w = spec.warp(x, y, z); x = w[0]; y = w[1]; z = w[2]; }
+          nrm[0] = nrm[1] = nrm[2] = 0; nrm[fn] = fs;
+          if (me) {
+            pos.push(me[0] * x + me[4] * y + me[8] * z + me[12], me[1] * x + me[5] * y + me[9] * z + me[13], me[2] * x + me[6] * y + me[10] * z + me[14]);
+            nor.push(me[0] * nrm[0] + me[4] * nrm[1] + me[8] * nrm[2], me[1] * nrm[0] + me[5] * nrm[1] + me[9] * nrm[2], me[2] * nrm[0] + me[6] * nrm[1] + me[10] * nrm[2]);
+          } else { pos.push(x + c[0], y + c[1], z + c[2]); nor.push(nrm[0], nrm[1], nrm[2]); }
+          const t = uvf(me ? p : [p[0] + c[0], p[1] + c[1], p[2] + c[2]]);
+          if (uvFace) uv.push(t[0] / (2 * h[fu]) + 0.5, t[1] / (2 * h[fv]) + 0.5); else uv.push((t[0] + uvo) / tile, (t[1] + uvo) / tile); wear.push(shade);
+        }
+        if (((fu + 1) % 3 === fv ? 1 : -1) * fs < 0) idx.push(b0, b0 + 2, b0 + 1, b0 + 1, b0 + 2, b0 + 3); else idx.push(b0, b0 + 1, b0 + 2, b0 + 1, b0 + 3, b0 + 2);
+        continue;
+      }
       const nu = L[fu].length, nv = L[fv].length, base = pos.length / 3, cnt = nu * nv;
       const lp = new Float32Array(cnt * 3), ln = new Float32Array(cnt * 3), flat = new Uint8Array(cnt);
       ix[fn] = fs > 0 ? L[fn].length - 1 : 0; p[fn] = fs * h[fn];
@@ -313,14 +348,15 @@ export class WearTool {
           flat[k] = 1;
           if (relief) {
             // 면의 굴곡: 월드 좌표의 함수라서 같은 평면을 나눠 가진 이웃 상자와 이어진다
-            const w = toWorld(out), nz3 = noise3(w[0] / relief[1] + 7.3, w[1] / relief[1] + 3.1, w[2] / relief[1] + 5.7), dz = (P.reliefUp ? nz3 * nz3 * 2 : (nz3 - 0.5) * 2) * relief[0] * Math.min(1, fade);
+            const w = toWorld(out), nz3 = noise3(w[0] / relief[1] + 7.3, w[1] / relief[1] + 3.1, w[2] / relief[1] + 5.7);
+            const dz = (P.reliefUp ? (fn === 1 && fs > 0 ? this.groundRise(w, nz3, relief, self) : 0) : (nz3 - 0.5) * 2 * relief[0]) * Math.min(1, fade, (h[fu] - Math.abs(p[fu])) / fadeW, (h[fv] - Math.abs(p[fv])) / fadeW);
             if (fn === 0) x += fs * dz; else if (fn === 1) y += fs * dz; else z += fs * dz;
           }
         }
         if (spec.warp) { const w = spec.warp(x, y, z); x = w[0]; y = w[1]; z = w[2]; }
         lp[k * 3] = x; lp[k * 3 + 1] = y; lp[k * 3 + 2] = z; ln[k * 3] = nrm[0]; ln[k * 3 + 1] = nrm[1]; ln[k * 3 + 2] = nrm[2];
         const t = uvf(me ? p : [p[0] + c[0], p[1] + c[1], p[2] + c[2]]);
-        uv.push(t[0] / tile, t[1] / tile);
+        if (uvFace) uv.push(t[0] / (2 * h[fu]) + 0.5, t[1] / (2 * h[fv]) + 0.5); else uv.push((t[0] + uvo) / tile, (t[1] + uvo) / tile);
         wear.push(wv * tintK + shade);
       }
       // 삼각형의 감는 방향: u × v 가 법선 쪽을 향하게

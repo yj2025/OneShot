@@ -114,7 +114,7 @@ const FRAG_GRIME = `
     float w = clamp(abs(vBcWear) * (0.55 + 0.9 * bcNoise(vBcW.xz * 21.0 + vBcW.y * 29.0)), 0.0, 1.0);
     w = smoothstep(0.18, 0.6, w);
     float wl = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
-    vec3 wc = vBcWear > 0.0 ? mix(diffuseColor.rgb, vec3(wl) * 1.45 + 0.08, 0.9) : diffuseColor.rgb * vec3(0.4, 0.38, 0.36);
+    vec3 wc = vBcWear > 0.0 ? mix(diffuseColor.rgb, vec3(wl) * 1.25 + 0.035, 0.8) : diffuseColor.rgb * vec3(0.4, 0.38, 0.36);
     diffuseColor.rgb = mix(diffuseColor.rgb, wc, w);
   }
   if (uClay > 0.5) diffuseColor.rgb = vec3(0.45);

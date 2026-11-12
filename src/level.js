@@ -18,7 +18,7 @@ const WEAR_KEYS = {
   plywood: 'wood', plywoodB: 'wood', plywoodC: 'wood', pallet: 'wood', deskTop: 'wood', doorPaint: 'wood',
   metalDark: 'metal', metalGalv: 'metal', locker: 'metal', roofMetal: 'metal', contBlue: 'metal', contRust: 'metal', steelGrate: 'metal', acUnit: 'metal',
   cardboard: 'soft', cardboardB: 'soft', cardboardC: 'soft', fabricChair: 'soft',
-  gravel: 'ground', asphalt: 'ground', skirt: 'wood',
+  gravel: 'ground', skirt: 'wood',
 };
 
 // 상자 (월드 좌표 UV, tile = 텍스처 1장이 덮는 미터)
@@ -69,11 +69,14 @@ function crushWarp(h, rnd) {
 }
 
 // 천장 판 하나를 0.6 m 타일로 나눈다. 타일마다 처진 깊이와 기울기가 달라서 등 가까이에서 타일 사이에 턱과 밝기 차이가 생긴다
-function ceilingTiles(s) {
-  const T = 0.6, y = s.min[1], pos = [], nor = [], uv = [], idx = [];
+function ceilingTiles(s, holes) {
+  const T = 0.6, y = s.min[1], pos = [], nor = [], uv = [], idx = [], gone = [];
   for (let i = Math.floor(s.min[0] / T); i * T < s.max[0]; i++) for (let k = Math.floor(s.min[2] / T); k * T < s.max[2]; k++) {
     const xa = Math.max(s.min[0], i * T), xb = Math.min(s.max[0], (i + 1) * T), za = Math.max(s.min[2], k * T), zb = Math.min(s.max[2], (k + 1) * T);
     if (xb - xa < 0.02 || zb - za < 0.02) continue;
+    // 빠진 타일: 정해 둔 자리와, 여든 장에 하나꼴로 더. 빠진 칸은 위의 어두운 속이 보인다
+    if (holes && holes.has(i + ',' + k)) continue;
+    if (xb - xa > 0.55 && zb - za > 0.55 && hash(i, k, 47) < 0.012) { gone.push([i, k]); continue; }
     const sag = -(0.002 + hash(i, k, 41) ** 2 * 0.014), tx = (hash(i, k, 42) - 0.5) * 0.03, tz = (hash(i, k, 43) - 0.5) * 0.03;
     const xc = (i + 0.5) * T, zc = (k + 0.5) * T, nl = Math.hypot(tx, 1, tz), b = pos.length / 3;
     const loose = hash(i, k, 44) < 0.035 ? Math.floor(hash(i, k, 45) * 4) : -1, drop = 0.05 + hash(i, k, 46) * 0.09;   // 서른 장에 하나는 한쪽 모서리가 빠져 걸려 있다
@@ -89,6 +92,7 @@ function ceilingTiles(s) {
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
+  g.userData.gone = gone;
   return g;
 }
 
@@ -178,7 +182,7 @@ export class Level {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(...center), new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, rotY, rotZ)), new THREE.Vector3(1, 1, 1));
     const h = size.map(s => s / 2);
     this.occ.push({ m, h });
-    this.specs.push({ key: matKey, m, h, tile, round });
+    this.specs.push({ key: matKey, m, h, tile, round, uvo: matKey === 'ceiling' ? 0.3 : 0 });
     // 이전에는 둥근 상자의 꼭짓점 900개마다 난수를 두 번씩 썼다. 형상 도구로 바꾼 뒤에도 같은 횟수를 써서 그 뒤의 무작위 배치가 달라지지 않게 한다
     if (round > 0) for (let i = 0; i < 1800; i++) this.rng();
     if (collide) {
@@ -653,8 +657,9 @@ export class Level {
     // 빠진 천장 타일 몇 장 (검은 구멍 + 비스듬히 걸린 타일)
     const spots = [[-9.9, -3.3], [1.5, -1.5], [-4.5, -5.7], [9.3, -3.9], [7.5, -13.8], [-0.3, -3.9]];
     for (const [x, z] of spots) {
-      const gx = Math.round(x / 0.6) * 0.6, gz = Math.round(z / 0.6) * 0.6;
-      this.box('trash', [gx - 0.28, CA - 0.002, gz - 0.28], [gx + 0.28, CA + 0.01, gz + 0.28], { collide: false });
+      const ti = Math.floor(x / 0.6), tk = Math.floor(z / 0.6), gx = (ti + 0.5) * 0.6, gz = (tk + 0.5) * 0.6;
+      (this.tileHoles = this.tileHoles || new Set()).add(ti + ',' + tk);
+      this.box('trash', [gx - 0.29, CA + 0.012, gz - 0.29], [gx + 0.29, CA + 0.025, gz + 0.29], { collide: false });
       if (this.rng() < 0.5) this.obox('ceiling', [gx + 0.1, CA - 0.2, gz], [0.58, 0.015, 0.58], 0.1, { collide: false, tile: 2.4, rotX: 0.6, rotZ: 0.2 });
     }
   }
@@ -845,10 +850,10 @@ export class Level {
       while (a < s.max[long] - 0.05) {
         const b = a + Math.min(s.max[long] - a, 0.85 + hsh(i, 1) * 0.5), e = hsh(i, 2);
         const min = [...s.min], max = [...s.max]; min[long] = a + 0.002; max[long] = b - 0.002;
-        if (e > 0.05) {   // 스무 토막에 하나는 빠져 있다
-          const loose = e > 0.9;   // 열 토막에 하나는 들떠서 비뚤다
-          const off = [0, (hsh(i, 3) - 0.5) * 0.012 + (loose ? 0.012 : 0), 0]; off[w] = (hsh(i, 4) - 0.5) * (loose ? 0.05 : 0.01);
-          const tilt = (hsh(i, 5) - 0.5) * (loose ? 0.09 : 0.016), yaw = (hsh(i, 6) - 0.5) * (loose ? 0.06 : 0.008);
+        if (e > 0.1) {   // 열 토막에 하나는 빠져 있다
+          const loose = e > 0.78;   // 다섯 토막에 하나는 들떠서 비뚤다
+          const off = [0, (hsh(i, 3) - 0.5) * 0.012 + (loose ? 0.01 + hsh(i, 7) * 0.03 : 0), 0]; off[w] = (hsh(i, 4) - 0.5) * (loose ? 0.12 : 0.012);
+          const tilt = (hsh(i, 5) - 0.5) * (loose ? 0.22 : 0.02), yaw = (hsh(i, 6) - 0.5) * (loose ? 0.14 : 0.01);
           out.push(piece(min, max, long === 2 ? tilt * 0.3 : tilt, yaw, long === 0 ? tilt * 0.3 : tilt, off, {}));
         }
         a = b; i++;
@@ -867,7 +872,29 @@ export class Level {
       const plain = cleanGeo(s.m ? boxGeometry(s.h.map(v => -v), s.h, s.tile, s.m) : boxGeometry(s.min, s.max, s.tile));
       this.casterGeos.push({ key: s.key, geo: plain });
       // 천장 판: 타일마다 처지고 기운 정도가 다르다
-      if (s.key === 'ceiling' && !s.m && Math.max(s.max[0] - s.min[0], s.max[2] - s.min[2]) > 1.2) { this.add(s.key, ceilingTiles(s), false); continue; }
+      if (s.key === 'ceiling' && !s.m && Math.max(s.max[0] - s.min[0], s.max[2] - s.min[2]) > 1.2) {
+        const cg = ceilingTiles(s, this.tileHoles); this.add(s.key, cg, false);
+        for (const [i, k] of cg.userData.gone) {
+          const gx = (i + 0.5) * 0.6, gz = (k + 0.5) * 0.6, hs = (n) => hash(i * 31 + k, n, 77);
+          this.add('trash', boxGeometry([gx - 0.29, s.min[1] + 0.012, gz - 0.29], [gx + 0.29, s.min[1] + 0.025, gz + 0.29], 2), false);
+          if (hs(13) < 0.4) {
+            // 한쪽 변에 걸려 늘어진 타일: 걸린 변을 축으로 50~85° 돌아 있다
+            const a = 0.9 + hs(14) * 0.6, ax = hs(15) < 0.5, sg = hs(16) < 0.5 ? -1 : 1, d = 0.29 * (1 - Math.cos(a));
+            const m = new THREE.Matrix4().compose(new THREE.Vector3(gx + (ax ? 0 : sg * d), s.min[1] - 0.29 * Math.sin(a), gz + (ax ? sg * d : 0)), new THREE.Quaternion().setFromEuler(new THREE.Euler(ax ? -sg * a : 0, 0, ax ? 0 : sg * a)), new THREE.Vector3(1, 1, 1));
+            this.add('ceiling', tool.build({ key: 'ceiling', m, h: [0.29, 0.008, 0.29], tile: 2.4, lite: true, uvo: 0.3 }, WEAR.plaster), false);
+            continue;
+          }
+          // 떨어진 타일은 그 밑 바닥에 두 조각으로 깨져 있다(가구 위로 떨어진 것은 두지 않는다)
+          if (tool.solid(gx, FL + 0.3, gz, -1) || tool.solid(gx, FL + 1.0, gz, -1)) continue;
+          for (let q = 0; q < 2; q++) {
+            const hz = (q ? 0.1 + hs(1) * 0.05 : 0.15 + hs(2) * 0.04), px = gx + (hs(3 + q) - 0.5) * 0.5, pz = gz + (hs(5 + q) - 0.5) * 0.5;
+            if (tool.solid(px, FL + 0.3, pz, -1)) continue;
+            const m = new THREE.Matrix4().compose(new THREE.Vector3(px, FL + 0.011 + q * 0.004, pz), new THREE.Quaternion().setFromEuler(new THREE.Euler((hs(7 + q) - 0.5) * 0.05, hs(9 + q) * 6.28, (hs(11 + q) - 0.5) * 0.05)), new THREE.Vector3(1, 1, 1));
+            this.add('ceiling', tool.build({ key: 'ceiling', m, h: [0.29, 0.008, hz], tile: 2.4, lite: true, uvo: 0.3 }, WEAR.plaster), false);
+          }
+        }
+        continue;
+      }
       // 벽과 기둥의 밑동: 바닥과 만나는 선을 따라 흙과 먼지가 쌓여 있다(건물 안은 먼지, 밖은 흙과 자갈)
       if (!s.m && (s.key === 'plaster' || s.key === 'block' || s.key === 'concrete') && s.max[1] - s.min[1] >= 0.8 && Math.abs((s.min[0] + s.max[0]) / 2) < 27) {
         const inside = this.insideBuilding((s.min[0] + s.max[0]) / 2, (s.min[2] + s.max[2]) / 2) && s.min[1] > 0.3;
