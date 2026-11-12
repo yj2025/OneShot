@@ -251,6 +251,8 @@ export async function bakeLight(renderer, { casters, nearCasters, occ, lights, o
   const temps = [];
   const U = volUniforms;
   try {
+    // 부동소수 렌더 타깃을 못 쓰는 기기에서는 굽지 않는다(그대로 두면 볼륨이 비어 화면이 검게 나온다)
+    if (!R.extensions.has('EXT_color_buffer_float') && !R.extensions.has('EXT_color_buffer_half_float')) throw new Error('부동소수 렌더 타깃을 쓸 수 없다');
     R.autoClear = false; R.setClearColor(0x000000, 0);
     const clear3d = (rt, n) => { for (let l = 0; l < n; l++) { R.setRenderTarget(rt, l); R.clear(true, false, false); } };
     const layers = (rt, n, material, layerUniform) => { quad.material = material; for (let l = 0; l < n; l++) { layerUniform.value = l; R.setRenderTarget(rt, l); R.render(qScene, qCam); } };
@@ -351,6 +353,10 @@ export async function bakeLight(renderer, { casters, nearCasters, occ, lights, o
     U.uAmb.value = rtAmb.texture; U.uSkyV.value = rtSkyV.texture; U.uVisA.value = rtVis[0].texture; U.uVisB.value = rtVis[1].texture;
     U.uVolOn.value = 1; U.uLmOn.value = 1;
     for (const m of [skyMat, skyVMat, visMat, gather, compose, depthMat, distMat]) m.dispose();
+    // 구워진 값이 말이 되는지 한 점에서 확인한다: 격자 꼭대기(지붕 위)는 하늘이 대부분 보여야 한다
+    R.setRenderTarget(saved.target);
+    const top = probeLight(R, G.min.x + gSize.x * 0.5, G.min.y + gSize.y - 0.3, G.min.z + gSize.z * 0.75);
+    if (!top || !(top.sky > 0.5) || !(top.amb[3] > 0.1)) throw new Error('구운 값이 비어 있다');
     quad.geometry.dispose();
     onProgress(1, '반사광');
     return { ok: true, ms: performance.now() - t0, skyDirs: SKY_DIRS.length, lights: lights.length };

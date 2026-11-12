@@ -135,6 +135,8 @@ const FRAG_LIGHT = `
   vec4 bcSh = textureLod(uAmb, vq.xzy, 0.0);
   float bcSkv = mix(1.0, textureLod(uSkyV, vq.xzy, 0.0).r, inV);
   float eOpen = max(uSkyU.w + dot(uSkyU.xyz, bcWN), 0.0) + uGndE * (0.5 - 0.5 * bcWN.y);
+  // 굽기에 실패한 기기: 볼륨이 없으므로 건물 안만 어림으로 어둡게 한다
+  eOpen *= mix(1.0, 0.1, bcInside(vBcW) * (1.0 - uVolOn));
   vec3 bcTint = mix(uBncTint, uSkyTint, clamp(bcSkv * 1.5, 0.0, 1.0));
   irradiance += mix(eOpen, bcIrr(bcSh, bcWN), inV) * bcTint;
   #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
