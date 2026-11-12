@@ -77,10 +77,10 @@ const ADD = { blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, 
 function pass(fs, uniforms, additive = false) {
   return new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: fs, uniforms, depthTest: false, depthWrite: false, ...(additive ? ADD : {}) });
 }
-function rt3d(nx, nz, ny, type, filter = THREE.LinearFilter) {
+function rt3d(nx, nz, ny, type, format = THREE.RGBAFormat) {
   const rt = new THREE.WebGL3DRenderTarget(nx, nz, ny, { depthBuffer: false });
   const t = rt.texture;
-  t.format = THREE.RGBAFormat; t.type = type; t.minFilter = t.magFilter = filter; t.generateMipmaps = false;
+  t.format = format; t.type = type; t.minFilter = t.magFilter = THREE.LinearFilter; t.generateMipmaps = false;
   t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping; t.colorSpace = THREE.NoColorSpace;
   return rt;
 }
@@ -168,9 +168,9 @@ void main(){
       vec4 sh = textureLod(tSrc, gu, 0.0);
       E = max(sh.w + dot(sh.xyz, n), 0.0);
     }
-    // 반사율: 실내(회벽, 천장 타일, 콘크리트 바닥)는 밝고 바깥(자갈, 아스팔트)은 어둡다
+    // 반사율: 때가 낀 실내 면(회벽 위쪽 0.6, 아래 녹색 띠 0.3, 바닥 0.3~0.45, 천장 0.2~0.6)의 평균은 0.42쯤, 바깥(자갈, 아스팔트)은 0.22쯤이다
     bool ins = prev.x > -12.0 && prev.x < 12.0 && prev.z > -16.0 && prev.z < 0.0 && prev.y < 5.7;
-    float L = (ins ? 0.5 : 0.22) * E * 0.3183099;
+    float L = (ins ? 0.42 : 0.22) * E * 0.3183099;
     a0 += L; a1 += L * d;
   }
   float w = 12.566371 / 64.0;
@@ -285,7 +285,7 @@ export async function bakeLight(renderer, { casters, nearCasters, occ, lights, o
       if (i % 20 === 19) { onProgress(0.45 * (i + 1) / SKY_DIRS.length, '하늘빛'); await tick(); }
     }
     // 하늘이 보이는 비율(반사 가림과 빛 색에 쓴다)
-    const rtSkyV = rt3d(G.nx, G.nz, G.ny, THREE.UnsignedByteType);
+    const rtSkyV = rt3d(G.nx, G.nz, G.ny, THREE.UnsignedByteType, THREE.RedFormat);
     const skyVMat = pass(SKYV_FS, { tSky: { value: rtSky.texture }, uLayerI: { value: 0 }, uInv: { value: 1 / (a0u * 0.25) } });
     layers(rtSkyV, G.ny, skyVMat, skyVMat.uniforms.uLayerI);
 

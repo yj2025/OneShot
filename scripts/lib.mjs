@@ -7,7 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const OUT = path.join(ROOT, 'out');
-export const DIST = path.join(ROOT, 'dist', 'index.html');
+// BC_DIST를 주면 그 빌드를 연다. 다른 빌드(예: 빛은 옛것, 계조만 새것)를 찍어 기준선으로 저장할 때 쓴다: BC_DIST=경로 node scripts/shots.mjs --nobuild
+export const DIST = process.env.BC_DIST ? path.resolve(process.env.BC_DIST) : path.join(ROOT, 'dist', 'index.html');
 
 export function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); return p; }
 

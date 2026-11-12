@@ -53,8 +53,8 @@ void main(){
   gl_FragColor = vec4(c, 1.0);
 }`;
 
-// 화면 공간 차폐: 조도 볼륨의 격자(0.2 m)보다 작은 접촉부만 맡는다(물체와 바닥이 닿은 선, 좁은 틈).
-// 넓은 그늘은 볼륨이 계산하므로 반경을 0.4 m로 줄였다
+// 화면 공간 차폐: 조도 볼륨의 격자(0.2 m)보다 작은 것만 맡는다. 넓은 그늘은 볼륨이 계산한다.
+// 두 단계로 본다. 반경 0.45 m는 물체 둘레의 부드러운 어둠, 반경 0.13 m는 물체와 바닥이 닿은 선과 좁은 틈이다.
 const AO_FS = `
 uniform sampler2D tDepth; uniform mat4 uProj; uniform mat4 uInvProj; uniform vec2 uRes; uniform float uFrame; varying vec2 vUv;
 vec3 vpos(vec2 uv){ float d = texture2D(tDepth, uv).r; vec4 p = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return p.xyz / p.w; }
@@ -72,23 +72,47 @@ void main(){
   if (dot(N, -P) < 0.0) N = -N;
   vec3 T = normalize(abs(N.y) < 0.99 ? cross(N, vec3(0.0, 1.0, 0.0)) : cross(N, vec3(1.0, 0.0, 0.0)));
   vec3 Bt = cross(N, T);
-  float rad = 0.4 * clamp(dist / 7.0, 1.0, 3.0);
   float rnd = hh(vUv * uRes + uFrame * 0.37) * 6.2831;
+  float rad = 0.45 * clamp(dist / 7.0, 1.0, 3.0);
   float occ = 0.0;
-  for (int i = 0; i < 12; i++) {
+  for (int i = 0; i < 10; i++) {
     float fi = float(i) + 0.5;
-    float z = 1.0 - fi / 12.0, r = sqrt(1.0 - z * z), a = fi * 2.39996 + rnd;
+    float z = 1.0 - fi / 10.0, r = sqrt(1.0 - z * z), a = fi * 2.39996 + rnd;
     vec3 h = vec3(cos(a) * r, sin(a) * r, z * 0.9 + 0.1);
-    float sc = mix(0.15, 1.0, (fi / 12.0) * (fi / 12.0));
+    float sc = mix(0.2, 1.0, (fi / 10.0) * (fi / 10.0));
     vec3 S = P + (T * h.x + Bt * h.y + N * h.z) * rad * sc;
     vec4 cs = uProj * vec4(S, 1.0);
-    vec2 suv = cs.xy / cs.w * 0.5 + 0.5;
-    float sz = vpos(suv).z;
-    float range = smoothstep(0.0, 1.0, rad / max(abs(P.z - sz), 1e-3));
-    occ += (sz >= S.z + 0.025 ? 1.0 : 0.0) * range;
+    float sz = vpos(cs.xy / cs.w * 0.5 + 0.5).z;
+    occ += (sz >= S.z + 0.025 ? 1.0 : 0.0) * smoothstep(0.0, 1.0, rad / max(abs(P.z - sz), 1e-3));
   }
-  float ao = 1.0 - occ / 12.0;
-  gl_FragColor = vec4(vec3(pow(ao, 1.8)), 1.0);
+  float aoWide = 1.0 - occ / 10.0;
+  // 접촉부: 반경이 거리와 상관없이 13 cm라 멀어지면 한 화소보다 작아진다. 그때는 뺀다
+  float radC = 0.13, occC = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float fi = float(i) + 0.5;
+    float z = 1.0 - fi / 8.0, r = sqrt(1.0 - z * z), a = fi * 2.39996 + rnd * 1.7;
+    vec3 h = vec3(cos(a) * r, sin(a) * r, z * 0.85 + 0.15);
+    vec3 S = P + (T * h.x + Bt * h.y + N * h.z) * radC * mix(0.35, 1.0, fi / 8.0);
+    vec4 cs = uProj * vec4(S, 1.0);
+    float sz = vpos(cs.xy / cs.w * 0.5 + 0.5).z;
+    occC += (sz >= S.z + 0.012 ? 1.0 : 0.0) * smoothstep(0.0, 1.0, radC * 2.0 / max(abs(P.z - sz), 1e-3));
+  }
+  float aoC = mix(1.0 - occC / 8.0, 1.0, smoothstep(9.0, 18.0, dist));
+  gl_FragColor = vec4(vec3(pow(aoWide, 1.7) * pow(aoC, 1.5)), 1.0);
+}`;
+// 차폐 흐림: 깊이가 다른 화소는 섞지 않는다. 그래야 접촉부의 가는 선이 남고 물체 윤곽 밖으로 번지지 않는다
+const AOBLUR_FS = `
+uniform sampler2D tIn; uniform sampler2D tDepth; uniform mat4 uInvProj; uniform vec2 uDir; varying vec2 vUv;
+float vz(vec2 uv){ float d = texture2D(tDepth, uv).r; vec4 p = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return -p.z / p.w; }
+void main(){
+  float z0 = vz(vUv), acc = texture2D(tIn, vUv).r * 0.227, w = 0.227;
+  for (int i = 0; i < 4; i++) {
+    float o = (i < 2 ? 1.385 : 3.23) * (mod(float(i), 2.0) < 0.5 ? 1.0 : -1.0);
+    vec2 uv = vUv + uDir * o;
+    float k = (i < 2 ? 0.316 : 0.07) * exp(-abs(vz(uv) - z0) / (0.03 + z0 * 0.015));
+    acc += texture2D(tIn, uv).r * k; w += k;
+  }
+  gl_FragColor = vec4(vec3(acc / w), 1.0);
 }`;
 
 // 렌즈 + 센서
@@ -246,6 +270,7 @@ export class Post {
     });
     this.mAO = pass(AO_FS, { tDepth: { value: null }, uProj: { value: new THREE.Matrix4() }, uInvProj: { value: new THREE.Matrix4() }, uRes: { value: new THREE.Vector2() }, uFrame: { value: 0 } });
     this.rtAO = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];
+    this.mAOBlur = pass(AOBLUR_FS, { tIn: { value: null }, tDepth: { value: null }, uInvProj: { value: new THREE.Matrix4() }, uDir: { value: new THREE.Vector2() } });
     this.aoEnabled = true;
     this.mCodec = pass(CODEC_FS, { tIn: { value: null }, uRes: { value: new THREE.Vector2() }, uQ: { value: 0.2 }, uSharp: { value: 0.45 } });
     this.ping = 0; this.frame = 0; this.init = true;
@@ -291,8 +316,9 @@ export class Post {
       const A = this.mAO.uniforms; A.tDepth.value = this.rtScene.depthTexture; A.uProj.value.copy(camera.projectionMatrix); A.uInvProj.value.copy(camera.projectionMatrixInverse);
       A.uRes.value.set(this.rtAO[0].width, this.rtAO[0].height); A.uFrame.value = this.frame % 64;
       this.run(this.mAO, this.rtAO[0]);
-      this.mBlur.uniforms.tIn.value = this.rtAO[0].texture; this.mBlur.uniforms.uDir.value.set(1 / this.rtAO[0].width, 0); this.run(this.mBlur, this.rtAO[1]);
-      this.mBlur.uniforms.tIn.value = this.rtAO[1].texture; this.mBlur.uniforms.uDir.value.set(0, 1 / this.rtAO[0].height); this.run(this.mBlur, this.rtAO[0]);
+      const B = this.mAOBlur.uniforms; B.tDepth.value = this.rtScene.depthTexture; B.uInvProj.value.copy(camera.projectionMatrixInverse);
+      B.tIn.value = this.rtAO[0].texture; B.uDir.value.set(1 / this.rtAO[0].width, 0); this.run(this.mAOBlur, this.rtAO[1]);
+      B.tIn.value = this.rtAO[1].texture; B.uDir.value.set(0, 1 / this.rtAO[0].height); this.run(this.mAOBlur, this.rtAO[0]);
     }
     // 렌즈 + 센서
     const U = this.mCam.uniforms;

@@ -68,8 +68,9 @@ const FRAG_GRIME = `
   float ins = bcInside(vBcW);
   float hF = vBcW.y - mix(0.0, uFL, ins);
   float wall = 1.0 - abs(bcNg.y);
-  float dirt = mix(1.0, (0.74 + 0.36 * g) * (0.9 + 0.2 * g2), uGrime);
-  float base = mix(1.0, mix(0.58, 1.0, smoothstep(0.0, 0.45 + g * 0.35, hF)), uGrime * wall);
+  // 얼룩의 깊이: 계조 곡선을 바로잡은 뒤로 같은 반사율 차이가 화면에서 더 옅게 보인다. 이전만큼 읽히도록 깊이를 키웠다(평균 밝기는 같다)
+  float dirt = mix(1.0, (0.6 + 0.64 * g) * (0.84 + 0.32 * g2), uGrime);
+  float base = mix(1.0, mix(0.45, 1.0, smoothstep(0.0, 0.45 + g * 0.35, hF)), uGrime * wall);
   diffuseColor.rgb *= dirt * base;
   if (uGrime > 0.5 && bcNg.y > 0.7 && ins < 0.5) {
     vec2 q = vBcW.xz;
