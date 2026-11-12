@@ -868,6 +868,12 @@ export class Level {
       this.casterGeos.push({ key: s.key, geo: plain });
       // 천장 판: 타일마다 처지고 기운 정도가 다르다
       if (s.key === 'ceiling' && !s.m && Math.max(s.max[0] - s.min[0], s.max[2] - s.min[2]) > 1.2) { this.add(s.key, ceilingTiles(s), false); continue; }
+      // 벽과 기둥의 밑동: 바닥과 만나는 선을 따라 흙과 먼지가 쌓여 있다(건물 안은 먼지, 밖은 흙과 자갈)
+      if (!s.m && (s.key === 'plaster' || s.key === 'block' || s.key === 'concrete') && s.max[1] - s.min[1] >= 0.8 && Math.abs((s.min[0] + s.max[0]) / 2) < 27) {
+        const inside = this.insideBuilding((s.min[0] + s.max[0]) / 2, (s.min[2] + s.max[2]) / 2) && s.min[1] > 0.3;
+        const fg = tool.fillet(s, inside ? { hMax: 0.09, tile: 3, dark: 0.8 } : { hMax: 0.2, tile: 3, dark: 0.45 });
+        if (fg) this.add(inside ? 'concrete' : 'gravel', fg, false);
+      }
       const w = this.wearKind(s);
       // 품질 낮음: 작은 것과 얇은 것은 반듯한 상자 그대로 두고, 나머지도 모서리만 깎는다(이 빠짐, 면의 굴곡 없음). 땅의 굴곡은 남긴다
       if (!w || (low && w.lite)) { this.add(s.key, plain, false); continue; }

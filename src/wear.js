@@ -82,6 +82,59 @@ export class WearTool {
     return false;
   }
 
+  // 벽 밑동에 쌓인 흙과 먼지. 축 정렬 상자의 아래쪽 네 모서리 가운데 바닥과 만나는 곳을 따라, 높이와 폭이 들쭉날쭉한 턱을 만든다.
+  // 벽과 바닥이 만나는 선은 화면에서 가장 길게 이어지는 직선이다. 쓰는 건물에서는 그 선이 깨끗하지만 버려진 건물에서는 쌓인 것 때문에 고르지 않다.
+  // opt: { hMax(턱의 최대 높이), tile, dark(aWear에 넣을 어두운 정도) }. 턱이 하나도 없으면 null
+  fillet(spec, opt) {
+    if (spec.m) return null;
+    const self = spec.self ?? -1, y0 = spec.min[1], pos = [], nor = [], uv = [], wear = [], idx = [];
+    const step = 0.14 * this.segScale, tile = opt.tile || 2;
+    for (const a of [0, 2]) {
+      const b = 2 - a;
+      for (const sb of [-1, 1]) {
+        const fb = sb > 0 ? spec.max[b] : spec.min[b];          // 벽면의 위치
+        const seed = hash(a + 7, Math.round(fb * 500), Math.round(y0 * 500)) * 1e9 | 0;
+        const n = Math.max(1, Math.round((spec.max[a] - spec.min[a]) / step));
+        let prev = -1;
+        for (let i = 0; i <= n; i++) {
+          const s = spec.min[a] + (spec.max[a] - spec.min[a]) * i / n, q = [0, 0, 0];
+          // 벽면 앞 5 cm: 발밑은 바닥이고 그 위는 비어 있어야 한다
+          q[a] = Math.max(spec.min[a] + 0.01, Math.min(spec.max[a] - 0.01, s)); q[b] = fb + sb * 0.05;
+          const open = this.solid(q[0], y0 - 0.03, q[2], self) && !this.solid(q[0], y0 + 0.06, q[2], self);
+          if (!open) { prev = -1; continue; }
+          // 높이: 긴 물결 위에 가끔 수북한 자리. 폭은 높이의 두세 배
+          let hgt = opt.hMax * Math.max(0, vnoise(seed, s / 0.7) * 1.25 - 0.3) * (0.6 + 0.8 * vnoise(seed + 3, s / 0.19));
+          if (hash(seed, Math.floor(s / 1.6), 9) < 0.14) hgt += opt.hMax * 1.2 * Math.max(0, 1 - Math.abs(s - (Math.floor(s / 1.6) + 0.5) * 1.6) / 0.5);
+          const wid = 0.02 + hgt * (2.2 + 2.2 * vnoise(seed + 5, s / 0.4));
+          const base = pos.length / 3, nl = Math.hypot(hgt, wid) || 1;
+          for (const [o, y] of [[0, hgt], [wid * 0.4, hgt * 0.35], [wid, 0.003]]) {
+            const p = [0, y0 + y, 0]; p[a] = s; p[b] = fb + sb * o;
+            pos.push(p[0], p[1], p[2]);
+            const nn = [0, wid / nl, 0]; nn[b] = sb * hgt / nl; if (hgt < 1e-4) { nn[1] = 1; nn[b] = 0; }
+            nor.push(nn[0], nn[1], nn[2]);
+            uv.push(s / tile, (fb + sb * o) / tile);
+            wear.push(-opt.dark * (0.7 + 0.3 * vnoise(seed + 9, s / 0.3)));
+          }
+          if (prev >= 0) {
+            // 감는 방향: 턱의 바깥면이 벽 바깥쪽 위를 향하게
+            const f = (a === 0 ? 1 : -1) * sb < 0;
+            for (let k = 0; k < 2; k++) { const p0 = prev + k, p1 = prev + k + 1, c0 = base + k, c1 = base + k + 1; if (f) idx.push(p0, c0, p1, p1, c0, c1); else idx.push(p0, p1, c0, p1, c1, c0); }
+          }
+          prev = base;
+        }
+      }
+    }
+    if (!idx.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('aWear', new THREE.Float32BufferAttribute(wear, 1));
+    g.setIndex(idx);
+    this.tris += idx.length / 3;
+    return g;
+  }
+
   // 닳은 상자 하나. spec: { min, max } 또는 { m, h }, 그리고
   //  tile, self(이웃 판정에서 뺄 등록 번호), lite(얇거나 작은 것: 모서리만 살짝), round(기본 폭을 이 값 이상으로),
   //  warp(x, y, z) → [x, y, z] (국소 좌표를 받아 휘게 하는 함수), relief(false면 면의 굴곡을 끈다), shade(상자 전체의 밝기 차이, aWear에 더한다)
