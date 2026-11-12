@@ -24,6 +24,23 @@ async function main() {
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');
   rec('로딩 완료', true);
 
+  // 빛 굽기: 조도 볼륨이 구워졌고, 가려진 곳과 트인 곳이 실제로 다른 값을 갖는지 몇 점에서 읽어 본다.
+  // 형상을 고치다가 빛을 가리는 메시 목록이나 격자가 어긋나면 여기서 걸린다.
+  {
+    const r = await page.evaluate(() => {
+      const b = window.__bc.bake(), L = (x, y, z) => window.__bc.light(x, y, z);
+      if (!b || !b.ok) return { ok: false, why: b ? b.error : '굽기 결과 없음' };
+      return { ok: true, ms: b.ms, underDesk: L(-1.4, 0.9, -1.6), overDesk: L(-1.4, 1.7, -1.6), yard: L(0, 0.3, 12), canopy: L(-14, 0.3, -10.5), room: L(2, 0.9, -0.8) };
+    });
+    let ok = r.ok, detail = r.ok ? '' : String(r.why).slice(0, 200);
+    if (r.ok) {
+      const up = (p) => p.amb[3] + p.amb[1];   // 위를 향한 면이 받는 조도
+      ok = r.underDesk.vis[1] < 0.2 && r.overDesk.vis[1] > 0.8 && r.yard.sky > 0.6 && r.canopy.sky < 0.3 && r.room.sky < 0.15 && up(r.yard) > 3 * up(r.room);
+      detail = `형광등 가시도 책상 밑 ${r.underDesk.vis[1].toFixed(2)} / 책상 위 ${r.overDesk.vis[1].toFixed(2)}, 하늘 가시도 마당 ${r.yard.sky.toFixed(2)} / 차양 밑 ${r.canopy.sky.toFixed(2)} / 사무실 ${r.room.sky.toFixed(2)}, 바닥 조도 마당 ${up(r.yard).toFixed(1)} / 사무실 ${up(r.room).toFixed(1)}`;
+    }
+    rec('빛 굽기 (가려진 곳과 트인 곳이 구분된다)', ok, detail);
+  }
+
   await clickStart(page);
   rec('시작 화면 → 플레이', true);
 
