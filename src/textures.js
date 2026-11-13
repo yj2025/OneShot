@@ -74,7 +74,8 @@ function cracks(s, rng, size, n, width, color) {
     for (let k = 0; k < segs; k++) { a += (rng() - 0.5) * 0.9; const l = 3 + rng() * 10; x += Math.cos(a) * l; y += Math.sin(a) * l; pts.push([x, y, rng() < 0.12 ? width * (0.4 + rng() * 0.8) : 0]); }
     paths.push(pts);
   }
-  for (const [ctx, col, wk] of [[s.cx, color, 1], [s.hx, 'rgba(0,0,0,0.85)', 1.3], [s.rx, 'rgba(255,255,255,0.8)', 1.3]]) {
+  // 홈은 얕게 그린다: 색의 어두운 선에 틈새 그늘이 겹치면 매끈한 벽 위에 굵고 검은 곡선이 그려진 것처럼 떠 보인다(A/B 라운드 14)
+  for (const [ctx, col, wk] of [[s.cx, color, 0.8], [s.hx, 'rgba(60,60,60,0.45)', 1.1], [s.rx, 'rgba(255,255,255,0.6)', 1.1]]) {
     ctx.strokeStyle = col; ctx.lineCap = 'round';
     for (const pts of paths) {
       ctx.lineWidth = width * wk; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
