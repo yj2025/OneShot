@@ -182,8 +182,9 @@ const FRAG_LIGHT = `
 #include <lights_fragment_end>
 `;
 
-export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0 } = {}) {
-  const m = new THREE.MeshStandardMaterial({ envMapIntensity: 0.5, ...params });
+// physical: 유전체의 정반사 세기(specularIntensity)를 낮출 수 있는 재질로 만든다. 렌즈 바로 앞의 천과 무광 폴리머가 머리 위 형광등을 비스듬히 받아 하얗게 번들거리던 것을 막는다
+export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0, physical = false } = {}) {
+  const m = physical ? new THREE.MeshPhysicalMaterial({ envMapIntensity: 0.5, ...params }) : new THREE.MeshStandardMaterial({ envMapIntensity: 0.5, ...params });
   const local = { uGrime: { value: grime }, uAO: { value: ao }, uDamp: { value: damp } };
   m.userData.bc = local;
   m.onBeforeCompile = (sh) => {

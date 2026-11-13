@@ -31,7 +31,7 @@ function limb(mat, r0, r1, wrinkle = 0) {
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
-      const k = 1 + wrinkle * (0.16 * Math.sin(y * 31 + a * 2.0) * Math.sin(a * 3 + y * 7) + 0.1 * Math.sin(y * 57 + a * 5) + 0.12 * Math.cos(a - 0.6));
+      const k = 1 + wrinkle * (0.2 * Math.sin(y * 31 + a * 2.0) * Math.sin(a * 3 + y * 7) + 0.13 * Math.sin(y * 57 + a * 5) + 0.07 * Math.sin(y * 113 + a * 9) + 0.12 * Math.cos(a - 0.6));
       p.setXYZ(i, x * k, y, z * k * 1.12);
     }
     g.computeVertexNormals();
@@ -51,7 +51,7 @@ function wearTexture(base, seed) {
   x.fillStyle = base; x.fillRect(0, 0, S, S);
   let a = seed * 9301 + 49297; const r = () => ((a = (a * 9301 + 49297) % 233280) / 233280);
   for (let i = 0; i < 2600; i++) { const v = Math.floor(r() * 40); x.fillStyle = `rgba(${v},${v},${v},0.05)`; x.fillRect(r() * S, r() * S, 2 + r() * 6, 2 + r() * 6); }
-  x.strokeStyle = 'rgba(190,190,180,0.22)'; x.lineWidth = 0.7;
+  x.strokeStyle = 'rgba(170,170,160,0.3)'; x.lineWidth = 0.7;
   for (let i = 0; i < 90; i++) { const px = r() * S, py = r() * S, l = 3 + r() * 20, an = r() * 6.28; x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(an) * l, py + Math.sin(an) * l); x.stroke(); }
   x.fillStyle = 'rgba(200,195,180,0.10)';
   for (let i = 0; i < 40; i++) { x.beginPath(); x.arc(r() * S, r() * S, 4 + r() * 14, 0, 7); x.fill(); }
@@ -69,16 +69,18 @@ function fabricTexture(base, seed) {
 }
 
 export function buildMaterials() {
-  const blk = wearTexture('#252625', 3), tan = wearTexture('#5e5a4e', 7), stl = wearTexture('#3c3e40', 11);
+  // 총은 검은 폴리머와 검게 처리한 금속이다(탄색과 밝은 회색 금속은 어두운 방에서도 혼자 떠 보였다). 닳은 자리는 긁힘 무늬로 밝다
+  const blk = wearTexture('#171817', 3), tan = wearTexture('#1f201d', 7), stl = wearTexture('#222426', 11);
   return {
-    polymer: bcMaterial({ map: blk, roughness: 0.62, metalness: 0.05, envMapIntensity: 1.0 }, { grime: 0 }),
-    steel: bcMaterial({ map: stl, roughness: 0.38, metalness: 0.55, envMapIntensity: 1.2 }, { grime: 0 }),
-    worn: bcMaterial({ color: 0x77797b, roughness: 0.3, metalness: 0.7, envMapIntensity: 1.2 }, { grime: 0 }),
-    tan: bcMaterial({ map: tan, roughness: 0.7, metalness: 0.02, envMapIntensity: 0.9 }, { grime: 0 }),
-    glove: bcMaterial({ map: fabricTexture('#2e2d2a', 5), roughness: 0.95 }, { grime: 0 }),
-    gloveKnuckle: bcMaterial({ color: 0x24241f, roughness: 0.55, envMapIntensity: 0.8 }, { grime: 0 }),
-    sleeve: bcMaterial({ map: fabricTexture('#3f413a', 9), roughness: 1.0 }, { grime: 0 }),
-    cuff: bcMaterial({ map: fabricTexture('#3a3c31', 13), roughness: 1.0 }, { grime: 0 }),
+    polymer: bcMaterial({ map: blk, roughness: 0.6, metalness: 0.0, envMapIntensity: 0.07, specularIntensity: 0.4 }, { grime: 0, physical: true }),
+    // 검게 처리한 금속(아노다이징, 파커라이징)은 무광에 가깝다. 금속성을 낮게 두고 정반사 세기도 줄인다
+    steel: bcMaterial({ map: stl, roughness: 0.5, metalness: 0.15, envMapIntensity: 0.12, specularIntensity: 0.45 }, { grime: 0, physical: true }),
+    worn: bcMaterial({ color: 0x4c4e50, roughness: 0.32, metalness: 0.65, envMapIntensity: 0.6 }, { grime: 0 }),
+    tan: bcMaterial({ map: tan, roughness: 0.7, metalness: 0.0, envMapIntensity: 0.06, specularIntensity: 0.35 }, { grime: 0, physical: true }),
+    glove: bcMaterial({ map: fabricTexture('#1d1d1b', 5), roughness: 0.95, envMapIntensity: 0.1, specularIntensity: 0.15 }, { grime: 0, physical: true }),
+    gloveKnuckle: bcMaterial({ color: 0x121211, roughness: 0.55, envMapIntensity: 0.6 }, { grime: 0 }),
+    sleeve: bcMaterial({ map: fabricTexture('#2f312c', 9), roughness: 1.0, envMapIntensity: 0.1, specularIntensity: 0.1 }, { grime: 0, physical: true }),
+    cuff: bcMaterial({ map: fabricTexture('#272822', 13), roughness: 1.0, envMapIntensity: 0.1, specularIntensity: 0.1 }, { grime: 0, physical: true }),
   };
 }
 
@@ -120,7 +122,8 @@ function buildRifle(M) {
   return { group: g, mag, muzzle, ejection, sightY: 0.135,
     // 손 위치·회전(총 기준)
     rightHand: V(0.034, -0.03, 0.055), rightQ: new THREE.Euler(0.32, 0, -Math.PI / 2, 'ZYX'),
-    leftHand: V(-0.006, 0.006, -0.37), leftQ: new THREE.Euler(0, Math.PI / 2, Math.PI, 'YXZ'),
+    // 왼손은 핸드가드 밑을 받친다: 손등이 아래, 손가락이 오른쪽으로 뻗어 핸드가드 오른쪽 옆을 감아 올라간다
+    leftHand: V(-0.02, 0.022, -0.29), leftQ: new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(V(0, 0, -1), V(0, -1, 0), V(-1, 0, 0))),
     rightCurl: [0.15, 1.25, 1.35, 1.4], leftCurl: [1.25, 1.3, 1.3, 1.25],
     magPos: mag.position.clone() };
 }
@@ -176,9 +179,9 @@ function curlHand(h, curls) {
 
 const WEAPONS = {
   rifle: { mag: 30, spareMags: 4, interval: 0.088, auto: true, reload: 2.35, recoil: 1.0, kind: 'rifle', damage: 1, spread: 0.0016,
-    hip: V(0.17, -0.235, -0.35), ads: V(0.0, -0.118, -0.28), sprint: V(0.07, -0.28, -0.28) },
+    hip: V(0.13, -0.215, -0.27), ads: V(0.0, -0.118, -0.28), sprint: V(0.07, -0.28, -0.24), cant: 0.2 },
   pistol: { mag: 15, spareMags: 3, interval: 0.13, auto: false, reload: 1.75, recoil: 0.8, kind: 'pistol', damage: 0.85, spread: 0.003,
-    hip: V(0.11, -0.22, -0.33), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.28, -0.2) },
+    hip: V(0.035, -0.185, -0.29), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.28, -0.2), cant: 0.1 },
 };
 
 class Spring {
@@ -222,7 +225,8 @@ export class Viewmodel {
     this.models.rifle.group.visible = true;
     this.recoilT = new Spring(150, 13);   // 위치 반동
     this.recoilR = new Spring(110, 11);   // 회전 반동
-    this.swaySpring = new Spring(70, 11);
+    this.swaySpring = new Spring(48, 8.5);
+    this.holdPhase = 0;   // 떠도는 자세의 위상. 생명마다 다르다(Game.reset이 정한다)
     this.ads = 0; this.sprint = 0; this.lower = 0; this.switchT = 0; this.switchTo = null;
     this.reload = null; this.cool = 0; this.triggerHeld = false; this.triggerWas = false;
     this.fatigue = 0; this.stress = 0;
@@ -339,23 +343,27 @@ export class Viewmodel {
     }
 
     // 흔들림: 카메라 회전 속도에 반대로 끌리는 관성 + 호흡 + 걸음
-    const swayTarget = V(-p.camYawVel * 0.02, p.camPitchVel * 0.016, 0);
-    swayTarget.x = Math.max(-0.08, Math.min(0.08, swayTarget.x)); swayTarget.y = Math.max(-0.06, Math.min(0.06, swayTarget.y));
+    const swayTarget = V(-p.camYawVel * 0.032, p.camPitchVel * 0.024, 0);
+    swayTarget.x = Math.max(-0.13, Math.min(0.13, swayTarget.x)); swayTarget.y = Math.max(-0.09, Math.min(0.09, swayTarget.y));
     const sway = this.swaySpring.step(dt, swayTarget);
     const breath = (1 - this.ads * 0.6) * (0.003 + p.exertion * 0.006);
     const by = Math.sin(t * (1.6 + p.exertion * 1.8)) * breath, bx = noise1(t * 0.6, 3) * breath * 1.2;
-    const stepAmp = p.moving * (0.024 + this.sprint * 0.03) * (1 - this.ads * 0.5);
+    const stepAmp = p.moving * (0.036 + this.sprint * 0.03) * (1 - this.ads * 0.5);
+    // 떠도는 자세: 손은 총을 같은 자리에 붙들고 있지 않다. 몇 초 단위로 높이, 좌우, 기울기가 바뀐다(조준할수록 줄어든다)
+    const hp = t + this.holdPhase, hold = 1 - this.ads * 0.8;
+    const dX = noise1(hp * 0.21, 31) * 0.035 * hold, dY = noise1(hp * 0.17, 32) * 0.03 * hold, dRoll = noise1(hp * 0.19, 33) * 0.16 * hold, dPitch = noise1(hp * 0.23, 34) * 0.02 * hold;
     const sx = Math.sin(p.stepPhase * Math.PI) * stepAmp * 0.8, sy = -Math.abs(Math.sin(p.stepPhase * Math.PI)) * stepAmp;
 
     const rt = this.recoilT.step(dt), rr = this.recoilR.step(dt);
     const base = def.hip.clone().lerp(def.ads, this.ads).lerp(def.sprint, this.sprint);
-    const pos = base.add(V(sway.x + bx + sx, sway.y + by + sy - rl.drop - this.lower * 0.06 - switchDrop * 0.25, rt.z * 0.045 + this.lower * 0.06));
+    const pos = base.add(V(sway.x + bx + sx + dX, sway.y + by + sy + dY - rl.drop - this.lower * 0.06 - switchDrop * 0.25, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
     pos.x += rt.x * 0.02; pos.y += rt.y * 0.02;
 
     // 총 회전(총 기준): 반동, 달리기 자세, 벽 앞에서 내림, 재장전 기울임
-    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - switchDrop * 0.9 + rl.pitch + sway.y * 1.5;
+    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - switchDrop * 0.9 + rl.pitch + sway.y * 1.5 + dPitch;
     const rotY = rr.y * 0.035 + this.sprint * 0.55 + sway.x * -2.0;
-    const rotZ = rr.z * 0.035 + sx * 3 + this.sprint * 0.45 + rl.tilt + p.roll * 0.4;
+    // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다
+    const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt + p.roll * 0.4 + (def.cant || 0) * (1 - this.ads) + dRoll;
 
     // root = 총 조준 방향 (aimQuat), anchor에서 pos만큼 떨어짐
     this.root.position.copy(p.anchor);
@@ -377,8 +385,8 @@ export class Viewmodel {
     curlHand(this.handR, mdl.rightCurl); curlHand(this.handL, rl.handL ? [0.9, 0.9, 0.9, 0.9] : mdl.leftCurl);
     this.root.updateMatrixWorld(true);
     const rootQ = this.root.quaternion;
-    const elbowR = V(0.24, -0.34, 0.18).applyQuaternion(rootQ).add(this.root.position);
-    const elbowL = V(-0.22, -0.36, this.current === 'rifle' ? -0.1 : 0.1).applyQuaternion(rootQ).add(this.root.position);
+    const elbowR = V(0.2, -0.44, 0.04).applyQuaternion(rootQ).add(this.root.position);
+    const elbowL = V(-0.18, -0.45, this.current === 'rifle' ? -0.1 : 0.02).applyQuaternion(rootQ).add(this.root.position);
     const wristR = this.handR.localToWorld(V(0, 0.0, 0.07));
     const wristL = this.handL.localToWorld(V(0, 0.0, 0.07));
     placeLimb(this.foreR, elbowR, wristR); placeLimb(this.foreL, elbowL, wristL);

@@ -247,6 +247,8 @@ class Game {
       this.player.spawn(0, 24.5, 0, -0.05);
       if (TOUR) for (const b of this.bots) b.dormant = 'walk';
     }
+    // 떠도는 자세의 위상: 생명마다 다르다. 고정 시점은 그 자리에서 정해서 같은 시점은 늘 같게 찍힌다
+    this.vm.holdPhase = v ? ((v.pos[0] * 12.9898 + v.pos[1] * 78.233) % 37 + 37) % 37 : this.rng() * 37;
     this.tourI = 0;
     this.post?.resetExposure();
   }

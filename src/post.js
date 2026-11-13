@@ -135,7 +135,8 @@ vec2 distort(vec2 uv, float k){
 float linDepth(vec2 uv){ float d = texture2D(tDepth, uv).r; return uNear * uFar / (uFar - d * (uFar - uNear)); }
 vec3 defocus(vec2 uv, vec3 base){
   float z = linDepth(uv);
-  float coc = smoothstep(0.85, 0.22, z) * 0.011;
+  // 렌즈 바로 앞(손과 총)은 초점이 나간다. 0.7 m 안에서 흐려지기 시작해 0.2 m에서 가장 흐리다
+  float coc = smoothstep(0.7, 0.2, z) * 0.017;
   if (coc < 0.0006) return base;
   vec3 acc = base; float n = 1.0;
   for (int i = 0; i < 10; i++) {
@@ -143,7 +144,8 @@ vec3 defocus(vec2 uv, vec3 base){
     vec2 o = vec2(cos(a), sin(a)) * r * coc * vec2(1.0 / uAspect, 1.0);
     float zz = linDepth(uv + o);
     // 먼 배경이 가까운 물체 위로 번지지 않도록
-    if (zz < 1.2) { acc += texture2D(tScene, uv + o).rgb; n += 1.0; }
+    // 깊이가 비슷한 것끼리만 섞는다(가까운 밝은 벽이 손과 총 위로 번져 총이 하얗게 보였다)
+    if (zz < 1.2 && abs(zz - z) < 0.12 + z * 0.4) { acc += texture2D(tScene, uv + o).rgb; n += 1.0; }
   }
   return acc / n;
 }
