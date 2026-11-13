@@ -124,10 +124,10 @@ const GEN = {
       const pore = vnoise(u * 170, v * 170, 170, 4), agg = vnoise(u * 64, v * 64, 64, 5);
       const wet = sstep(0.62, 0.7, fbm(u * 3 + 0.3, v * 3, 3, 4, 9));
       // 닳은 자리: 골재가 갈려 매끈하고 반들거린다
-      const worn = sstep(0.52, 0.74, fbm(u * 1.5 + 0.7, v * 1.5, 1.5, 3, 6));
+      const worn = sstep(0.45, 0.72, fbm(u * 1.5 + 0.7, v * 1.5, 1.5, 3, 6));
       const g = 118 + (n - 0.5) * 50 + (sf - 0.5) * 22 - sstep(0.55, 0.75, m) * 34 - wet * 18 + worn * 6;
       const h = 0.5 + (sf - 0.5) * 0.15 + (agg - 0.5) * 0.25 * (1 - worn * 0.7) - sstep(0.72, 0.9, pore) * 0.25 * (1 - worn * 0.8);
-      const r = 0.9 - worn * 0.32 - wet * 0.45 + (pore - 0.5) * 0.12;
+      const r = 0.9 - worn * 0.5 - wet * 0.55 + (pore - 0.5) * 0.12;
       return [g + 3, g + 2, g - 2, h, r];
     });
     cracks(s, rng, S, 7, 1.2, 'rgba(40,38,35,0.55)');

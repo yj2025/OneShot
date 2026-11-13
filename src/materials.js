@@ -183,6 +183,16 @@ const FRAG_LIGHT = `
 `;
 
 // physical: 유전체의 정반사 세기(specularIntensity)를 낮출 수 있는 재질로 만든다. 렌즈 바로 앞의 천과 무광 폴리머가 머리 위 형광등을 비스듬히 받아 하얗게 번들거리던 것을 막는다
+// 실내 벽 아래쪽 띠(회벽의 초록 칠)는 유성 페인트라 반들거린다. 복도와 방에서 형광등이 그 띠에 길게 비친다
+const BC_GLOSS = `
+if (uDamp > 0.9) {
+  float bcHf = vBcW.y - mix(0.0, uFL, bcInside(vBcW));
+  vec3 bcNg2 = normalize(cross(dFdx(vBcW), dFdy(vBcW)));
+  float bcLow = 1.0 - smoothstep(1.16, 1.2, bcHf);
+  roughnessFactor = mix(roughnessFactor, max(0.18, roughnessFactor * 0.42), bcLow * (1.0 - abs(bcNg2.y)));
+}
+`;
+
 export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0, physical = false } = {}) {
   const m = physical ? new THREE.MeshPhysicalMaterial({ envMapIntensity: 0.5, ...params }) : new THREE.MeshStandardMaterial({ envMapIntensity: 0.5, ...params });
   const local = { uGrime: { value: grime }, uAO: { value: ao }, uDamp: { value: damp } };
@@ -193,7 +203,10 @@ export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0, physical 
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + VERT_BODY);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FRAG_HEAD)
       .replace('#include <map_fragment>', FRAG_GRIME)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = clamp(roughnessFactor + (bcFbm(vBcW.xz * 1.3 + vBcW.y * 0.7) - 0.5) * 0.55 * uGrime - smoothstep(0.62, 0.7, bcFbm(vBcW.xz * 0.5 + 9.0)) * 0.35 * uGrime, 0.04, 1.0);')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = clamp(roughnessFactor + (bcFbm(vBcW.xz * 1.3 + vBcW.y * 0.7) - 0.5) * 0.55 * uGrime - smoothstep(0.62, 0.7, bcFbm(vBcW.xz * 0.5 + 9.0)) * 0.35 * uGrime, 0.04, 1.0);\n' + BC_GLOSS)
+      // 반들거리는 자리(젖은 바닥, 닳은 길)는 물과 광이 잔결을 메워 평평하다. 노멀 맵을 거칠기에 따라 줄인다.
+      // 그대로 두면 먼 바닥의 젖은 자리에서 잔결마다 반사가 흰 점으로 반짝였다(A/B 라운드 15). 거리로 거칠기를 올리면 젖은 반사 자체가 사라져서 이 방법을 쓴다
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n#ifdef USE_NORMALMAP\n normal = normalize(mix(nonPerturbedNormal, normal, smoothstep(0.2, 0.7, roughnessFactor)));\n#endif')
       .replace('#include <lights_fragment_begin>', FRAG_PRE + LIGHTS_BEGIN)
       .replace('#include <lights_fragment_end>', FRAG_LIGHT);
   };
