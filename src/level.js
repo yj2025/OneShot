@@ -75,7 +75,7 @@ function erodeWarp(s) {
     const t = 3 - z.ax - z.along, sev = zoneSev(z, c[t]);
     const d0 = (z.fr ? 0.085 : 0.2) * (0.45 + 0.55 * sev), W = Math.min(2.4 * d0 + 0.03, h[z.ax] * 0.9);
     const seed = hash(Math.round((c[z.ax] + z.side * h[z.ax]) * 100), Math.round(z.lo * 100) + z.ax * 7 + (z.side > 0 ? 3 : 0), Math.round(c[t] * 100)) * 1e9 | 0;
-    return { ...z, t, sev, dmax: d0, W, seed, R: 0.08 + 0.5 * sev, nz: (Math.abs(seed) % 997) * 0.37 };
+    return { ...z, t, sev, dmax: d0, W, seed, R: 0.08 + 0.35 * sev, nz: (Math.abs(seed) % 997) * 0.37 };
   });
   // 깊게 떨어진 덩어리: 깊이가 한 구간에서 거의 같고 구간 끝에서 갑자기 바뀐다. k는 깨진 면이 벽 두께 방향으로 기운 쪽
   const chunk = (z, sw) => {
