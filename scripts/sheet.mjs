@@ -28,7 +28,8 @@ const exclude = new Set(cfg.exclude || []);
 const cropped = crop.left > 0 || crop.right < 1 || crop.top > 0 || crop.bottom < 1;
 
 // 장면이 라운드마다 달라지면 난이도가 흔들린다. 빌드 정지 화면은 전부 넣는다
-const buildImgs = fs.readdirSync(shotsDir).filter(f => /^\d\d-.*\.png$/.test(f)).sort().map(f => path.join(shotsDir, f));
+// 가까운 장면(-close-)은 A/B에만 쓴다. 레퍼런스 비교는 칸 수와 구성을 이전 라운드와 같게 둔다
+const buildImgs = fs.readdirSync(shotsDir).filter(f => /^\d\d-.*\.png$/.test(f) && !/-close-/.test(f)).sort().map(f => path.join(shotsDir, f));
 const refAll = fs.existsSync(refDir) ? fs.readdirSync(refDir).filter(f => /\.(png|jpe?g|webp)$/i.test(f)).sort() : [];
 const refImgs = refAll.filter(f => !exclude.has(f)).map(f => path.join(refDir, f));
 if (!buildImgs.length) { console.error('out/shots/에 정지 화면이 없다. 먼저 npm run shots'); process.exit(1); }

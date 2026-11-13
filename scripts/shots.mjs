@@ -53,6 +53,8 @@ async function strip(page, name, perFrame) {
 const VIEWS = [
   ['01-yard', 0], ['02-entrance', 1], ['03-corridor', 2], ['04-hall-windows', 3],
   ['05-office-fluorescent', 4], ['06-loading-dock-stairs', 5], ['07-doorway-to-yard', 6], ['08-bot-in-room', 7],
+  // 가까운 장면: A/B에만 쓴다(npm run sheet의 레퍼런스 비교에는 넣지 않는다)
+  ['12-close-doorway', 9], ['13-close-floor', 10], ['14-close-wall', 11], ['15-close-pistol', 12],
 ];
 for (const [name, v] of VIEWS) {
   const { page } = await open(v);

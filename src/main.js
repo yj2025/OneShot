@@ -599,6 +599,11 @@ const VIEWS = [
   { pos: [-7.5, -3.2], yaw: Math.PI, pitch: 0.02 },
   { pos: [8, -5.6], yaw: Math.PI, pitch: -0.02, bot: { i: 1, pos: [8.7, -2.0], yaw: -1.9 } },
   { pos: [0, -7.2], yaw: 0, pitch: 0, bot: { i: 2, pos: [-2, -12.5], yaw: -2.78, active: true } },
+  // 가까운 장면(9~12): 1~2 m 안의 표면과 손과 총. 판정 시트 크기에서 작은 변화가 보이도록 A/B에 더했다(2026-11-14)
+  { pos: [-6.6, -1.4], yaw: 2.28, pitch: 0.05 },
+  { pos: [1.5, -2.5], yaw: 1.07, pitch: -0.75 },
+  { pos: [-10, -5.9], yaw: -1.07, pitch: 0 },
+  { pos: [6.8, -7.6], yaw: 0.3, pitch: -0.1, weapon: 'pistol' },
 ];
 
 const game = new Game();
