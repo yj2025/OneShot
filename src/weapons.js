@@ -69,18 +69,18 @@ function fabricTexture(base, seed) {
 }
 
 export function buildMaterials() {
-  // 총은 검은 폴리머와 검게 처리한 금속이다(탄색과 밝은 회색 금속은 어두운 방에서도 혼자 떠 보였다). 닳은 자리는 긁힘 무늬로 밝다
-  const blk = wearTexture('#171817', 3), tan = wearTexture('#1f201d', 7), stl = wearTexture('#222426', 11);
+  // 금속 부품은 어두운 회색, 핸드가드와 개머리판과 탄창은 탄색이다. 부품마다 색이 달라야 판정 시트 크기에서 총으로 읽힌다(검은 단색으로 바꿨을 때 "형태가 읽히지 않는 덩어리"로 보였다). 회색 금속이 떠 보이던 것은 반사 탓이라 반사만 줄인다
+  const blk = wearTexture('#1e1f1e', 3), tan = wearTexture('#55524a', 7), stl = wearTexture('#2c2e30', 11);
   return {
-    polymer: bcMaterial({ map: blk, roughness: 0.6, metalness: 0.0, envMapIntensity: 0.07, specularIntensity: 0.4 }, { grime: 0, physical: true }),
+    polymer: bcMaterial({ map: blk, roughness: 0.6, metalness: 0.0, envMapIntensity: 0.15, specularIntensity: 0.45 }, { grime: 0, physical: true }),
     // 검게 처리한 금속(아노다이징, 파커라이징)은 무광에 가깝다. 금속성을 낮게 두고 정반사 세기도 줄인다
-    steel: bcMaterial({ map: stl, roughness: 0.5, metalness: 0.15, envMapIntensity: 0.12, specularIntensity: 0.45 }, { grime: 0, physical: true }),
+    steel: bcMaterial({ map: stl, roughness: 0.46, metalness: 0.25, envMapIntensity: 0.25, specularIntensity: 0.5 }, { grime: 0, physical: true }),
     worn: bcMaterial({ color: 0x4c4e50, roughness: 0.32, metalness: 0.65, envMapIntensity: 0.6 }, { grime: 0 }),
-    tan: bcMaterial({ map: tan, roughness: 0.7, metalness: 0.0, envMapIntensity: 0.06, specularIntensity: 0.35 }, { grime: 0, physical: true }),
-    glove: bcMaterial({ map: fabricTexture('#1d1d1b', 5), roughness: 0.95, envMapIntensity: 0.1, specularIntensity: 0.15 }, { grime: 0, physical: true }),
-    gloveKnuckle: bcMaterial({ color: 0x121211, roughness: 0.55, envMapIntensity: 0.6 }, { grime: 0 }),
-    sleeve: bcMaterial({ map: fabricTexture('#2f312c', 9), roughness: 1.0, envMapIntensity: 0.1, specularIntensity: 0.1 }, { grime: 0, physical: true }),
-    cuff: bcMaterial({ map: fabricTexture('#272822', 13), roughness: 1.0, envMapIntensity: 0.1, specularIntensity: 0.1 }, { grime: 0, physical: true }),
+    tan: bcMaterial({ map: tan, roughness: 0.72, metalness: 0.0, envMapIntensity: 0.25, specularIntensity: 0.45 }, { grime: 0, physical: true }),
+    glove: bcMaterial({ map: fabricTexture('#363530', 5), roughness: 0.85, envMapIntensity: 0.2, specularIntensity: 0.3 }, { grime: 0, physical: true }),
+    gloveKnuckle: bcMaterial({ color: 0x1a1a18, roughness: 0.5, envMapIntensity: 0.3 }, { grime: 0 }),
+    sleeve: bcMaterial({ map: fabricTexture('#3f413a', 9), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15 }, { grime: 0, physical: true }),
+    cuff: bcMaterial({ map: fabricTexture('#3a3c31', 13), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15 }, { grime: 0, physical: true }),
   };
 }
 
@@ -123,7 +123,7 @@ function buildRifle(M) {
     // 손 위치·회전(총 기준)
     rightHand: V(0.034, -0.03, 0.055), rightQ: new THREE.Euler(0.32, 0, -Math.PI / 2, 'ZYX'),
     // 왼손은 핸드가드 밑을 받친다: 손등이 아래, 손가락이 오른쪽으로 뻗어 핸드가드 오른쪽 옆을 감아 올라간다
-    leftHand: V(-0.02, 0.022, -0.29), leftQ: new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(V(0, 0, -1), V(0, -1, 0), V(-1, 0, 0))),
+    leftHand: V(-0.02, 0.022, -0.37), leftQ: new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(V(0, 0, -1), V(0, -1, 0), V(-1, 0, 0))),
     rightCurl: [0.15, 1.25, 1.35, 1.4], leftCurl: [1.25, 1.3, 1.3, 1.25],
     magPos: mag.position.clone() };
 }
@@ -179,9 +179,9 @@ function curlHand(h, curls) {
 
 const WEAPONS = {
   rifle: { mag: 30, spareMags: 4, interval: 0.088, auto: true, reload: 2.35, recoil: 1.0, kind: 'rifle', damage: 1, spread: 0.0016,
-    hip: V(0.13, -0.215, -0.27), ads: V(0.0, -0.118, -0.28), sprint: V(0.07, -0.28, -0.24), cant: 0.2 },
+    hip: V(0.162, -0.232, -0.34), ads: V(0.0, -0.118, -0.28), sprint: V(0.07, -0.28, -0.24), cant: 0.06 },
   pistol: { mag: 15, spareMags: 3, interval: 0.13, auto: false, reload: 1.75, recoil: 0.8, kind: 'pistol', damage: 0.85, spread: 0.003,
-    hip: V(0.035, -0.185, -0.29), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.28, -0.2), cant: 0.1 },
+    hip: V(0.09, -0.21, -0.32), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.28, -0.2), cant: 0.06 },
 };
 
 class Spring {
@@ -360,8 +360,11 @@ export class Viewmodel {
     pos.x += rt.x * 0.02; pos.y += rt.y * 0.02;
 
     // 총 회전(총 기준): 반동, 달리기 자세, 벽 앞에서 내림, 재장전 기울임
-    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - switchDrop * 0.9 + rl.pitch + sway.y * 1.5 + dPitch;
-    const rotY = rr.y * 0.035 + this.sprint * 0.55 + sway.x * -2.0;
+    // 걸음마다 총끝이 흔들린다: 몸은 가슴 카메라와 함께 움직이지만 두 팔에 든 총은 한 박자 늦게 끄덕이고 좌우로 돈다(조준할수록 줄어든다)
+    const walkK = p.moving * (1 - this.ads * 0.7) * (1 + this.sprint * 0.6);
+    const wPitch = Math.sin(p.stepPhase * Math.PI * 2 + 0.9) * 0.03 * walkK, wYaw = Math.sin(p.stepPhase * Math.PI + 0.5) * 0.035 * walkK;
+    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - switchDrop * 0.9 + rl.pitch + sway.y * 1.5 + dPitch + wPitch;
+    const rotY = rr.y * 0.035 + this.sprint * 0.55 + sway.x * -2.0 + wYaw;
     // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다
     const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt + p.roll * 0.4 + (def.cant || 0) * (1 - this.ads) + dRoll;
 
@@ -385,8 +388,9 @@ export class Viewmodel {
     curlHand(this.handR, mdl.rightCurl); curlHand(this.handL, rl.handL ? [0.9, 0.9, 0.9, 0.9] : mdl.leftCurl);
     this.root.updateMatrixWorld(true);
     const rootQ = this.root.quaternion;
-    const elbowR = V(0.2, -0.44, 0.04).applyQuaternion(rootQ).add(this.root.position);
-    const elbowL = V(-0.18, -0.45, this.current === 'rifle' ? -0.1 : 0.02).applyQuaternion(rootQ).add(this.root.position);
+    // 팔꿈치는 화면 밖 왼쪽 아래와 오른쪽 아래에 있다. 왼팔은 화면 왼쪽 아래에서 비스듬히 건너와 핸드가드를 받친다
+    const elbowR = V(0.24, -0.36, 0.14).applyQuaternion(rootQ).add(this.root.position);
+    const elbowL = V(-0.24, -0.38, this.current === 'rifle' ? -0.1 : 0.06).applyQuaternion(rootQ).add(this.root.position);
     const wristR = this.handR.localToWorld(V(0, 0.0, 0.07));
     const wristL = this.handL.localToWorld(V(0, 0.0, 0.07));
     placeLimb(this.foreR, elbowR, wristR); placeLimb(this.foreL, elbowL, wristL);
