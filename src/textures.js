@@ -213,12 +213,13 @@ const GEN = {
       const n = vnoise(u * 200, v * 200, 200, 41), m = fbm(u * 4, v * 4, 4, 4, 42);
       const patch = sstep(0.6, 0.62, fbm(u * 2.5, v * 2.5, 2.5, 3, 43));
       const g = 98 + (n - 0.5) * 34 + (m - 0.5) * 30 - patch * 14;
-      const h = 0.5 + (n - 0.5) * 0.45 * (1 - patch * 0.6) + patch * 0.05;
+      const h = 0.5 + (n - 0.5) * 0.25 * (1 - patch * 0.6) + patch * 0.05;
       return [g, g + 1, g + 3, h, 0.88 - patch * 0.15];
     });
     cracks(s, rng, S, 10, 1.6, 'rgba(18,18,18,0.7)');
     speckle(s.cx, rng, S, 1500, ['rgba(130,128,120,0.5)', 'rgba(20,20,20,0.5)'], 0.4, 1.2);
-    s.k = 5; s.cav = 1.0;
+    // 골재 요철을 세게 하면 가까운 아스팔트가 보도블록처럼 보인다
+    s.k = 2.2; s.cav = 0.3;
     return s;
   },
   gravel(rng, S = 512) {
@@ -233,7 +234,8 @@ const GEN = {
     speckle(s.cx, rng, S, 2500, ['rgba(30,28,24,0.6)'], 0.6, 1.5);
     // 흙이 드러난 곳: 돌이 묻혀 평평하다
     for (let i = 0; i < 8; i++) { const x = rng() * S, y = rng() * S, sx = 30 + rng() * 60, sy = 20 + rng() * 40; blot(s, x, y, sx, sy, 'rgba(84,72,58,0.55)', -1, 'rgba(90,90,90,0.6)'); }
-    s.k = 4; s.cav = 1.3;
+    // 돌의 요철과 틈새 그늘을 약하게 둔다: 세게 하면 같은 크기의 조약돌이 대비 강하게 반복되어 바닥 무늬가 타일처럼 드러난다(A/B 라운드 16)
+    s.k = 2.2; s.cav = 0.45;
     return s;
   },
   corrugated(rng, S = 512) {

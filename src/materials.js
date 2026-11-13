@@ -96,11 +96,15 @@ const FRAG_GRIME = `
   if (uGrime > 0.5 && bcNg.y > 0.7 && ins < 0.5) {
     vec2 q = vBcW.xz;
     float soil = smoothstep(0.52, 0.72, bcFbm(q * 0.11 + 3.1)) * (0.6 + 0.4 * bcNoise(q * 1.7));
-    float wet = smoothstep(0.58, 0.66, bcFbm(q * 0.23 + 11.0));
+    float wet = smoothstep(0.55, 0.65, bcFbm(q * 0.23 + 11.0));
     float moss = smoothstep(0.62, 0.78, bcFbm(q * 0.4 + 7.0)) * 0.5;
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.165, 0.12) * (0.8 + 0.4 * bcNoise(q * 6.0)), soil * 0.55);
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 0.9, 0.62), moss);
-    diffuseColor.rgb *= 1.0 - wet * 0.35;
+    // 넓은 얼룩(물기, 흙, 바퀴 자국)으로 땅 무늬의 반복을 깬다. 마당 바닥이 같은 크기의 자갈 무늬로 멀리까지 이어져 벽지처럼 보였다(A/B 라운드 16)
+    diffuseColor.rgb *= 1.0 - wet * 0.45;
+    diffuseColor.rgb *= 0.82 + 0.36 * bcFbm(q * 0.05 + 21.0);
+    float track = smoothstep(0.035, 0.0, abs(fract(dot(q, vec2(0.27, 0.96)) * 0.31 + bcFbm(q * 0.09) * 0.6) - 0.5)) * smoothstep(0.45, 0.65, bcFbm(q * 0.07 + 5.0));
+    diffuseColor.rgb *= 1.0 - track * 0.25;
   }
   if (uDamp > 0.9 && wall > 0.5 && ins > 0.5) {
     float along2 = vBcW.x + vBcW.z;
