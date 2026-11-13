@@ -249,7 +249,7 @@ export class WearTool {
         for (const [v, sp] of ev.slice(0, Math.max(2, Math.round(6 / this.segScale)))) for (const t of [v - sp, v, v + sp]) if (t > -half + last + 0.004 && t < half - last - 0.004) lines.push(t);
       }
       lines.sort((x, y) => x - y);
-      for (let i = lines.length - 2; i > 0; i--) if (lines[i + 1] - lines[i] < 0.006) lines.splice(i, 1);
+      if (!lite || spec.erode) for (let i = lines.length - 2; i > 0; i--) if (lines[i + 1] - lines[i] < 0.006) lines.splice(i, 1);
       return lines;
     });
 

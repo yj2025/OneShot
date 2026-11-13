@@ -63,8 +63,8 @@ const PROP_KEYS = ['locker', 'metalGalv', 'deskTop', 'cardboard', 'cardboardB', 
 // 개구부의 윤곽: 회벽의 끝(문과 창의 옆, 위, 아래)은 곧은 선이 아니라 군데군데 떨어져 나가 있다.
 // 상자의 끝에서 W 안쪽의 점을 안으로 당기는 휨 함수를 돌려준다. 떨어진 깊이는 끝을 따라가는 좌표만의 함수라서 벽 두께 전체가 같이 잘리고,
 // 두 겹 외벽에서는 그 자리로 뒤의 블록이 드러난다. s.erode: [{ ax(끝 면의 법선 축), side(±1), along(끝을 따라가는 축), lo, hi(그 축의 드러난 범위, 월드 좌표), fr(문틀이 있으면 얕게) }]
-// 개구부마다 파손 정도가 다르다: 멀쩡함(0.15), 보통(0.55), 심함(1). 개구부 양쪽의 벽이 같은 정도를 갖도록 개구부 위치(oc)와 벽의 선(ct)으로 정한다
-function zoneSev(z, ct) { const hs = hash(Math.round(z.oc * 100), Math.round(ct * 100), 31); return hs < 0.3 ? 0.15 : hs < 0.72 ? 0.55 : 1; }
+// 개구부마다 파손 정도가 다르다: 멀쩡함(0.15), 보통(0.6), 심함(1). 판정 시트 크기에서는 깊게 떨어진 덩어리만 읽혀서 심함이 절반을 넘게 했다. 개구부 양쪽의 벽이 같은 정도를 갖도록 개구부 위치(oc)와 벽의 선(ct)으로 정한다
+function zoneSev(z, ct) { const hs = hash(Math.round(z.oc * 100), Math.round(ct * 100), 31); return hs < 0.15 ? 0.15 : hs < 0.45 ? 0.6 : 1; }
 // 개구부의 윤곽: 회벽의 끝(문과 창의 옆, 위, 아래)이 파손돼 있다. 파손은 세 부분이다.
 //  깊게 떨어진 덩어리(끝이 안으로 들어간다, 깨진 면은 벽 두께 방향으로 비스듬하다), 벽면의 껍질이 벗겨진 자리(1~2 cm),
 //  그 두 곳에 드러난 속(core: 재질 셰이더가 블록 무늬로 칠한다). 떨어진 조각은 Level.rubble이 바닥에 둔다.
@@ -73,7 +73,7 @@ function erodeWarp(s) {
   const c = [0, 1, 2].map(a => (s.min[a] + s.max[a]) / 2), h = [0, 1, 2].map(a => (s.max[a] - s.min[a]) / 2), CL = 0.42;
   const zones = s.erode.map((z) => {
     const t = 3 - z.ax - z.along, sev = zoneSev(z, c[t]);
-    const d0 = (z.fr ? 0.085 : 0.2) * (0.35 + 0.65 * sev), W = Math.min(2.4 * d0 + 0.03, h[z.ax] * 0.9);
+    const d0 = (z.fr ? 0.085 : 0.2) * (0.45 + 0.55 * sev), W = Math.min(2.4 * d0 + 0.03, h[z.ax] * 0.9);
     const seed = hash(Math.round((c[z.ax] + z.side * h[z.ax]) * 100), Math.round(z.lo * 100) + z.ax * 7 + (z.side > 0 ? 3 : 0), Math.round(c[t] * 100)) * 1e9 | 0;
     return { ...z, t, sev, dmax: d0, W, seed, R: 0.08 + 0.5 * sev, nz: (Math.abs(seed) % 997) * 0.37 };
   });
@@ -89,11 +89,12 @@ function erodeWarp(s) {
     }
     return [e * tt, k];
   };
-  // 회벽 껍질이 벗겨진 자리: 벽면 위, 개구부 끝에서 R 안쪽. 끝에서 멀수록 드물다. fs는 벽면의 방향(앞뒤가 다르게 벗겨진다)
+  // 회벽 껍질이 벗겨진 자리: 개구부 끝에서부터 안쪽으로 벗겨져 들어간다(끝에 붙어 있다. 벽 가운데 따로 떨어진 얼룩은 만들지 않는다).
+  // 벗겨진 너비는 끝을 따라 달라지고 경계는 들쭉날쭉하다. fs는 벽면의 방향(앞뒤가 다르게 벗겨진다)
   const spall = (z, sw, d, fs) => {
     if (sw < z.lo - 0.06 || sw > z.hi + 0.25 * z.sev || d > z.R) return false;
-    const q = noise3(sw / 0.15, d / 0.15, z.nz + fs * 5.3) * 0.75 + noise3(sw / 0.045, d / 0.045, z.nz + fs * 5.3 + 2.1) * 0.25;
-    return q > 0.45 + 0.25 * (1 - z.sev) + 0.4 * (d / z.R);
+    const reach = z.R * Math.min(1, Math.max(0, noise3(sw / 0.14, z.nz + fs * 5.3, 0.5) * 1.7 - 0.5 - 0.3 * (1 - z.sev)));
+    return reach > 0.02 && d < reach + 0.05 * (noise3(sw / 0.04, d / 0.04, z.nz + fs * 5.3 + 2.1) - 0.5);
   };
   const warp = (x, y, z) => {
     const q = [x, y, z], p = [x, y, z];
@@ -266,6 +267,7 @@ export class Level {
   wallZ(z0, z1, x0, x1, y0, y1, openings, matKey, frameMat = 'metalDark') {
     const ops = [...openings].sort((a, b) => a.c - b.c);
     // 회벽은 개구부에 닿은 끝이 어디인지 형상 도구에 알려 준다(그 끝의 윤곽이 떨어져 나간다)
+    // 회벽은 개구부에 닿은 끝이 어디인지 형상 도구에 알려 준다(그 끝이 파손된다). 바깥 블록 벽에도 넣어 봤지만 미장 무늬에 묻혀 보이지 않고 삼각형만 23만 개 늘었다
     const er = (zone) => { if (matKey === 'plaster') { const sp = this.specs[this.specs.length - 1]; (sp.erode = sp.erode || []).push(zone); } };
     let x = x0, prev = null;
     for (const o of ops) {
@@ -294,6 +296,7 @@ export class Level {
   // x 방향에 수직인 벽(z로 뻗음)
   wallX(x0, x1, z0, z1, y0, y1, openings, matKey, frameMat = 'metalDark') {
     const ops = [...openings].sort((a, b) => a.c - b.c);
+    // 회벽은 개구부에 닿은 끝이 어디인지 형상 도구에 알려 준다(그 끝이 파손된다). 바깥 블록 벽에도 넣어 봤지만 미장 무늬에 묻혀 보이지 않고 삼각형만 23만 개 늘었다
     const er = (zone) => { if (matKey === 'plaster') { const sp = this.specs[this.specs.length - 1]; (sp.erode = sp.erode || []).push(zone); } };
     let z = z0, prev = null;
     for (const o of ops) {
@@ -1036,10 +1039,11 @@ export class Level {
         const r = (k) => hash(sd, i, k), p = [0, 0, 0];
         if (z.ax !== 1) { p[z.ax] = c[z.ax] + z.side * (h[z.ax] + r(1) * 0.3 - 0.22); p[t] = c[t] + (r(2) < 0.5 ? -1 : 1) * (h[t] + 0.03 + r(3) ** 1.5 * 0.4); }
         else { p[z.along] = z.lo + 0.1 + r(1) * Math.max(0, z.hi - z.lo - 0.2); p[t] = c[t] + (r(2) - 0.5) * 2 * (h[t] + 0.3); }
-        if (tool.solid(p[0], FL + 0.03, p[2], -1) || !tool.solid(p[0], FL - 0.03, p[2], -1)) continue;
+        const y0 = this.insideBuilding(p[0], p[2]) ? FL : 0.02;   // 건물 안은 바닥, 밖은 땅
+        if (tool.solid(p[0], y0 + 0.03, p[2], -1) || !tool.solid(p[0], y0 - 0.03, p[2], -1)) continue;
         const plate = r(4) < 0.45;   // 회벽 조각(얇고 넓다) 또는 블록 부스러기
         const hh = plate ? [0.03 + r(5) * 0.06, 0.004 + r(6) * 0.004, 0.025 + r(7) * 0.05] : [0.015 + r(5) * 0.04, 0.012 + r(6) * 0.022, 0.015 + r(7) * 0.035];
-        const m = new THREE.Matrix4().compose(new THREE.Vector3(p[0], FL + hh[1] * 0.8, p[2]), new THREE.Quaternion().setFromEuler(new THREE.Euler((r(8) - 0.5) * (plate ? 0.15 : 0.6), r(9) * 6.28, (r(10) - 0.5) * (plate ? 0.15 : 0.6))), new THREE.Vector3(1, 1, 1));
+        const m = new THREE.Matrix4().compose(new THREE.Vector3(p[0], y0 + hh[1] * 0.8, p[2]), new THREE.Quaternion().setFromEuler(new THREE.Euler((r(8) - 0.5) * (plate ? 0.15 : 0.6), r(9) * 6.28, (r(10) - 0.5) * (plate ? 0.15 : 0.6))), new THREE.Vector3(1, 1, 1));
         const k3 = (sd & 1023) * 0.13;
         const jit = (x, y, zz) => { const k = 1 + 0.45 * (noise3(x * 28 + k3, y * 28, zz * 28) - 0.5); return [x * k, y * (1 + 0.6 * (noise3(x * 22, zz * 22 + 3.1, k3) - 0.5)), zz * (2 - k)]; };
         this.add(plate ? 'plaster' : 'concrete', tool.build({ key: plate ? 'plaster' : 'concrete', m, h: hh, tile: 0.6, lite: true, warp: jit }, plate ? WEAR.plaster : WEAR.masonry), false);

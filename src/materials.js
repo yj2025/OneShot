@@ -85,8 +85,8 @@ const FRAG_GRIME = `
     vec2 bf = vec2(fract(bu2) * 0.4, fract(bv / 0.2) * 0.2);
     float mortar = 1.0 - step(0.01, min(min(bf.x, 0.4 - bf.x), min(bf.y, 0.2 - bf.y)));
     float bn = bcNoise(vec2(floor(bu2), row) * 3.7 + 1.3);
-    vec3 blk = vec3(0.25, 0.245, 0.23) * (0.8 + 0.4 * bn) * (0.8 + 0.4 * bcNoise(vBcW.xz * 37.0 + vBcW.y * 31.0));
-    vec3 mor = vec3(0.33, 0.32, 0.29) * (0.85 + 0.3 * bcNoise(vBcW.xz * 53.0 + vBcW.y * 47.0));
+    vec3 blk = vec3(0.3, 0.295, 0.275) * (0.8 + 0.4 * bn) * (0.8 + 0.4 * bcNoise(vBcW.xz * 37.0 + vBcW.y * 31.0));
+    vec3 mor = vec3(0.4, 0.39, 0.355) * (0.85 + 0.3 * bcNoise(vBcW.xz * 53.0 + vBcW.y * 47.0));
     diffuseColor.rgb = mix(diffuseColor.rgb, mix(blk, mor, mortar), bcCore);
   }
   float dirt = mix(1.0, (0.6 + 0.64 * g) * (0.84 + 0.32 * g2), uGrime);
