@@ -98,6 +98,26 @@ for (const [name, v] of VIEWS) {
   await page.keyboard.up('KeyW');
   await page.close();
 }
+// 소총 조준(우클릭): 홀과 마당을 1초 동안 조준한 뒤 한 장씩, 그리고 방 안의 봇을 조준한 채 천천히 따라가는 연속 프레임.
+// 조준 장면은 A/B에만 쓴다(npm run sheet의 레퍼런스 비교에는 넣지 않는다. 칸 수와 구성을 이전 라운드와 같게 둔다)
+for (const [name, v] of [['16-aim-hall', 3], ['17-aim-yard', 0]]) {
+  const { page } = await open(v);
+  const mouse = makeMouse(page, W, H); await mouse.center();
+  await mouse.down('right');
+  await step(page, 60);
+  await shot(page, name);
+  await mouse.up('right');
+  await page.close();
+}
+{
+  const { page } = await open(7);
+  const mouse = makeMouse(page, W, H); await mouse.center();
+  await mouse.down('right');
+  await step(page, 30);
+  await strip(page, 'aim-track', async (f) => { await mouse.move(f < 30 ? 2 : -2, f % 20 < 10 ? 1 : -1); });
+  await mouse.up('right');
+  await page.close();
+}
 // 걷기, 달리며 회전
 {
   const { page } = await open(2);

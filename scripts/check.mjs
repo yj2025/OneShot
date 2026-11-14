@@ -57,6 +57,38 @@ async function main() {
     rec('한글 입력 상태 키(ㅈ / KeyW)로 이동', moved > 0.4, `${moved.toFixed(2)} m 이동`);
   }
 
+  // 2-1. 걷기와 달리기: 우클릭 조준을 한 번 한 뒤에도 Shift+W가 걷기보다 확실히 빠르다.
+  // 조준 값이 0으로 완전히 돌아오지 않아 달리기가 1분 넘게 막히던 버그를 잡는다(2026-11-14)
+  // 2-2. 점프: Space(event.code)로 뛰어 0.3 m 넘게 떴다가 같은 높이로 내려온다
+  {
+    const st = () => page.evaluate(() => window.__bc.state().player);
+    const peak = async (ms, pick) => { let best = -1e9; const t = Date.now(); while (Date.now() - t < ms) { best = Math.max(best, pick(await st())); await sleep(30); } return best; };
+    await page.mouse.down({ button: 'right' }); await sleep(500); await page.mouse.up({ button: 'right' }); await sleep(600);
+    await page.keyboard.down('KeyW'); await sleep(500);
+    const walk = await peak(500, (p) => p.speed);
+    await page.keyboard.down('ShiftLeft'); await sleep(500);
+    const run = await peak(500, (p) => p.speed);
+    await page.keyboard.up('ShiftLeft'); await page.keyboard.up('KeyW'); await sleep(700);
+    rec('걷기와 달리기 구분 (조준을 한 번 한 뒤 Shift+W)', run > walk * 1.6, `걷기 ${walk.toFixed(2)} m/s, 달리기 ${run.toFixed(2)} m/s (${(run / Math.max(walk, 0.01)).toFixed(2)}배)`);
+
+    const y0 = (await st()).y;
+    await page.keyboard.down('Space'); await sleep(80); await page.keyboard.up('Space');
+    const top = await peak(900, (p) => p.y);
+    await sleep(400);
+    const end = await st();
+    const rise = top - y0;
+    rec('Space로 점프하고 착지', rise > 0.3 && Math.abs(end.y - y0) < 0.05 && end.onGround, `최고 ${rise.toFixed(2)} m, 착지 후 높이 차 ${(end.y - y0).toFixed(2)} m`);
+
+    // 2-3. 소총 조준경: 우클릭으로 들여다보면 카메라가 사출동공(반지름 4 mm) 안에 들어오고 조준경 시점이 매 프레임 그려진다. 놓으면 멈춘다
+    const sc = () => page.evaluate(() => window.__bc.scope());
+    await page.mouse.down({ button: 'right' }); await sleep(900);
+    const a = await sc(); await sleep(500); const b = await sc();
+    await page.mouse.up({ button: 'right' }); await sleep(700);
+    const c = await sc(); await sleep(300); const d = await sc();
+    const ok = a.weapon === 'rifle' && a.on && b.on && b.frames - a.frames >= 10 && b.pupilOffset < 0.004 && !c.on && d.frames === c.frames;
+    rec('소총 조준경 (우클릭하면 조준경 시점을 그리고 놓으면 멈춘다)', ok, `조준 중 0.5초 동안 ${b.frames - a.frames}번 그림, 사출동공과 카메라의 어긋남 ${(b.pupilOffset * 1000).toFixed(1)} mm, 그리기 호출 ${b.calls}, 놓은 뒤 ${c.on ? '계속 그림' : '멈춤'}`);
+  }
+
   // 3. 자동 플레이: 시작 → 교전 → 전원 제압 → 판 종료
   const mouse = makeMouse(page, W, H);
   await mouse.center();

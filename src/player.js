@@ -87,7 +87,15 @@ export class Player {
     const side = (input.key('KeyD') ? 1 : 0) - (input.key('KeyA') ? 1 : 0);
     if (input.pressed('KeyC')) this.crouchToggle = !this.crouchToggle;
     const wantSprint = input.key('ShiftLeft') || input.key('ShiftRight');
-    this.sprinting = wantSprint && fwd > 0 && !weapon.ads && this.crouch < 0.3;
+    // 달리기를 막는 것은 '조준하려는 의도'(우클릭을 누르고 있음)다. weapon.ads는 0을 향해 지수로 다가가기만 해서
+    // 놓은 뒤에도 정확히 0이 되지 않는다. 그 값을 참/거짓 조건(!weapon.ads)으로 쓰면 조준 한 번 뒤 1분 넘게 달리기가 막혔다
+    this.sprinting = wantSprint && fwd > 0 && !input.rmb && this.crouch < 0.3;
+    // 점프: 딛고 있을 때만 뛴다. 앉아 있으면 Space는 먼저 일으켜 세운다. 착지 직후에는 다리가 받칠 시간을 둔다
+    this.jumpCD = Math.max(0, (this.jumpCD || 0) - dt);
+    if (input.pressed('Space')) {
+      if (this.crouchToggle || this.crouch > 0.4) this.crouchToggle = false;
+      else if (this.onGround && this.jumpCD <= 0) this.jump();
+    }
     if (this.sprinting) this.crouchToggle = false;
     this.crouch += ((this.crouchToggle ? 1 : 0) - this.crouch) * (1 - Math.exp(-dt * 8));
     const speed = this.sprinting ? 5.0 : (2.75 * (1 - this.crouch * 0.45) * (1 - weapon.ads * 0.3));
@@ -107,13 +115,14 @@ export class Player {
 
     // 높이: 계단은 올라서고, 낮은 곳으로는 떨어진다
     const gh = L.groundHeight(this.pos.x, this.pos.z, this.pos.y, 0.2, 0.42);
-    if (gh >= this.pos.y - 0.02) {
+    if (gh >= this.pos.y - 0.02 && this.vel.y <= 0) {
       if (!this.onGround && this.airTime > 0.12) this.land(-this.vel.y);
       this.pos.y = gh; this.vel.y = 0; this.onGround = true; this.airTime = 0;
     } else {
       this.vel.y -= 9.8 * dt; this.pos.y += this.vel.y * dt; this.airTime += dt;
-      if (this.pos.y <= gh) { if (this.airTime > 0.12) this.land(-this.vel.y); this.pos.y = gh; this.vel.y = 0; this.onGround = true; this.airTime = 0; }
-      else this.onGround = this.airTime < 0.08;
+      if (this.pos.y <= gh) { if (this.airTime > 0.12) this.land(-this.vel.y); this.pos.y = gh; this.vel.y = 0; this.onGround = true; this.airTime = 0; this.jumpCD = Math.max(this.jumpCD, 0.25); }
+      // 걸어서 턱을 내려설 때만 잠깐(0.08초) 딛고 있는 것으로 친다. 뛰어오르는 동안은 아니다
+      else this.onGround = this.airTime < 0.08 && this.vel.y <= 0;
     }
     // 계단에서 카메라가 뚝뚝 끊기지 않게
     this.eyeSmooth += (this.pos.y - this.eyeSmooth) * (1 - Math.exp(-dt * 14));
@@ -146,6 +155,18 @@ export class Player {
     this.lastYaw = ny; this.lastPitch = np;
 
     this.camShake.step(dt); this.camOffset.step(dt); this.camRecoil.step(dt);
+  }
+
+  // 장비를 멘 사람이 제자리에서 뛰는 높이는 0.4 m 남짓이다(위로 2.85~3.15 m/s → 0.41~0.51 m).
+  // 무릎을 굽혔다 펴는 동안 가슴 카메라가 잠깐 가라앉았다가 솟고, 몸이 조금 앞으로 숙여진다
+  jump() {
+    const r = this.rng;
+    this.vel.y = 2.85 + r() * 0.3;
+    this.onGround = false; this.airTime = 0; this.jumpCD = 0.35;
+    this.camOffset.v.add(V((r() - 0.5) * 0.2, -0.7 - r() * 0.3, 0));
+    this.camShake.v.add(V(1.0 + r() * 0.8, (r() - 0.5) * 0.8, (r() - 0.5) * 1.4));
+    this.exertion = Math.min(1, this.exertion + 0.08);
+    this.events.push({ type: 'jump', mat: this.level.floorMaterial(this.pos.x, this.pos.y, this.pos.z) });
   }
 
   land(v) {

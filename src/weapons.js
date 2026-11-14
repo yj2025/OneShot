@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { bcMaterial } from './materials.js';
 import { noise1 } from './rng.js';
+import { buildScope, SCOPE } from './scope.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -75,6 +76,8 @@ export function buildMaterials() {
     polymer: bcMaterial({ map: blk, roughness: 0.6, metalness: 0.0, envMapIntensity: 0.15, specularIntensity: 0.45 }, { grime: 0, physical: true }),
     // 검게 처리한 금속(아노다이징, 파커라이징)은 무광에 가깝다. 금속성을 낮게 두고 정반사 세기도 줄인다
     steel: bcMaterial({ map: stl, roughness: 0.46, metalness: 0.25, envMapIntensity: 0.25, specularIntensity: 0.5 }, { grime: 0, physical: true }),
+    // 조준경 몸통: 무광 검정 아노다이징 알루미늄. 총의 강철보다 조금 더 검고 매끈하다
+    scopeBody: bcMaterial({ map: wearTexture('#191b1c', 17), roughness: 0.4, metalness: 0.3, envMapIntensity: 0.3, specularIntensity: 0.55 }, { grime: 0, physical: true }),
     worn: bcMaterial({ color: 0x4c4e50, roughness: 0.32, metalness: 0.65, envMapIntensity: 0.6 }, { grime: 0 }),
     tan: bcMaterial({ map: tan, roughness: 0.72, metalness: 0.0, envMapIntensity: 0.25, specularIntensity: 0.45 }, { grime: 0, physical: true }),
     glove: bcMaterial({ map: fabricTexture('#363530', 5), roughness: 0.85, envMapIntensity: 0.2, specularIntensity: 0.3 }, { grime: 0, physical: true }),
@@ -95,14 +98,15 @@ function buildRifle(M) {
   part(g, M.tan, [0.064, 0.07, 0.31], [0, 0.072, -0.385]);              // 핸드가드
   for (let i = 0; i < 7; i++) part(g, M.polymer, [0.012, 0.016, 0.024], [-0.033, 0.072, -0.27 - i * 0.04]); // 구멍 (왼쪽)
   for (let i = 0; i < 7; i++) part(g, M.polymer, [0.012, 0.016, 0.024], [0.033, 0.072, -0.27 - i * 0.04]);
-  for (let i = 0; i < 14; i++) part(g, M.steel, [0.022, 0.008, 0.012], [0, 0.116, -0.04 - i * 0.022]); // 레일 이
-  part(g, M.steel, [0.024, 0.006, 0.34], [0, 0.11, -0.19]);
+  // 윗면 레일은 상부 리시버 끝(z 0.07)까지 이어진다. 조준경 링 두 개가 그 뒤쪽에 물린다
+  for (let i = 0; i < 19; i++) part(g, M.steel, [0.022, 0.008, 0.012], [0, 0.116, 0.066 - i * 0.022]); // 레일 이
+  part(g, M.steel, [0.024, 0.006, 0.44], [0, 0.11, -0.14]);
   cylPart(g, M.steel, 0.0095, 0.25, [0, 0.072, -0.66]);                 // 총열
   cylPart(g, M.steel, 0.0135, 0.055, [0, 0.072, -0.805], 'z', 8);      // 소염기
-  part(g, M.steel, [0.014, 0.05, 0.022], [0, 0.135, -0.505]);          // 가늠쇠 받침
-  part(g, M.steel, [0.004, 0.02, 0.004], [0, 0.168, -0.505]);          // 가늠쇠 기둥
-  part(g, M.steel, [0.032, 0.036, 0.035], [0, 0.135, 0.02]);           // 가늠자
+  // 가늠쇠와 가늠자는 뗐다(조준경의 아래 시야를 가린다). 가스 블록은 핸드가드 안에 있다
   part(g, M.steel, [0.036, 0.012, 0.045], [0, 0.114, 0.095]);          // 장전 손잡이
+  const scope = buildScope(M);                                          // 고정 4배 조준경 (scope.js)
+  g.add(scope.group);
   part(g, M.tan, [0.032, 0.105, 0.046], [0, -0.035, 0.035], [0.32, 0, 0]); // 권총손잡이
   part(g, M.polymer, [0.012, 0.008, 0.06], [0, -0.008, -0.03]);         // 방아쇠울
   part(g, M.steel, [0.004, 0.022, 0.006], [0, 0.002, -0.022], [0.3, 0, 0]); // 방아쇠
@@ -119,7 +123,7 @@ function buildRifle(M) {
   part(g, M.polymer, [0.046, 0.094, 0.02], [0, 0.044, 0.35]);
   const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.072, -0.83); g.add(muzzle);
   const ejection = new THREE.Object3D(); ejection.position.set(0.03, 0.088, -0.05); g.add(ejection);
-  return { group: g, mag, muzzle, ejection, sightY: 0.135,
+  return { group: g, mag, muzzle, ejection, scope, eyePoint: SCOPE.pupil.clone(),
     // 손 위치·회전(총 기준)
     rightHand: V(0.034, -0.03, 0.055), rightQ: new THREE.Euler(0.32, 0, -Math.PI / 2, 'ZYX'),
     // 왼손은 핸드가드 밑을 받친다: 손등이 아래, 손가락이 오른쪽으로 뻗어 핸드가드 오른쪽 옆을 감아 올라간다
@@ -179,7 +183,8 @@ function curlHand(h, curls) {
 
 const WEAPONS = {
   rifle: { mag: 30, spareMags: 4, interval: 0.088, auto: true, reload: 2.35, recoil: 1.0, kind: 'rifle', damage: 1, spread: 0.0016,
-    hip: V(0.162, -0.232, -0.34), ads: V(0.0, -0.118, -0.28), sprint: V(0.07, -0.28, -0.24), cant: 0.06 },
+    // 조준 자세: 카메라(눈)가 조준경의 사출동공에 오도록 총을 놓는다 → 광축 높이 0.152 아래, 사출동공(z 0.28) 앞
+    hip: V(0.162, -0.232, -0.34), ads: V(0.0, -SCOPE.axisY, -(SCOPE.eyeZ + SCOPE.relief)), sprint: V(0.07, -0.28, -0.24), cant: 0.06 },
   pistol: { mag: 15, spareMags: 3, interval: 0.13, auto: false, reload: 1.75, recoil: 0.8, kind: 'pistol', damage: 0.85, spread: 0.003,
     hip: V(0.09, -0.21, -0.32), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.28, -0.2), cant: 0.06 },
 };
@@ -226,6 +231,7 @@ export class Viewmodel {
     this.recoilT = new Spring(150, 13);   // 위치 반동
     this.recoilR = new Spring(110, 11);   // 회전 반동
     this.swaySpring = new Spring(48, 8.5);
+    this.vSpring = new Spring(70, 9);     // 점프와 착지의 위아래 관성
     this.holdPhase = 0;   // 떠도는 자세의 위상. 생명마다 다르다(Game.reset이 정한다)
     this.ads = 0; this.sprint = 0; this.lower = 0; this.switchT = 0; this.switchTo = null;
     this.reload = null; this.cool = 0; this.triggerHeld = false; this.triggerWas = false;
@@ -367,6 +373,17 @@ export class Viewmodel {
     const rotY = rr.y * 0.035 + this.sprint * 0.55 + sway.x * -2.0 + wYaw;
     // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다
     const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt + p.roll * 0.4 + (def.cant || 0) * (1 - this.ads) + dRoll;
+
+    // 뛰고 내릴 때의 관성: 몸이 위로 가속하면 두 팔에 든 총은 한 박자 늦게 처지고, 공중에서는 살짝 뜨고, 착지하면 다시 처진다
+    const vy = p.vy || 0, dvy = vy - (this.lastVy ?? vy); this.lastVy = vy;
+    this.vSpring.kick(V(0, -dvy * 0.03, 0));
+    pos.y += this.vSpring.step(dt).y;
+    // 볼 받침: 조준경을 들여다보면 뺨이 개머리판에 붙어 눈(카메라)이 사출동공 가까이 머문다.
+    // 흔들림, 걸음, 반동이 총을 밀어도 눈과 사출동공의 어긋남은 일부(조준 끝에서 12%)만 남는다. 남은 만큼 조준경 그림자가 생긴다
+    if (mdl.eyePoint && this.ads > 0.001) {
+      const e = mdl.eyePoint.clone().applyEuler(new THREE.Euler(rotX, rotY, rotZ, 'YXZ')).add(pos);
+      pos.addScaledVector(e, -this.ads * this.ads * 0.88);
+    }
 
     // root = 총 조준 방향 (aimQuat), anchor에서 pos만큼 떨어짐
     this.root.position.copy(p.anchor);

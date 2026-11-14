@@ -147,6 +147,8 @@ vec2 distort(vec2 uv, float k){
 }
 float linDepth(vec2 uv){ float d = texture2D(tDepth, uv).r; return uNear * uFar / (uFar - d * (uFar - uNear)); }
 vec3 defocus(vec2 uv, vec3 base){
+  // 알파 0 = 조준경 안의 상(무한대에 맺힌 상이라 렌즈 바로 앞이어도 초점이 맞는다. scope.js)
+  if (texture2D(tScene, uv).a < 0.2) return base;
   float z = linDepth(uv);
   // 렌즈 바로 앞(손과 총)은 초점이 나간다. 0.7 m 안에서 흐려지기 시작해 0.2 m에서 가장 흐리다
   float coc = smoothstep(0.7, 0.2, z) * 0.017;
@@ -187,7 +189,7 @@ void main(){
   float rr = texture2D(tScene, uvR).r, bb = texture2D(tScene, uvB).b, gg = texture2D(tScene, uvG).g;
   col.r += (rr - gg) * 0.9; col.b += (bb - gg) * 0.9;
   col = max(col, 0.0);
-  col *= mix(1.0, texture2D(tAO, uvG).r, uAOAmt);
+  col *= mix(1.0, texture2D(tAO, uvG).r, uAOAmt * step(0.2, texture2D(tScene, uvG).a));
   // 하이라이트 번짐(렌즈 산란)
   vec3 bloom = texture2D(tBloomA, uvG).rgb * 0.45 + texture2D(tBloomB, uvG).rgb * 0.55 + texture2D(tBloomC, uvG).rgb * 0.75;
   // 베일링 글레어: 렌즈 안에서 여러 번 반사된 빛이 밝은 면 둘레로 화면 폭의 10~20%까지 옅게 퍼진다.

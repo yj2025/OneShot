@@ -9,6 +9,7 @@ import { Player } from './player.js';
 import { Bot, angDiff } from './bots.js';
 import { Sound } from './audio.js';
 import { Post, OVERSCAN } from './post.js';
+import { ScopeView } from './scope.js';
 import { OSD } from './osd.js';
 import { bakeLight, skyGain, volUniforms, probeLight } from './lightbake.js';
 
@@ -156,6 +157,7 @@ class Game {
     ];
     this.bots = B.map((b, i) => new Bot(this, i, b.spawn, b.patrol, b.role));
     this.post = new Post(this.renderer);
+    this.scope = new ScopeView(this.renderer);   // 소총 조준경 안의 상(조준할 때만 그린다)
     // 빛 굽기: 하늘빛 가시도, 형광등 그림자, 반사광을 한 번 계산한다
     this.setLoad(0.9, '빛 계산 중: 하늘빛');
     await new Promise(r => setTimeout(r, 0));
@@ -191,6 +193,7 @@ class Game {
   }
   applyQuality() {
     this.level?.setQuality(this.settings.quality);
+    this.scope?.setQuality(this.settings.quality);
     this.resize();
   }
 
@@ -390,7 +393,7 @@ class Game {
     for (const b of this.bots) if (b.alive) { const h = b.hitTest(ct.pos, aimDir, 1.0); if (h) wallDist = Math.min(wallDist, h.dist + 0.2); }
     vm.update(dt, this.time, {
       anchor: ct.pos, aimQuat: aq, ads: inp.rmb && p.alive, sprint: p.sprinting ? 1 : 0, wallDist,
-      camYawVel: p.yawVel, camPitchVel: p.pitchVel, exertion: p.exertion, moving: p.moving, stepPhase: p.stepPhaseFrac || 0, roll: ct.roll, level: this.level,
+      camYawVel: p.yawVel, camPitchVel: p.pitchVel, vy: p.vel.y, exertion: p.exertion, moving: p.moving, stepPhase: p.stepPhaseFrac || 0, roll: ct.roll, level: this.level,
     });
     if (p.alive && vm.tryFire(dt, true)) this.playerShot();
     if (inp.pressed('KeyR') && vm.ammo === 0 && !vm.reload) vm.startReload();
@@ -418,7 +421,14 @@ class Game {
         if (this.rng() < (e.sprint ? 0.9 : 0.55)) this.sound.play('rustle', { gain: e.sprint ? 0.22 : 0.12, send: 0.1, delay: this.rng() * 0.05 });
         // 플레이어 발소리를 봇이 듣는다
         for (const b of this.bots) b.hear(p.pos, e.sprint ? 10 : e.crouch > 0.5 ? 2 : 4.5, this.time);
-      } else if (e.type === 'land') { this.sound.play('step_' + e.mat, { gain: 0.5 + e.strength * 0.3, send: 0.25 }); this.sound.play('rustle', { gain: 0.25 }); }
+      } else if (e.type === 'land') {
+        this.sound.play('step_' + e.mat, { gain: 0.5 + e.strength * 0.3, send: 0.25 }); this.sound.play('rustle', { gain: 0.25 });
+        for (const b of this.bots) b.hear(p.pos, 4 + e.strength * 6, this.time);
+      } else if (e.type === 'jump') {
+        // 디딤발이 바닥을 차는 소리와 장비가 출렁이는 소리
+        this.sound.play('step_' + e.mat, { gain: 0.32, send: 0.2, rate: 1.1 }); this.sound.play('rustle', { gain: 0.3, delay: 0.04 });
+        for (const b of this.bots) b.hear(p.pos, 5, this.time);
+      }
       else if (e.type === 'death') { this.sound.play('bodyFall', { gain: 0.9, send: 0.3, delay: 0.5 }); }
     }
     p.events.length = 0;
@@ -473,6 +483,9 @@ class Game {
     P.dead = this.deadFade;
     P.q = Math.min(1, 0.12 + P.blurVec.length() * 25 + speed * 0.04);
     P.key = 0.28;   // 노출 목표. 화면값 중앙값을 레퍼런스(81) 가까이 둔다(85). 0.275(77)에서는 하늘을 6.0배로 밝힌 뒤 문간 장면의 실내가 기준선보다 어두웠고(A/B 라운드 28) 0.30으로 올렸다. 넓은 번짐(post.js uVeil)을 더한 뒤 실제 카메라처럼 글레어가 낀 화면을 측광한 만큼 0.28로 내렸다
+    // 조준경 시점을 먼저 그린다: 본 화면에서 접안렌즈 셰이더가 이 상을 읽는다
+    const vm = this.vm;
+    this.scope.update(this.scene, this.camera, vm, [vm.root, vm.foreR, vm.foreL, vm.cuffR, vm.cuffL]);
     this.post.render(this.scene, this.camera, dt);
     this.osd.draw(this.playTime, true);
   }
@@ -525,7 +538,8 @@ class Game {
         const d = vm.dirWorld;
         return {
           phase: g.phase, kills: g.bots.filter(b => !b.alive).length,
-          player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.bodyYaw, pitch: p.camPitch, gunYaw: Math.atan2(-d.x, -d.z), gunPitch: Math.asin(Math.max(-1, Math.min(1, d.y))), hp: p.hp, alive: p.alive, weapon: vm.current, ammo: vm.ammo, reloading: !!vm.reload, crouch: p.crouch },
+          player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.bodyYaw, pitch: p.camPitch, gunYaw: Math.atan2(-d.x, -d.z), gunPitch: Math.asin(Math.max(-1, Math.min(1, d.y))), hp: p.hp, alive: p.alive, weapon: vm.current, ammo: vm.ammo, reloading: !!vm.reload, crouch: p.crouch,
+            speed: Math.hypot(p.vel.x, p.vel.z), vy: p.vel.y, onGround: p.onGround, sprinting: p.sprinting, ads: vm.ads },
           bots: g.bots.map(b => ({ x: b.pos.x, y: b.pos.y, z: b.pos.z, alive: b.alive, state: b.state })),
           stats: { ...g.stats }, radPerPixel: 0.0021 * g.settings.sens * (1 - vm.ads * 0.35),
           renderer: (() => { const gl = g.renderer.getContext(); const ext = gl.getExtension('WEBGL_debug_renderer_info'); return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ''; })(),
@@ -567,6 +581,9 @@ class Game {
         const dx = wp.x - p.pos.x, dz = wp.z - p.pos.z;
         return { mode: g._stuck.side ? 'engage' : 'travel', yaw: Math.atan2(-dx, -dz), pitch: -0.08, dist: Math.hypot(dx, dz), clear: false, strafe: g._stuck.side };
       },
+      // 조준경 상태: 상을 그리는지, 그린 횟수, 카메라와 사출동공의 어긋남(m)
+      scope() { const s = g.scope; return { on: s.on, frames: s.frames, pupilOffset: s.pupilOffset, axialOffset: s.axialOffset, size: s.size, calls: s.calls, tris: s.tris, ads: g.vm.ads, weapon: g.vm.current }; },
+      scopeSkip(b) { g.scope.skip = !!b; },
       perfStart() { g.perf = { frames: [], t0: performance.now(), d0: g.distance }; },
       perfStop() { const r = g.perf; g.perf = null; return { frames: r.frames.slice(2), seconds: (performance.now() - r.t0) / 1000, renderScale: SCALE[g.settings.quality], canvas: `${innerWidth}x${innerHeight}`, distance: g.distance - r.d0 }; },
       async audioTest() { return g.sound.offlineStats(); },
