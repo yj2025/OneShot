@@ -6,6 +6,8 @@ import { WearTool, WEAR, hash, vnoise, noise3 } from './wear.js';
 import { bcMaterial } from './materials.js';
 import { setLightSlots, volUniforms } from './lightbake.js';
 import { mulberry32 } from './rng.js';
+import { TreeTool, setTreeTime } from './trees.js';
+import { BackdropTool } from './backdrop.js';
 
 export const FL = 0.7;
 const CA = FL + 2.8;   // 일반 천장
@@ -223,8 +225,14 @@ export class Level {
     M('fabricChair', { map: t.fabric, color: 0x6a6e78, roughness: 1 }, { grime: 0.5 });
     M('trash', { color: 0x161616, roughness: 0.35, metalness: 0.0 }, { grime: 0.2 });
     M('paper', { map: t.paper, roughness: 1, side: THREE.DoubleSide }, { grime: 0.3 });
-    M('backdrop', { color: 0x6c6f6c, roughness: 1 }, { grime: 1, ao: 0 });
-    M('treeDark', { color: 0x2c3328, roughness: 1 }, { grime: 1, ao: 0 });
+    // 담장 밖 건물(backdrop.js). 볼륨 밖이라 빛 굽기의 그늘은 없다. 빗물 줄(damp)은 이 건물 높이에 맞지 않아 끈다
+    M('bgConcrete', { map: t.concrete, normalMap: t.concreteN, normalScale: new THREE.Vector2(0.7, 0.7), roughnessMap: t.concreteR, color: 0xc8c3b8, roughness: 1 }, { grime: 1 });
+    M('bgPlaster', { map: t.block, normalMap: t.blockN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.blockR, color: 0xd6d0c2, roughness: 1 }, { grime: 1 });
+    M('bgPaintB', { map: t.block, normalMap: t.blockN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.blockR, color: 0xa39c8c, roughness: 1 }, { grime: 1 });
+    M('bgClad', { map: t.corrugated, normalMap: t.corrugatedN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.corrugatedR, color: 0x7f887d, roughness: 1, metalness: 0.3 }, { grime: 0.8 });
+    M('bgRoof', { map: t.corrugated, normalMap: t.corrugatedN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.corrugatedR, color: 0x6b6862, roughness: 1, metalness: 0.35 }, { grime: 0.8 });
+    M('bgGlass', { color: 0x1d2123, roughness: 0.12, metalness: 0.0, envMapIntensity: 1.0 }, { grime: 0.4 });
+    M('bgVoid', { color: 0x0b0b0a, roughness: 1 }, { grime: 0 });
     M('grass', { map: t.gravel, normalMap: t.gravelN, normalScale: new THREE.Vector2(1, 1), color: 0x7d8466, roughness: 1 }, { grime: 1, ao: 0 });
     M('cone', { color: 0xb8541f, roughness: 0.7 }, { grime: 0.8 });
     this.mats.chain = bcMaterial({ map: t.chainlink, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.6, color: 0x9a9a96 }, { grime: 0 });
@@ -462,35 +470,12 @@ export class Level {
 
     // 담장 밖 배경: 낮은 공장 건물, 나무 줄
     const bg = [[-60, -55, 30, 9, 20], [-20, -48, 26, 12, 14], [25, -52, 34, 8, 18], [65, -30, 20, 14, 40], [-70, 0, 18, 7, 50], [62, 20, 22, 10, 26], [-40, 70, 40, 11, 14], [30, 75, 30, 8, 16]];
-    for (const [x, z, w, h, d] of bg) this.box('backdrop', [x - w / 2, 0, z - d / 2], [x + w / 2, h, z + d / 2], { collide: false, tile: 4 });
-    const tr = mulberry32(77);
-    const clusters = Array.from({ length: 9 }, () => { const a = tr() * Math.PI * 2, d = 40 + tr() * 45; return [Math.cos(a) * d * 1.3, Math.sin(a) * d + 5]; });
-    for (let i = 0; i < 90; i++) {
-      const c = clusters[i % clusters.length];
-      const x = c[0] + (tr() - 0.5) * 22 * (0.4 + tr()), z = c[1] + (tr() - 0.5) * 16 * (0.4 + tr());
-      if (Math.abs(x) < 30 && z > -26 && z < 36) continue;
-      const h = 3.5 + tr() * tr() * 14;
-      if (h < 6) { for (let q = 0; q < 4; q++) { const g = new THREE.IcosahedronGeometry(0.8 + tr() * 1.4, 1); g.scale(1.2, 0.7, 1.1); g.translate(x + (tr() - 0.5) * 3, 0.6 + tr(), z + (tr() - 0.5) * 3); this.add('treeDark', g); } continue; }
-      // 활엽수: 줄기에서 뻗은 가지 끝마다 성긴 잎 덩어리
-      const nb = 4 + Math.floor(tr() * 4);
-      for (let k = 0; k < nb; k++) {
-        const ba = tr() * Math.PI * 2, bl = 2 + tr() * 3.5, by = h * (0.35 + tr() * 0.35), tilt = 0.5 + tr() * 0.6;
-        const ex = x + Math.cos(ba) * Math.sin(tilt) * bl, ez = z + Math.sin(ba) * Math.sin(tilt) * bl, ey = by + Math.cos(tilt) * bl;
-        const br = new THREE.CylinderGeometry(0.05, 0.13, bl, 5); br.translate(0, bl / 2, 0);
-        br.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(ex - x, ey - by, ez - z).normalize())));
-        br.translate(x, by, z); this.add('pallet', br);
-        for (let q = 0; q < 3; q++) {
-          const rr = 0.7 + tr() * 1.3;
-          const g = new THREE.IcosahedronGeometry(rr, 1);
-          const pp = g.attributes.position;
-          for (let w = 0; w < pp.count; w++) { const s = 0.6 + tr() * 0.6; pp.setXYZ(w, pp.getX(w) * s, pp.getY(w) * s * 0.75, pp.getZ(w) * s); }
-          g.computeVertexNormals();
-          g.translate(ex + (tr() - 0.5) * 1.6, ey + (tr() - 0.3) * 1.2, ez + (tr() - 0.5) * 1.6);
-          this.add('treeDark', g);
-        }
-      }
-      this.cyl('pallet', [x, h * 0.3, z], 0.22, h * 0.6, { collide: false, seg: 5 });
-    }
+    // 건물 도구(backdrop.js): 양식마다 벽 재질, 창 줄, 지붕선이 다르다
+    const BD = new BackdropTool(this, 31337), styles = ['shed', 'office', 'factory', 'office', 'shed', 'block', 'shed', 'block'];
+    bg.forEach(([x, z, w, h, d], i) => BD.building({ x, z, w, d, h, style: styles[i] }));
+    BD.chimney(80, -8, 24);
+    BD.wallRun(-62, 50, -26, 50, 2.3); BD.wallRun(44, -40, 44, 8, 2.2); BD.wallRun(-45, -36, 5, -36, 2.4);
+    this.plantTrees(bg);
 
     // ===== 실내 =====
     // 형광등
@@ -793,6 +778,70 @@ export class Level {
     const m = new THREE.Mesh(mergeGeometries(tufts), this.mats.weeds); this.group.add(m);
   }
 
+  // ---- 나무와 낙엽(1단계 ④, trees.js) ----
+  // 배치 규칙: 먼 숲 띠(침엽수와 잎 진 활엽수, 자작나무), 담장 바로 밖의 큰 나무, 담장 안 가장자리와 건물 밑동에 저절로 자란 어린나무와 덤불.
+  // 버려진 부지에서는 사람이 다니지 않는 가장자리부터 식물이 들어온다. 난수는 따로 쓴다(레벨의 난수 횟수를 바꾸지 않는다)
+  plantTrees(bg) {
+    const T = this.trees = new TreeTool(4242, this.quality), r = mulberry32(77);
+    const pad = 3;
+    const free = (x, z) => !bg.some(([bx, bz, w, , d]) => Math.abs(x - bx) < w / 2 + pad && Math.abs(z - bz) < d / 2 + pad) && !(z > 32 && z < 42) && !T.trees.some(t => Math.hypot(t.x - x, t.z - z) < 2.2);
+    // 먼 숲 띠: 무리 지어 서고 무리마다 종이 섞인다
+    const clusters = Array.from({ length: 14 }, (_, i) => { const a = i / 14 * Math.PI * 2 + r() * 0.3, d = 44 + r() * 50; return [Math.cos(a) * d * 1.15, Math.sin(a) * d + 5, r()]; });
+    for (let i = 0, n = 0; i < 400 && n < 120; i++) {
+      const c = clusters[i % clusters.length];
+      const x = c[0] + (r() - 0.5) * 26, z = c[1] + (r() - 0.5) * 20;
+      if (Math.abs(x) < 34 && z > -30 && z < 46) continue;
+      if (!free(x, z)) continue;
+      const u = r(), kind = u < (0.25 + c[2] * 0.3) ? 'conifer' : u < 0.7 ? 'birch' : 'broadleaf';
+      T.tree(kind, x, -0.05, z, 0.85 + r() * 0.35); n++;
+    }
+    // 담장 바로 밖: 큰 나무(마당에서 크게 보인다)
+    const near = [[-28.5, -6, 'broadleaf'], [-31, 4, 'birch'], [-27.5, 16, 'birch'], [-32, 25, 'broadleaf'], [28, -12, 'birch'], [31, 0, 'broadleaf'], [27.5, 11, 'birch'], [30.5, 22, 'birch'],
+      [-18, 45, 'broadleaf'], [-6, 47, 'birch'], [12, 44.5, 'birch'], [22, 48, 'broadleaf'], [-15, -24.5, 'birch'], [-4, -27, 'broadleaf'], [9, -24, 'birch'], [19, -26, 'broadleaf'], [-25, -23, 'birch']];
+    for (const [x, z, k] of near) if (free(x, z)) T.tree(k, x + (r() - 0.5), -0.05, z + (r() - 0.5), 0.9 + r() * 0.25);
+    // 담장 밖 덤불: 담장을 따라 띄엄띄엄
+    for (let i = 0; i < 70; i++) {
+      const e = r(), t = r();
+      const [x, z] = e < 0.3 ? [-24.8 - r() * 2.5, -20 + t * 50] : e < 0.6 ? [24.8 + r() * 2.5, -20 + t * 50] : e < 0.8 ? [-24 + t * 48, 31 + r() * 1.5] : [-24 + t * 48, -20.8 - r() * 3];
+      if (free(x, z)) T.tree(r() < 0.8 ? 'shrub' : 'sapling', x, -0.05, z, 0.8 + r() * 0.6);
+    }
+    // 담장 안: 가장자리와 모서리의 어린나무, 담장과 건물 밑동의 덤불(문과 출입구 앞은 비운다)
+    const inside = [[-22.9, 28.4, 'sapling'], [-23.1, 9.5, 'sapling'], [-22.6, 20.5, 'shrub'], [22.8, 27.6, 'sapling'], [23.0, -3.5, 'sapling'], [22.4, -18.6, 'sapling'], [-22.3, -18.4, 'sapling'],
+      [-12, 28.9, 'sapling'], [9, 29.1, 'sapling'], [16, 28.8, 'shrub'], [-18.5, 29.0, 'shrub'], [23.2, 7.5, 'shrub'], [23.0, 18, 'shrub'], [-23.0, -2.5, 'shrub'], [-23.2, 2.5, 'shrub'],
+      [-11.7, 0.75, 'shrub'], [11.6, 0.8, 'shrub'], [12.7, -5.5, 'shrub'], [12.6, -13.5, 'sapling'], [-12.6, -1.2, 'shrub'], [17.5, -19.2, 'shrub'], [-8, -19.3, 'shrub'], [3.5, -19.4, 'shrub']];
+    for (const [x, z, k] of inside) T.tree(k, x, this.groundHeight(x, z, 0, 0, 0.1), z, k === 'sapling' ? 0.8 + r() * 0.5 : 0.7 + r() * 0.5);
+    for (let i = 0; i < 40; i++) {
+      const e = r(), t = r();
+      const [x, z] = e < 0.3 ? [-23.4 + r() * 0.8, -19 + t * 48] : e < 0.6 ? [23.4 - r() * 0.8, -19 + t * 48] : e < 0.85 ? [-23 + t * 46, 29.3 + r() * 0.5] : [-23 + t * 46, -19.4 + r() * 0.5];
+      if (Math.abs(x) < 6 && z > 28) continue;   // 정문 앞
+      if (T.trees.some(q => Math.hypot(q.x - x, q.z - z) < 1.6)) continue;
+      T.tree('shrub', x, this.groundHeight(x, z, 0, 0, 0.1), z, 0.5 + r() * 0.6);
+    }
+  }
+
+  // 낙엽: 나무에서 떨어져 바람에 밀려 막힌 면(벽, 담장, 컨테이너, 방호벽) 앞과 모서리에 쌓인다. 나무 밑과 담장 밖 풀밭은 고르게 덮인다
+  scatterLitter() {
+    const T = this.trees, r = mulberry32(5150);
+    const walls = this.boxes.filter(b => b.max[1] > 0.4 && b.min[1] < 0.3 && (b.max[0] - b.min[0]) * (b.max[2] - b.min[2]) < 400);
+    const wallF = (x, z) => { let best = 9; for (const b of walls) { const dx = Math.max(b.min[0] - x, 0, x - b.max[0]), dz = Math.max(b.min[2] - z, 0, z - b.max[2]); const d = Math.hypot(dx, dz); if (d < best) best = d; } return best > 1.1 ? 0 : 1 - best / 1.1; };
+    const treeF = (x, z) => { let s = 0; for (const t of T.trees) { if (t.kind === 'conifer') continue; const k = t.kind === 'shrub' ? 1.2 : t.r * 1.6; const dx = x - t.x - 1.5, dz = z - t.z; s += Math.exp(-(dx * dx + dz * dz) / (2 * k * k)) * (t.kind === 'shrub' ? 0.5 : 1); } return Math.min(1, s); };
+    const step = this.quality === 'low' ? 1.0 : 0.7;
+    for (let x = -60; x < 60; x += step) for (let z = -50; z < 70; z += step) {
+      const px = x + (r() - 0.5) * step, pz = z + (r() - 0.5) * step;
+      const inYard = Math.abs(px) < 24 && pz > -20 && pz < 30.3;
+      if (this.insideBuilding(px, pz)) continue;
+      if (!inYard && Math.hypot(px, pz - 5) > 48) continue;
+      if (pz > 33 && pz < 41) continue;   // 도로(차가 다녀 쓸려 나간다)
+      const tf = treeF(px, pz), wf = inYard ? wallF(px, pz) : 0;
+      // 밀도 p: 0.15 아래는 몇 장이 흩어진 판, 위로 갈수록 겹쳐 깔린 판이 많아진다
+      const p = inYard ? 0.07 + 0.75 * wf * (0.5 + tf) + 0.6 * tf : 0.35 + 0.65 * tf;
+      if (r() > Math.min(1, p * 1.4)) continue;
+      const y = inYard ? this.groundHeight(px, pz, 0, 0, 0.1) : -0.05;
+      const dense = r() < (p - 0.2) * 1.6;
+      T.leafPatch(px, y, pz, (dense ? 0.6 + r() * 0.5 : 0.45 + r() * 0.35) + wf * 0.25, r() < 0.3, dense);
+    }
+  }
+
   // 쓰던 물건이 흩어진 밀도: 마당과 실내 바닥
   clutter() {
     const r = this.rng;
@@ -822,6 +871,9 @@ export class Level {
     this.missingTiles();
     this.wallClutter();
     this.buildBoxes();
+    this.scatterLitter();
+    for (const m of this.trees.meshes()) this.group.add(m);
+    { const tc = this.trees.casterGeometry(); if (tc) this.casterGeos.push({ key: 'treeBark', geo: tc }); }
     for (const [k, list] of this.buckets) {
       if (!list.length) continue;
       const g = mergeGeometries(list, false);
@@ -832,9 +884,9 @@ export class Level {
     this.buckets.clear();
     // 빛을 가리는 메시(빛 굽기용): 형상 도구를 거치지 않은 반듯한 상자와 그 밖의 도형. 멀리 있는 것은 형광등을 가릴 일이 없다
     const posOnly = (g) => { const n = new THREE.BufferGeometry(); n.setAttribute('position', g.attributes.position); n.setIndex(g.index); return n; };
-    const far = ['treeDark', 'backdrop', 'grass'];
+    const far = ['treeBark', 'grass'];
     this.casters = [new THREE.Mesh(mergeGeometries(this.casterGeos.map(c => posOnly(c.geo)), false))];
-    this.nearCasters = [new THREE.Mesh(mergeGeometries(this.casterGeos.filter(c => !far.includes(c.key)).map(c => posOnly(c.geo)), false))];
+    this.nearCasters = [new THREE.Mesh(mergeGeometries(this.casterGeos.filter(c => !far.includes(c.key) && !c.key.startsWith('bg')).map(c => posOnly(c.geo)), false))];
     this.casterGeos = null;
     // 품질 낮음: 형광등 일부 끔(광원 수를 줄임)
     this.buildNav();
@@ -1062,6 +1114,7 @@ export class Level {
   }
 
   update(t, dt) {
+    setTreeTime(t);
     for (const f of this.fixtures) {
       if (!f.flicker) continue;
       const k = Math.sin(t * 61 + f.phase) * Math.sin(t * 3.1 + f.phase * 2);
