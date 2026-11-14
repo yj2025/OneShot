@@ -142,6 +142,18 @@ export class Bot {
   get eye() { return this.J[J.head].clone().add(V(0, 0.02, 0)); }
 
   // ===== 자세 계산 =====
+  // 봇 하나를 감싸는 구(그리기 패스마다 통째로 거르는 데 쓴다). 관절 15개의 중심에서 가장 먼 관절까지에 총과 팔다리 두께를 더한다.
+  // 쓰러진 뒤에는 따로 떨어진 총의 두 끝도 넣는다
+  bounds() {
+    const s = this._bs || (this._bs = new THREE.Sphere()), c = s.center.set(0, 0, 0);
+    for (const j of this.J) c.add(j);
+    c.multiplyScalar(1 / this.J.length);
+    let r = 0; for (const j of this.J) r = Math.max(r, c.distanceTo(j));
+    if (this.ragdoll) { r = Math.max(r, c.distanceTo(this.ragdoll.gun.a), c.distanceTo(this.ragdoll.gun.b)); s.radius = r + 0.3; }
+    else s.radius = r + 0.95;
+    return s;
+  }
+
   pose(t, dt) {
     const f = V(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)), r = V(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     const H = this.height;

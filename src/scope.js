@@ -27,10 +27,13 @@ export const SCOPE = {
   soft: 0.0016,        // 카메라 렌즈 구경(지름 약 3 mm)만큼 사출동공 가장자리가 무르다
   stopTan: Math.tan(12 * Math.PI / 180),   // 시야 조리개: 겉보기 시야 24°
   trans: 0.88,         // 투과율
+  boreY: 0.072,        // 총열 축 높이(총구 위치, weapons.js)
+  zero: 25,            // 영점 거리(m): 광축을 총열보다 아주 조금 아래로 기울여 이 거리에서 탄도와 만나게 한다
 };
 SCOPE.pupil = new THREE.Vector3(0, SCOPE.axisY, SCOPE.eyeZ + SCOPE.relief);   // 사출동공 중심(총 좌표)
 // 조준경 시점 카메라의 시야: 실제 시야(겉보기 ÷ 배율)보다 6% 넓게 그려 시야 조리개 바깥까지 읽을 수 있게 한다
 const SCOPE_TAN = SCOPE.stopTan / SCOPE.mag * 1.06;
+const ZERO_ANGLE = Math.atan((SCOPE.axisY - SCOPE.boreY) / SCOPE.zero);
 
 const IMAGE_VS = `
 varying vec3 vW;
@@ -54,7 +57,9 @@ void main(){
   float d = length(h - uAF * dot(h, uAF));
   float pupil = smoothstep(uExitR + uSoft, uExitR - uSoft, d);
   float ra = length(a);
+  // 화소 크기(미분)는 화소마다 갈라지는 return보다 먼저 구한다. 갈라진 뒤의 미분은 GPU마다 값이 다를 수 있다
   float aa = max(fwidth(ra), 1e-5);
+  float aq = max(fwidth(a.x), 1e-5) * 0.8;
   float stopMask = 1.0 - smoothstep(uStopTan - aa, uStopTan + aa, ra);
   float vis = pupil * stopMask;
   if (vis < 0.002) { gl_FragColor = vec4(0.0); return; }
@@ -69,7 +74,6 @@ void main(){
   img *= uTrans * (1.0 - 0.28 * e * e * e);
   // 레티클(둘째 초점면): 가는 십자, 바깥쪽 굵은 기둥, 아래쪽 거리 눈금 두 개, 가운데 조명 점
   vec2 q = abs(a);
-  float aq = max(fwidth(a.x), 1e-5) * 0.8;
   float thin = max(bar(q.x, 0.0012, aq) * step(q.y, 0.075), bar(q.y, 0.0012, aq) * step(q.x, 0.075));
   float post = max(bar(q.x, 0.0055, aq) * step(0.07, q.y), bar(q.y, 0.0055, aq) * step(0.07, q.x));
   float ticks = 0.0;
@@ -153,6 +157,21 @@ export function buildScope(M) {
 
 // 조준경 시점 렌더링과 접안렌즈 셰이더의 매 프레임 값
 export class ScopeView {
+  // 진단 전용: 조준경 시점 절두체에 걸리는 물체의 삼각형 수를 묶음별로 센다(무엇이 비용을 내는지 보려고)
+  diag(scene, names = new Map()) {
+    const fr = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(this.cam.projectionMatrix, this.cam.matrixWorldInverse));
+    const out = {}; let total = 0, n = 0;
+    scene.traverseVisible((o) => {
+      if (!o.isMesh) return;
+      if (o.frustumCulled && !fr.intersectsObject(o)) return;
+      const g = o.geometry, c = g.index ? g.index.count : g.attributes.position.count;
+      const tris = Math.round(c / 3) * (o.isInstancedMesh ? o.count : 1);
+      let top = o; while (top.parent && top.parent !== scene) top = top.parent;
+      const key = (names.get(top) || top.name || top.type) + (o.frustumCulled ? '' : ' (컬링 안 함)') + '/' + (o.name || o.type);
+      out[key] = (out[key] || [0, 0]); out[key][0] += tris; out[key][1]++; total += tris; n++;
+    });
+    return { total, meshes: n, top: Object.entries(out).sort((a, b) => b[1][0] - a[1][0]).slice(0, 30) };
+  }
   constructor(renderer) {
     this.r = renderer;
     this.size = 512;
@@ -161,6 +180,8 @@ export class ScopeView {
     this.on = false; this.frames = 0; this.pupilOffset = 1; this.axialOffset = 0;
     this.skip = false;            // 측정 전용: 조준경 시점 렌더링만 건너뛴다(npm run perf가 이 렌더링 하나의 비용을 잰다)
     this.calls = 0; this.tris = 0; // 마지막 조준경 시점 렌더링의 그리기 호출 수와 삼각형 수
+    this.cpu = { matrices: 0, render: 0 }; // 조준경 패스의 CPU 시간(ms, 지수 평균): 장면 행렬 갱신, 렌더 호출(컬링과 그리기 명령 제출)
+    this._zq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -ZERO_ANGLE);
     this._P = new THREE.Vector3(); this._O = new THREE.Vector3(); this._off = new THREE.Vector3();
   }
   // 낮은 품질에서는 조준경 상을 작게 그린다(접안렌즈는 1080p에서 지름 약 350화소)
@@ -169,7 +190,8 @@ export class ScopeView {
     if (s !== this.size) { this.size = s; this.rt.setSize(s, s); }
   }
   // 본 장면을 그리기 직전에 부른다. hide: 조준경 시점에서 빼야 할 물체(총, 손, 팔)
-  update(scene, camera, vm, hide) {
+  update(scene, camera, vm, hide, cull = (cam, fn) => fn()) {
+    this.rendered = false;
     const mdl = vm.models.rifle, sc = mdl.scope;
     if (!sc) return;
     const U = sc.imageMat.uniforms;
@@ -178,7 +200,9 @@ export class ScopeView {
     const m = g.matrixWorld;
     const P = this._P.copy(SCOPE.pupil).applyMatrix4(m);
     U.uEye.value.copy(P);
-    U.uAX.value.set(1, 0, 0).transformDirection(m); U.uAY.value.set(0, 1, 0).transformDirection(m); U.uAF.value.set(0, 0, -1).transformDirection(m);
+    // 광축은 총 좌표의 -z에서 영점 각(약 0.18°)만큼 아래로 기울어 있다. 25 m보다 가까우면 탄이 레티클 가운데보다 조금 아래(최대 8 cm), 멀면 조금 위에 맞는다
+    const zt = ZERO_ANGLE, cz = Math.cos(zt), sz = Math.sin(zt);
+    U.uAX.value.set(1, 0, 0).transformDirection(m); U.uAY.value.set(0, cz, -sz).transformDirection(m); U.uAF.value.set(0, -sz, -cz).transformDirection(m);
     // 카메라가 사출동공 가까이 있을 때만 그린다. 멀면 접안렌즈는 어두운 유리로만 보인다
     const off = this._off.copy(camera.position).sub(P);
     const ax = off.dot(U.uAF.value);
@@ -191,13 +215,22 @@ export class ScopeView {
     if (!this.on || this.skip) return;
     this._O.set(0, SCOPE.axisY, SCOPE.objZ).applyMatrix4(m);
     this.cam.position.copy(this._O);
-    g.getWorldQuaternion(this.cam.quaternion);
+    g.getWorldQuaternion(this.cam.quaternion).multiply(this._zq);
     this.cam.updateMatrixWorld();
     const was = hide.map((o) => o.visible);
     hide.forEach((o) => { o.visible = false; });
     const prev = this.r.getRenderTarget();
     this.r.setRenderTarget(this.rt);
-    this.r.render(scene, this.cam);
+    // 장면 행렬은 여기서 한 번 갱신한다. 본 화면 패스는 같은 프레임에 다시 갱신하지 않는다(main.js)
+    const t0 = performance.now();
+    scene.updateMatrixWorld();
+    const t1 = performance.now();
+    const auto = scene.matrixWorldAutoUpdate; scene.matrixWorldAutoUpdate = false;
+    cull(this.cam, () => this.r.render(scene, this.cam));
+    scene.matrixWorldAutoUpdate = auto;
+    const t2 = performance.now();
+    this.cpu.matrices += (t1 - t0 - this.cpu.matrices) * 0.05; this.cpu.render += (t2 - t1 - this.cpu.render) * 0.05;
+    this.rendered = true;
     this.calls = this.r.info.render.calls; this.tris = this.r.info.render.triangles;
     this.r.setRenderTarget(prev);
     hide.forEach((o, i) => { o.visible = was[i]; });

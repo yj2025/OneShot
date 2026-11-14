@@ -484,13 +484,28 @@ class Game {
     P.q = Math.min(1, 0.12 + P.blurVec.length() * 25 + speed * 0.04);
     P.key = 0.28;   // 노출 목표. 화면값 중앙값을 레퍼런스(81) 가까이 둔다(85). 0.275(77)에서는 하늘을 6.0배로 밝힌 뒤 문간 장면의 실내가 기준선보다 어두웠고(A/B 라운드 28) 0.30으로 올렸다. 넓은 번짐(post.js uVeil)을 더한 뒤 실제 카메라처럼 글레어가 낀 화면을 측광한 만큼 0.28로 내렸다
     // 조준경 시점을 먼저 그린다: 본 화면에서 접안렌즈 셰이더가 이 상을 읽는다
-    const vm = this.vm;
-    this.scope.update(this.scene, this.camera, vm, [vm.root, vm.foreR, vm.foreL, vm.cuffR, vm.cuffL]);
-    this.post.render(this.scene, this.camera, dt);
+    const vm = this.vm, cull = (cam, fn) => this.withBotsCulled(cam, fn);
+    this.scope.update(this.scene, this.camera, vm, [vm.root, vm.foreR, vm.foreL, vm.cuffR, vm.cuffL], cull);
+    // 조준경 패스가 이번 프레임의 장면 행렬을 이미 갱신했으면 본 화면 패스는 다시 갱신하지 않는다(장면 전체를 한 번 더 훑는 비용)
+    const auto = this.scene.matrixWorldAutoUpdate;
+    if (this.scope.rendered) this.scene.matrixWorldAutoUpdate = false;
+    cull(this.camera, () => this.post.render(this.scene, this.camera, dt));
+    this.scene.matrixWorldAutoUpdate = auto;
     this.osd.draw(this.playTime, true);
   }
 
   // ---------------- 성능 측정용 순회 ----------------
+  // 봇 단위 컬링: 봇 부품(한 명에 49개)은 관절 위치로 바로 놓여 부품별 컬링을 꺼 두었고, 그래서 화면 밖에서도 매 패스 그려졌다
+  // (조준경 패스 그리기 호출 약 250번 중 196번). 패스의 절두체와 봇 하나를 감싸는 구를 견주어 밖이면 그 패스 동안만 통째로 숨긴다
+  withBotsCulled(cam, fn) {
+    const fr = this._cullFr || (this._cullFr = new THREE.Frustum()), m = this._cullM || (this._cullM = new THREE.Matrix4());
+    cam.updateMatrixWorld();
+    fr.setFromProjectionMatrix(m.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    const prev = this.bots.map((b) => [b.group.visible, b.blob.visible]);
+    for (const b of this.bots) if (b.group.visible && !fr.intersectsSphere(b.bounds())) { b.group.visible = false; b.blob.visible = false; }
+    try { fn(); } finally { this.bots.forEach((b, i) => { b.group.visible = prev[i][0]; b.blob.visible = prev[i][1]; }); }
+  }
+
   tourDrive(dt) {
     const route = [[0, 16], [-7.5, 3.6], [-7.5, -0.9], [-9, -4.3], [-9, -5.8], [-8, -7.4], [-6, -9.5], [-2, -13.6], [3.7, -11], [5.3, -11], [8, -9.5], [8, -7.4], [8, -5.8], [8, -4.3], [8, -0.4], [8, 1.0], [6, 1.6], [3.3, 1.8], [0, 8], [-8, 8], [-12, 12], [0, 16]];
     const p = this.player, tgt = route[this.tourI % route.length];
@@ -582,8 +597,13 @@ class Game {
         return { mode: g._stuck.side ? 'engage' : 'travel', yaw: Math.atan2(-dx, -dz), pitch: -0.08, dist: Math.hypot(dx, dz), clear: false, strafe: g._stuck.side };
       },
       // 조준경 상태: 상을 그리는지, 그린 횟수, 카메라와 사출동공의 어긋남(m)
-      scope() { const s = g.scope; return { on: s.on, frames: s.frames, pupilOffset: s.pupilOffset, axialOffset: s.axialOffset, size: s.size, calls: s.calls, tris: s.tris, ads: g.vm.ads, weapon: g.vm.current }; },
+      scope() { const s = g.scope; return { on: s.on, frames: s.frames, pupilOffset: s.pupilOffset, axialOffset: s.axialOffset, size: s.size, calls: s.calls, tris: s.tris, cpu: s.cpu, ads: g.vm.ads, weapon: g.vm.current }; },
       scopeSkip(b) { g.scope.skip = !!b; },
+      scopeDiag() {
+        const names = new Map([[g.level.group, 'level'], [g.vm.root, 'viewmodel'], [g.sky, 'sky']]);
+        g.bots.forEach((b, i) => { for (const k of ['grp', 'group', 'root', 'mesh']) if (b[k] && b[k].isObject3D) names.set(b[k], 'bot' + i); });
+        if (g.fx) for (const [k, v] of Object.entries(g.fx)) if (v && v.isObject3D) names.set(v, 'fx.' + k);
+        return { scope: g.scope.diag(g.scene, names), main: { calls: g.post.sceneCalls, tris: g.post.sceneTris } }; },
       perfStart() { g.perf = { frames: [], t0: performance.now(), d0: g.distance }; },
       perfStop() { const r = g.perf; g.perf = null; return { frames: r.frames.slice(2), seconds: (performance.now() - r.t0) / 1000, renderScale: SCALE[g.settings.quality], canvas: `${innerWidth}x${innerHeight}`, distance: g.distance - r.d0 }; },
       async audioTest() { return g.sound.offlineStats(); },

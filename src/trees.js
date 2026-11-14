@@ -6,6 +6,7 @@
 // 카드의 법선은 수관 중심에서 바깥으로 둔다. 판마다 방향이 제각각인 카드가 수관 하나의 덩어리처럼 빛을 받는다.
 // 바람: 가지 끝으로 갈수록 크게 흔들린다(aSway). 시간은 게임 시계를 따르므로 수동 시계 촬영에서도 같은 화면이 나온다.
 import * as THREE from 'three';
+import { splitGeometry } from './chunk.js';
 import { mulberry32 } from './rng.js';
 import { bcMaterial } from './materials.js';
 
@@ -368,11 +369,15 @@ export class TreeTool {
     const mCard = treeMaterial({ map: tt, alphaTest: 0.02, transparent: true, depthWrite: false, side: THREE.DoubleSide, color: 0xffffff }, { grime: 0, ao: 1 }, 'C', true, false);
     const mLit = treeMaterial({ map: lt, alphaTest: 0.45, color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }, { grime: 0.2, ao: 1 }, 'L', true, true);
     const out = [];
-    for (const [B, m] of [[this.bark, mBark], [this.cards, mCard], [this.litter, mLit]]) {
+    for (const [B, m, nm] of [[this.bark, mBark, 'treeBark'], [this.cards, mCard, 'treeCards'], [this.litter, mLit, 'treeLitter']]) {
       if (!B.count) continue;
-      const mesh = new THREE.Mesh(B.geometry(), m);
-      mesh.matrixAutoUpdate = false;
-      out.push(mesh);
+      // 나무는 맵 둘레 전체에 퍼져 있어 하나로 두면 한 그루만 보여도 전부 그린다. 공간으로 나눈다(chunk.js)
+      for (const part of splitGeometry(B.geometry())) {
+        const mesh = new THREE.Mesh(part, m);
+        mesh.name = nm;
+        mesh.matrixAutoUpdate = false;
+        out.push(mesh);
+      }
     }
     return out;
   }

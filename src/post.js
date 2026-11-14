@@ -319,6 +319,7 @@ export class Post {
   render(scene, camera, dt) {
     const R = this.r, P = this.params;
     R.setRenderTarget(this.rtScene); R.render(scene, camera);
+    this.sceneCalls = R.info.render.calls; this.sceneTris = R.info.render.triangles;
     // 노출 측정
     const a0 = this.rtAdapt[this.ping], a1 = this.rtAdapt[1 - this.ping];
     this.mLum.uniforms.tScene.value = this.rtScene.texture; this.mLum.uniforms.tPrev.value = a0.texture; this.mLum.uniforms.uInit.value = this.init ? 1 : 0; this.run(this.mLum, this.rtLum);

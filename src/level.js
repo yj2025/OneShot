@@ -2,6 +2,7 @@
 // 좌표: y 위, 건물은 x[-12,12] z[-16,0], 정면(z=0)이 마당(+z) 쪽. 실내 바닥 높이 FL = 0.7 m.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { splitGeometry } from './chunk.js';
 import { WearTool, WEAR, hash, vnoise, noise3 } from './wear.js';
 import { bcMaterial } from './materials.js';
 import { setLightSlots, volUniforms, skyGain } from './lightbake.js';
@@ -917,10 +918,13 @@ export class Level {
     { const tc = this.trees.casterGeometry(); if (tc) this.casterGeos.push({ key: 'treeBark', geo: tc }); }
     for (const [k, list] of this.buckets) {
       if (!list.length) continue;
-      const g = mergeGeometries(list, false);
-      const mesh = new THREE.Mesh(g, this.mats[k]);
-      mesh.matrixAutoUpdate = false;
-      this.group.add(mesh);
+      // 재질마다 하나로 합치고, 삼각형이 많은 덩어리는 공간으로 나눈다(chunk.js). 화면에 걸리지 않는 쪽은 컬링으로 빠진다
+      for (const part of splitGeometry(mergeGeometries(list, false))) {
+        const mesh = new THREE.Mesh(part, this.mats[k]);
+        mesh.name = k;
+        mesh.matrixAutoUpdate = false;
+        this.group.add(mesh);
+      }
     }
     this.buckets.clear();
     // 빛을 가리는 메시(빛 굽기용): 형상 도구를 거치지 않은 반듯한 상자와 그 밖의 도형. 멀리 있는 것은 형광등을 가릴 일이 없다
