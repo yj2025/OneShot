@@ -8,7 +8,7 @@ import { Viewmodel } from './weapons.js';
 import { Player } from './player.js';
 import { Bot, angDiff } from './bots.js';
 import { Sound } from './audio.js';
-import { Post } from './post.js';
+import { Post, OVERSCAN } from './post.js';
 import { OSD } from './osd.js';
 import { bakeLight, skyGain, volUniforms, probeLight } from './lightbake.js';
 
@@ -108,7 +108,8 @@ class Game {
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(new THREE.Color(0xb4b8bb).multiplyScalar(skyGain), 0.0085);   // 안개는 하늘빛이 흩어진 것이라 하늘 밝기를 따른다
-    this.camera = new THREE.PerspectiveCamera(80, 16 / 9, 0.04, 420);
+    // 세로 화각 80도. 렌즈 패스가 화면 밖을 읽을 수 있도록 OVERSCAN배 넓게 그린다(post.js)
+    this.camera = new THREE.PerspectiveCamera(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(40)) * OVERSCAN) * 180 / Math.PI, 16 / 9, 0.04, 420);
     this.input = new Input(this.canvas);
     this.osd = new OSD($('osd'), SEED, TEST);
     this.phase = 'loading';

@@ -1,6 +1,11 @@
 // 후처리: 실제 카메라 순서 — 렌즈(왜곡·색수차·번짐·테두리) → 센서(자동 노출·좁은 계조·노이즈·모션 블러) → 압축
 import * as THREE from 'three';
 
+// 장면은 화면보다 가로세로 OVERSCAN배 넓은 화각과 그만큼 큰 렌더 타깃에 그린다(화소 밀도는 그대로).
+// 어안 왜곡은 화면 가장자리에서 화면 밖을 읽는다(좌우 끝 중간 높이에서 약 9%). 렌더 타깃이 화면과 같으면 맨 끝 화소 열이 가로로 늘어난 줄무늬가 된다.
+// 바깥이 하늘과 안개일 때는 보이지 않았고, 화면 끝에 나무가 들어오면서 드러났다(A/B 라운드 29, 판정 3명 모두)
+export const OVERSCAN = 1.1;
+
 const VS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
 function pass(fs, uniforms) {
@@ -8,8 +13,11 @@ function pass(fs, uniforms) {
 }
 
 const LUM_FS = `
-uniform sampler2D tScene; uniform sampler2D tPrev; uniform float uInit; varying vec2 vUv;
+uniform sampler2D tScene; uniform sampler2D tPrev; uniform float uInit; uniform float uOver; varying vec2 vUv;
 void main(){
+  // 측광은 화면에 들어오는 범위만 본다(넓게 그린 가장자리는 빼고)
+  vec2 sv = (vUv - 0.5) * uOver + 0.5;
+  if (any(lessThan(sv, vec2(0.0))) || any(greaterThan(sv, vec2(1.0)))) { gl_FragColor = vec4(0.0); return; }
   // 중앙 가중 평균 로그 휘도 (r: w*log, g: w)
   vec3 c = texture2D(tScene, vUv).rgb;
   vec3 c2 = texture2D(tScene, vUv + vec2(0.006, 0.004)).rgb;
@@ -17,8 +25,8 @@ void main(){
   float l = clamp(dot(mix(c, c2, 0.5), vec3(0.2126, 0.7152, 0.0722)), 0.0, 1e4);
   // 날아간 부분은 날아간 만큼만 센다. 센서는 포화된 화소가 얼마나 더 밝은지 모른다
   if (uInit < 0.5) l = min(l, texture2D(tPrev, vec2(0.5)).r * 6.0);
-  vec2 d = (vUv - 0.5) * vec2(1.6, 1.2);
-  float w = mix(0.3, 1.0, exp(-dot(d, d) * 3.0)) * mix(1.0, 0.3, smoothstep(0.5, 0.7, vUv.y));
+  vec2 d = (sv - 0.5) * vec2(1.6, 1.2);
+  float w = mix(0.3, 1.0, exp(-dot(d, d) * 3.0)) * mix(1.0, 0.3, smoothstep(0.5, 0.7, sv.y));
   gl_FragColor = vec4(w * log(max(l, 1e-4)), w, 0.0, 1.0);
 }`;
 const ADAPT_FS = `
@@ -124,7 +132,7 @@ void main(){
 const CAM_FS = `
 uniform sampler2D tScene; uniform sampler2D tBloomA; uniform sampler2D tBloomB; uniform sampler2D tBloomC;
 uniform sampler2D tAdapt; uniform sampler2D tPrev; uniform sampler2D tDepth; uniform sampler2D tAO; uniform float uAOAmt; uniform float uNear; uniform float uFar;
-uniform float uAspect; uniform float uK; uniform float uCA; uniform vec2 uBlur; uniform float uBlurAmt; uniform float uZoomBlur;
+uniform float uOver; uniform float uAspect; uniform float uK; uniform float uCA; uniform vec2 uBlur; uniform float uBlurAmt; uniform float uZoomBlur;
 uniform float uTime; uniform float uKey; uniform float uFlash; uniform vec2 uRimShift; uniform float uGhost; uniform float uNoise;
 uniform float uSat; uniform float uHit; uniform float uFrame; uniform float uDead;
 varying vec2 vUv;
@@ -134,7 +142,7 @@ vec2 distort(vec2 uv, float k){
   float r2 = dot(p, p);
   float rmax2 = 0.25 * (uAspect * uAspect + 1.0);
   vec2 q = p * (1.0 + k * r2) / (1.0 + k * rmax2 * 0.62);
-  return q / vec2(uAspect, 1.0) + 0.5;
+  return q / vec2(uAspect, 1.0) / uOver + 0.5;
 }
 float linDepth(vec2 uv){ float d = texture2D(tDepth, uv).r; return uNear * uFar / (uFar - d * (uFar - uNear)); }
 vec3 defocus(vec2 uv, vec3 base){
@@ -145,7 +153,7 @@ vec3 defocus(vec2 uv, vec3 base){
   vec3 acc = base; float n = 1.0;
   for (int i = 0; i < 10; i++) {
     float a = float(i) * 2.39996, r = sqrt((float(i) + 0.5) / 10.0);
-    vec2 o = vec2(cos(a), sin(a)) * r * coc * vec2(1.0 / uAspect, 1.0);
+    vec2 o = vec2(cos(a), sin(a)) * r * coc * vec2(1.0 / uAspect, 1.0) / uOver;
     float zz = linDepth(uv + o);
     // 먼 배경이 가까운 물체 위로 번지지 않도록
     // 깊이가 비슷한 것끼리만 섞는다(가까운 밝은 벽이 손과 총 위로 번져 총이 하얗게 보였다)
@@ -156,7 +164,7 @@ vec3 defocus(vec2 uv, vec3 base){
 vec3 sampleBlur(vec2 uv){
   // 카메라 회전 방향 + 전진 방향(가장자리 방사형)으로 셔터 시간 동안 번짐
   vec2 rad = (uv - 0.5) * uZoomBlur;
-  vec2 dir = uBlur * uBlurAmt + rad;
+  vec2 dir = uBlur * uBlurAmt / uOver + rad;
   float len = length(dir * vec2(uAspect, 1.0));
   if (len < 0.0008) return texture2D(tScene, uv).rgb;
   vec3 acc = vec3(0.0); float wsum = 0.0;
@@ -265,13 +273,13 @@ export class Post {
     this.rtAdapt = [new THREE.WebGLRenderTarget(1, 1, HF), new THREE.WebGLRenderTarget(1, 1, HF)];
     this.rtB = [0, 1, 2].map(() => [new THREE.WebGLRenderTarget(4, 4, HF), new THREE.WebGLRenderTarget(4, 4, HF)]);
     this.rtCam = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];
-    this.mLum = pass(LUM_FS, { tScene: { value: null }, tPrev: { value: null }, uInit: { value: 1 } });
+    this.mLum = pass(LUM_FS, { tScene: { value: null }, tPrev: { value: null }, uInit: { value: 1 }, uOver: { value: OVERSCAN } });
     this.mAdapt = pass(ADAPT_FS, { tLum: { value: null }, tPrev: { value: null }, uDt: { value: 0.016 }, uInit: { value: 1 } });
     this.mBright = pass(BRIGHT_FS, { tScene: { value: null }, tAdapt: { value: null }, uKey: { value: 0.2 }, uKnee: { value: 5.0 }, uSlope: { value: 2.5 / 6.0 }, uTexel: { value: new THREE.Vector2() } });
     this.mBlur = pass(BLUR_FS, { tIn: { value: null }, uDir: { value: new THREE.Vector2() } });
     this.mCam = pass(CAM_FS, {
       tScene: { value: null }, tBloomA: { value: null }, tBloomB: { value: null }, tBloomC: { value: null }, tAdapt: { value: null }, tPrev: { value: null },
-      uAspect: { value: 1.78 }, uK: { value: 0.32 }, uCA: { value: 0.035 }, uBlur: { value: new THREE.Vector2() }, uBlurAmt: { value: 1 }, uZoomBlur: { value: 0 },
+      uOver: { value: OVERSCAN }, uAspect: { value: 1.78 }, uK: { value: 0.32 }, uCA: { value: 0.035 }, uBlur: { value: new THREE.Vector2() }, uBlurAmt: { value: 1 }, uZoomBlur: { value: 0 },
       uTime: { value: 0 }, uKey: { value: 0.2 }, uFlash: { value: 0 }, uRimShift: { value: new THREE.Vector2() }, uGhost: { value: 0.12 }, uNoise: { value: 1 },
       uSat: { value: 0.62 }, uHit: { value: 0 }, uFrame: { value: 0 }, uDead: { value: 0 }, tDepth: { value: null }, uNear: { value: 0.04 }, uFar: { value: 420 }, tAO: { value: null }, uAOAmt: { value: 0.9 },
     });
@@ -287,7 +295,7 @@ export class Post {
 
   setSize(w, h, scale) {
     this.w = w; this.h = h; this.scale = scale;
-    const sw = Math.max(4, Math.floor(w * scale)), sh = Math.max(4, Math.floor(h * scale));
+    const sw = Math.max(4, Math.floor(w * scale * OVERSCAN)), sh = Math.max(4, Math.floor(h * scale * OVERSCAN));
     this.rtScene.setSize(sw, sh);
     let bw = Math.floor(sw / 4), bh = Math.floor(sh / 4);
     for (const pair of this.rtB) { pair[0].setSize(bw, bh); pair[1].setSize(bw, bh); bw = Math.max(2, bw >> 1); bh = Math.max(2, bh >> 1); }
