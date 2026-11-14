@@ -103,13 +103,16 @@ function finishSurface(s) {
     nd[o] = (-dx / l * 0.5 + 0.5) * 255; nd[o + 1] = (dy / l * 0.5 + 0.5) * 255; nd[o + 2] = (1 / l * 0.5 + 0.5) * 255; nd[o + 3] = 255;
   }
   nx.putImageData(ni, 0, 0);
-  // 틈새 그늘: 주변(반경 4화소)보다 낮은 곳은 어둡게, 높은 곳은 조금 밝게
+  // 틈새 그늘: 주변(반경 4화소)보다 확실히 낮은 곳(균열, 줄눈, 벗겨진 칠의 턱)만 어둡게 한다.
+  // 문턱(0.04) 안쪽의 잔잔한 높낮이로는 색을 바꾸지 않는다. 잡음 덩어리마다 어두워지면 면 전체에 점박이가 깔려
+  // '팝콘 천장', '반복 텍스처'로 읽힌다(A/B 라운드 17)
   if (s.cav > 0) {
     const r = 4, tmp = new Float32Array(W * Hh), blur = new Float32Array(W * Hh);
     for (let y = 0; y < Hh; y++) { let acc = 0; for (let i = -r; i <= r; i++) acc += at(i, y); for (let x = 0; x < W; x++) { tmp[y * W + x] = acc / (2 * r + 1); acc += at(x + r + 1, y) - at(x - r, y); } }
     for (let x = 0; x < W; x++) { let acc = 0; for (let i = -r; i <= r; i++) acc += tmp[((i + Hh) % Hh) * W + x]; for (let y = 0; y < Hh; y++) { blur[y * W + x] = acc / (2 * r + 1); acc += tmp[((y + r + 1) % Hh) * W + x] - tmp[((y - r + Hh) % Hh) * W + x]; } }
     const ci = s.cx.getImageData(0, 0, W, Hh), cd = ci.data;
-    for (let i = 0; i < W * Hh; i++) { const m = clamp(1 + (h[i] - blur[i]) * 1.6 * s.cav, 0.55, 1.12); cd[i * 4] *= m; cd[i * 4 + 1] *= m; cd[i * 4 + 2] *= m; }
+    const t = 0.04;
+    for (let i = 0; i < W * Hh; i++) { const d = h[i] - blur[i]; const m = clamp(1 + (Math.min(0, d + t) * 2.0 + Math.max(0, d - t) * 0.4) * s.cav, 0.55, 1.08); cd[i * 4] *= m; cd[i * 4 + 1] *= m; cd[i * 4 + 2] *= m; }
     s.cx.putImageData(ci, 0, 0);
   }
   return { map: s.C, normal: N, rough: s.R };
@@ -170,23 +173,36 @@ const GEN = {
     return s;
   },
   ceiling(rng, S = 512) {
-    // 0.6 m 광물섬유 천장 타일(텍스처 1장 = 2.4 m → 4×4): 잔 구멍과 갈라진 무늬가 패여 있고, 타일 사이 줄눈은 패여 있다
-    const s = surface(S, (u, v) => {
-      const n = fbm(u * 40, v * 40, 40, 2, 21) * 0.5 + vnoise(u * 160, v * 160, 160, 22) * 0.5;
-      let g = 196 + (n - 0.5) * 30;
-      const stain = sstep(0.6, 0.72, fbm(u * 3, v * 3, 3, 5, 23));
-      const ring = sstep(0.69, 0.7, fbm(u * 3, v * 3, 3, 5, 23)) - sstep(0.7, 0.715, fbm(u * 3, v * 3, 3, 5, 23));
-      const pit = sstep(0.72, 0.85, vnoise(u * 110, v * 110, 110, 24)), fis = sstep(0.62, 0.7, fbm(u * 26, v * 9, 26, 3, 25));
-      const gu = (u * 4) % 1, gv = (v * 4) % 1, grid = Math.min(gu, 1 - gu, gv, 1 - gv) < 0.006 ? 1 : 0;
-      const h = 0.55 - pit * 0.17 - fis * 0.1 - grid * 0.4 + (n - 0.5) * 0.06;
-      return [g - stain * 40 - ring * 30 - grid * 46, g - stain * 52 - ring * 40 - grid * 46, g - 6 - stain * 75 - ring * 55 - grid * 46, h, 0.97];
+    // 0.6 m 광물섬유 천장 타일(텍스처 1장 = 2.4 m → 4×4, 한 화소 4.7 mm). 타일마다의 처짐과 기울기는 형상이 맡는다(level.js ceilingTiles).
+    // 바늘구멍(1~2 mm)과 갈라진 무늬는 화소보다 작다. 그래서 높이가 아니라 색의 고운 반점으로만 그린다. 높이로 그리면 1 cm 덩어리가 되어
+    // 타일 면 전체가 팝콘처럼 부푼다(A/B 라운드 17). 높이에는 빛을 받을 만큼 큰 것만 둔다: 타일 면보다 튀어나온 T바(폭 24 mm)와 타일이 얹힌 턱
+    const s = surface(S, (u, v, x, y) => {
+      const tx = Math.floor(u * 4), ty = Math.floor(v * 4), fu = u * 4 - tx, fv = v * 4 - ty;
+      const e = Math.min(fu, 1 - fu, fv, 1 - fv);                 // 타일 가장자리까지 거리(타일 폭 = 1)
+      const bar = e < 0.02 ? 1 : 0;                               // T바 반폭 12 mm
+      const lip = bar ? 0 : sstep(0.03, 0.02, e);                 // 타일이 T바 위에 얹힌 틈: 어둡고 패였다
+      const tv = hash2(tx, ty, 26), old = hash2(tx, ty, 27) < 0.15 ? 1 : 0;  // 타일마다 조금 다른 흰색, 몇 장은 조금 누렇다
+      // 흡음 타일의 반점과 갈라진 무늬: 색에만 둔다. 2~3화소 크기라야 몇 m 떨어져서도 밉맵에 지워지지 않고 고운 반점으로 남는다
+      const spk = vnoise(u * 280, v * 280, 280, 24), dot = sstep(0.62, 0.85, spk), lite = sstep(0.4, 0.15, spk);
+      const fis = sstep(0.6, 0.72, fbm(u * 60, v * 24, 60, 2, 25));
+      const n = fbm(u * 10, v * 10, 10, 3, 21);
+      const sf = fbm(u * 3, v * 3, 3, 5, 23), stain = sstep(0.6, 0.72, sf), ring = sstep(0.69, 0.7, sf) - sstep(0.7, 0.715, sf);
+      let g = 202 + (tv - 0.5) * 10 + (n - 0.5) * 8 - dot * 20 + lite * 5 - fis * 9;
+      let r = g, gg = g, b = g - 6 - old * 6;
+      r -= stain * 40 + ring * 30; gg -= stain * 52 + ring * 40; b -= stain * 75 + ring * 55;
+      if (bar) { const dirt = sstep(0.4, 0.8, fbm(u * 20, v * 20, 20, 2, 29)) * 30; r = 192 - dirt; gg = 193 - dirt; b = 194 - dirt - stain * 30; }
+      r -= lip * 55; gg -= lip * 55; b -= lip * 55;
+      const h = bar ? 0.72 : 0.5 - lip * 0.12 + (hash2(x, y, 30) - 0.5) * 0.02;
+      return [r, gg, b, h, bar ? 0.55 : 0.97];
     });
-    s.k = 3.5; s.cav = 0.7;
+    s.k = 3; s.cav = 0.6;
     return s;
   },
   block(rng, S = 1024) {
-    // 낡은 시멘트 미장 외벽(텍스처 1장 = 2 m): 거친 뿜칠 요철, 얼룩, 보수 자국(매끈하다), 빗물 줄(매끈하다), 균열
-    const s = surface(S, (u, v) => {
+    // 낡은 시멘트 미장 외벽(텍스처 1장 = 2 m, 한 화소 2 mm): 뿜칠 알갱이, 얼룩, 보수 자국(매끈하다), 빗물 줄(매끈하다), 균열.
+    // 뿜칠 알갱이(2~5 mm)는 색의 고운 반점으로만 그린다. 높이에는 흙손이 남긴 넓은 굴곡, 보수 자국의 턱, 균열만 둔다
+    // (9 mm 잡음을 높이와 틈새 그늘에 넣었더니 벽 전체가 작은 구멍 무늬로 덮여 반복 텍스처처럼 보였다, A/B 라운드 17)
+    const s = surface(S, (u, v, x, y) => {
       const n = fbm(u * 9, v * 9, 9, 5, 31), big = fbm(u * 1.5, v * 1.5, 1.5, 3, 32), fine = vnoise(u * 300, v * 300, 300, 38);
       const rain = sstep(0.5, 0.85, fbm(u * 14, v * 0.7, 14, 3, 33)) * (0.4 + 0.6 * sstep(0.2, 1.0, 1 - v));
       const patch = sstep(0.68, 0.7, fbm(u * 3, v * 3, 3, 4, 34));
@@ -194,8 +210,9 @@ const GEN = {
       g += patch * 14;
       const rust = sstep(0.72, 0.92, fbm(u * 10, v * 1.3, 10, 3, 37)) * sstep(0.3, 0.9, 1 - v) * 0.5;
       const green = sstep(0.6, 0.85, fbm(u * 4, v * 4, 4, 3, 39)) * sstep(0.5, 1.0, v) * 0.5;
-      const stucco = vnoise(u * 220, v * 220, 220, 36), lump = fbm(u * 40, v * 40, 40, 3, 35);
-      const h = 0.5 + ((stucco - 0.5) * 0.45 + (lump - 0.5) * 0.3) * (1 - patch * 0.75) + patch * 0.06;
+      const grain = hash2(x, y, 36), lump = fbm(u * 6, v * 6, 6, 3, 35);
+      g += (grain - 0.5) * 12 * (1 - patch * 0.6);
+      const h = 0.5 + ((lump - 0.5) * 0.12 + (grain - 0.5) * 0.03) * (1 - patch * 0.75) + patch * 0.06;
       const ro = 0.96 - patch * 0.2 - rain * 0.2;
       return [g + 4 + rust * 28 - green * 10, g + 2 + rust * 6 + green * 2, g - 4 - rust * 18 - green * 16, h, ro];
     });
@@ -204,8 +221,8 @@ const GEN = {
     ctx.fillStyle = 'rgba(60,58,52,0.25)'; const jy = S * (0.42 + rng() * 0.1); ctx.fillRect(0, jy, S, 3);
     s.hx.fillStyle = 'rgba(0,0,0,0.5)'; s.hx.fillRect(0, jy, S, 3);
     for (let i = 0; i < 4; i++) { ctx.fillStyle = `rgba(${170 + rng() * 30 | 0},${165 + rng() * 25 | 0},${150 + rng() * 20 | 0},0.35)`; ctx.fillRect(rng() * S, rng() * S, 30 + rng() * 120, 20 + rng() * 70); }
-    speckle(ctx, rng, S, 500, ['rgba(60,58,52,0.35)', 'rgba(200,198,190,0.3)'], 0.6, 2);
-    s.k = 5; s.cav = 1.0;
+    speckle(ctx, rng, S, 500, ['rgba(60,58,52,0.25)', 'rgba(200,198,190,0.2)'], 0.6, 2);
+    s.k = 3; s.cav = 0.6;
     return s;
   },
   asphalt(rng, S = 512) {
