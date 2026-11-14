@@ -391,7 +391,7 @@ class Game {
     for (const b of this.bots) if (b.alive) { const h = b.hitTest(ct.pos, aimDir, 1.0); if (h) wallDist = Math.min(wallDist, h.dist + 0.2); }
     vm.update(dt, this.time, {
       // 파쿠르 중에는 두 손으로 짚으니 총을 화면 아래로 내린다(stow). 조준과 사격은 막는다
-      anchor: ct.pos, aimQuat: aq, ads: inp.rmb && p.alive && !p.pk, sprint: p.sprinting ? 1 : 0, wallDist, stow: !!p.pk,
+      anchor: ct.pos, aimQuat: aq, ads: inp.rmb && p.alive && !p.pk, sprint: p.sprinting ? 1 : 0, wallDist, stow: !!p.pk, plant: p.pkHand,
       camQuat: ct.quat, aimYawOff: p.aimYaw - p.bodyYaw, aimPitchOff: p.aimPitch - p.camPitch, shake: ct.shake, camRecoil: ct.recoil,
       camYawVel: p.yawVel, camPitchVel: p.pitchVel, vy: p.vel.y, exertion: p.exertion, moving: p.moving, stepPhase: p.stepPhaseFrac || 0, roll: ct.roll, level: this.level,
     });
@@ -490,11 +490,20 @@ class Game {
     P.key = 0.28;   // 노출 목표. 화면값 중앙값을 레퍼런스(81) 가까이 둔다(85). 0.275(77)에서는 하늘을 6.0배로 밝힌 뒤 문간 장면의 실내가 기준선보다 어두웠고(A/B 라운드 28) 0.30으로 올렸다. 넓은 번짐(post.js uVeil)을 더한 뒤 실제 카메라처럼 글레어가 낀 화면을 측광한 만큼 0.28로 내렸다
     // 조준경 시점을 먼저 그린다: 본 화면에서 접안렌즈 셰이더가 이 상을 읽는다
     const vm = this.vm, cull = (cam, fn) => this.withBotsCulled(cam, fn);
-    this.scope.update(this.scene, this.camera, vm, [vm.root, vm.foreR, vm.foreL, vm.cuffR, vm.cuffL], cull);
+    // 살펴보기용(테스트): __bc.vmView({az, el, d, side})로 총과 손을 다른 각도에서 본다
+    if (this.vmView && !this.vmView.fp) {
+      const c = this.vmView, t = new THREE.Vector3();
+      (c.side === 'L' ? vm.handL : vm.handR).localToWorld(t.set(0, -0.01, -0.06));
+      const yaw = this.player.bodyYaw + (c.az || 0), el = c.el || 0, d = c.d || 0.3;
+      this.camera.position.set(t.x + Math.sin(yaw) * Math.cos(el) * d, t.y + Math.sin(el) * d, t.z + Math.cos(yaw) * Math.cos(el) * d);
+      this.camera.lookAt(t);
+    }
+    this.scope.update(this.scene, this.camera, vm, [vm.root, vm.foreR, vm.foreL], cull);
     // 조준경 패스가 이번 프레임의 장면 행렬을 이미 갱신했으면 본 화면 패스는 다시 갱신하지 않는다(장면 전체를 한 번 더 훑는 비용)
     const auto = this.scene.matrixWorldAutoUpdate;
     if (this.scope.rendered) this.scene.matrixWorldAutoUpdate = false;
-    cull(this.camera, () => this.post.render(this.scene, this.camera, dt));
+    if (this.vmView && this.vmView.raw) { this.renderer.setRenderTarget(null); this.renderer.render(this.scene, this.camera); }   // 살펴보기용: 렌즈와 센서 효과 없이
+    else cull(this.camera, () => this.post.render(this.scene, this.camera, dt));
     this.scene.matrixWorldAutoUpdate = auto;
     this.osd.draw(this.playTime, true);
   }
@@ -611,6 +620,7 @@ class Game {
       scopeSkip(b) { g.scope.skip = !!b; },
       // 충돌 상자 목록과 플레이어 옮기기(검사와 살펴보기용)
       boxes() { return g.level.boxes.map(b => ({ min: b.min, max: b.max, mat: b.mat, thin: !!b.thin, cover: !!b.cover })); },
+      vmView(c) { g.vmView = c || null; },
       place(x, z, yaw, pitch = 0) { g.player.spawn(x, z, yaw, pitch); g.player.crouchToggle = false; return { x: g.player.pos.x, y: g.player.pos.y, z: g.player.pos.z }; },
       scopeDiag() {
         const names = new Map([[g.level.group, 'level'], [g.vm.root, 'viewmodel'], [g.sky, 'sky']]);

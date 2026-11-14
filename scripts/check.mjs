@@ -99,19 +99,24 @@ async function main() {
       }
       const tr = [];
       let started = -1, ended = -1, kind = null;
+      const plant = { n: 0, dy: 0, on: 0, first: null };   // (h) 왼손이 윗면을 짚은 프레임 수, 윗면과의 높이 차 최대, 화면 안 프레임 수, 짚는 첫 프레임이 화면 안인지
       for (let f = 0; f < 200 && (ended < 0 || f < ended + 61); f++) {
         if (f === 4 || f === 12) await P.keyboard.down('Space');
         if (f === 7 || f === 15) await P.keyboard.up('Space');
         await step(1);
         const s = await st(); tr.push(s);
         if (s.parkour && started < 0) { started = f; kind = s.parkour; }
+        if (s.handL && s.handL.planted) {
+          const vis = Math.abs(s.handL.ndc[0]) <= 1 && Math.abs(s.handL.ndc[1]) <= 1 && s.handL.ndc[2] < 1;
+          plant.n++; plant.dy = Math.max(plant.dy, Math.abs(s.handL.y - top)); if (vis) plant.on++; if (plant.first === null) plant.first = vis;
+        }
         if (started >= 0 && ended < 0 && !s.parkour) ended = f;
       }
       let vmax = 0, rise = 0;
       for (let f = 1; f < tr.length; f++) vmax = Math.max(vmax, Math.hypot(tr[f].x - tr[f - 1].x, tr[f].z - tr[f - 1].z) * 60);
       for (const s of tr) rise = Math.max(rise, s.eye - s0.eye);
       const h = top - s0.y;
-      const res = { kind, vmax, rise, h, d0, d1, ok: true, why: [] };
+      const res = { kind, vmax, rise, h, d0, d1, ok: true, why: [], plant };
       if (started < 0) { res.ok = !mustGo; if (mustGo) res.why.push('넘지 않음'); return res; }
       if (ended < 0) { res.ok = false; res.why.push('끝나지 않음'); return res; }
       const e = tr[ended], e60 = tr[Math.min(tr.length - 1, ended + 60)];
@@ -130,6 +135,14 @@ async function main() {
     for (const [name, x, z, yaw, must] of fv) fres.push([name, await standVault(x, z, yaw, must)]);
     rec('파쿠르 (f) 서서 넘을 때 튕겨 나가지 않는다', fres.every(([, r]) => r.ok),
       fres.map(([n, r]) => `${n} ${r.kind || '안 넘음'}${r.kind ? ` 최고 ${r.vmax.toFixed(2)} m/s, 상승 ${r.rise.toFixed(2)} m(높이 ${r.h.toFixed(2)}), 미끄러짐 ${(r.slide ?? 0).toFixed(2)} m${r.kind !== 'climb' && r.beyond != null ? `, 먼 면 뒤 ${r.beyond.toFixed(2)} m` : ''}` : ''}${r.why.length ? ' ✗ ' + r.why.join(', ') : ''}`).join(' / '));
+    // (h) 넘거나 오를 때 왼손이 장애물 윗면을 짚는 것이 화면에 보인다(2026-11-15 사용자 요청 "넘어가는 모션"). 짚은 손바닥은 짚는 내내 윗면에서 5 cm 안이고,
+    //  짚는 첫 프레임과 그 뒤 8프레임 이상(0.13초) 화면 안에 있다. 몸이 손 위를 지나가면 손은 가슴 카메라 아래로 빠진다(실제 카메라도 그렇다).
+    //  처음에는 짚는 내내 화면 안을 요구했다가 이 때문에 어느 장애물에서도 통과할 수 없는 기준이라 이렇게 정했다
+    {
+      const done = fres.filter(([, r]) => r.kind);
+      const ok = done.length > 0 && done.every(([, r]) => r.plant.n >= 6 && r.plant.dy <= 0.05 && r.plant.first === true && r.plant.on >= 8);
+      rec('파쿠르 (h) 넘을 때 왼손이 윗면을 짚는다', ok, done.map(([n, r]) => `${n} ${r.kind}: 짚은 프레임 ${r.plant.n}(화면 안 ${r.plant.on}, 첫 프레임 ${r.plant.first ? '보임' : '안 보임'}), 윗면과 차이 최대 ${(r.plant.dy * 100).toFixed(1)} cm`).join(' / ') || '넘은 곳 없음');
+    }
     // (g) 제자리에서 마우스로 1.5 rad/s로 돌 때 총이 화면 위를 크게 미끄러지지 않는다(2026-11-15 사용자 지적)
     //  총구와 권총손잡이(오른손) 두 점의 가로 위치를 본다. 가까운 쪽(손잡이)은 옆으로 밀리면 화면에서 더 크게 움직인다
     //  숨과 떠도는 자세도 총을 천천히 옮긴다. 그래서 같은 시드로 새로 연 두 페이지에서 똑같이 진행하되 한쪽만 마우스를 움직이고,

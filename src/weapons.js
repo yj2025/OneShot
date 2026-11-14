@@ -4,6 +4,7 @@ import { bcMaterial } from './materials.js';
 import { noise1 } from './rng.js';
 import { buildScope, SCOPE } from './scope.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { createHand, makeSkeleton, fitGrasp, rbox as gripBox, setPose, lerpPose } from './hands.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -24,6 +25,25 @@ function cylPart(group, mat, r, len, pos, axis = 'z', seg = 12, r2) {
   const m = new THREE.Mesh(g, mat); m.position.set(...pos); group.add(m); return m;
 }
 
+// 소매(팔뚝): 팔꿈치(y 0)에서 손목(y 1)까지. 반지름은 실제 치수(m)이고 길이만 placeLimb가 늘린다.
+// 손목 쪽 절반에 눌려 접힌 고리 주름(골이 날카롭고 마루가 둥글다), 팔 전체에 비틀린 주름, 소맷부리는 조금 벌어지고 끝이 고르지 않다
+function sleeveGeo(rElbow, rWrist, seed) {
+  const g = new THREE.CylinderGeometry(1, 1, 1, 30, 48, true); g.translate(0, 0.5, 0);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
+    const w = Math.max(0, (y - 0.55) / 0.45);
+    let r = rElbow + (rWrist - rElbow) * Math.pow(y, 0.8);
+    const fold = Math.pow(Math.abs(Math.sin(y * 34 + Math.sin(a * 2 + seed) * 0.9 + seed)), 0.45) - 0.62;
+    r += fold * 0.0065 * w;
+    r += (Math.sin(a * 3 + y * 13 + seed * 2.1) * 0.0034 + Math.sin(a * 5 - y * 21 + seed) * 0.0017) * (0.5 + 0.5 * w);
+    r += Math.sin(a * 2 + seed * 0.7) * 0.0025;
+    if (y > 0.965) r += (y - 0.965) * 0.22 + Math.sin(a * 4 + seed) * 0.0012;
+    p.setXYZ(i, x * r, y, z * r);
+  }
+  g.computeVertexNormals();
+  return g;
+}
 // 두 점 사이를 잇는 원기둥(팔)
 function limb(mat, r0, r1, wrinkle = 0) {
   const g = new THREE.CylinderGeometry(r1, r0, 1, 16, wrinkle ? 14 : 1); g.translate(0, 0.5, 0);
@@ -109,15 +129,16 @@ function buildRifle(M) {
   part(g, M.steel, [0.036, 0.012, 0.045], [0, 0.114, 0.095]);          // 장전 손잡이
   const scope = buildScope(M);                                          // 고정 4배 조준경 (scope.js)
   g.add(scope.group);
-  part(g, M.tan, [0.032, 0.105, 0.046], [0, -0.035, 0.035], [0.32, 0, 0]); // 권총손잡이
+  part(g, M.tan, [0.032, 0.105, 0.046], [0, -0.035, 0.035], [-0.32, 0, 0]); // 권총손잡이(아래가 뒤로 누웠다. 이전에는 앞으로 누워 있었다)
   part(g, M.polymer, [0.012, 0.008, 0.06], [0, -0.008, -0.03]);         // 방아쇠울
   part(g, M.steel, [0.004, 0.022, 0.006], [0, 0.002, -0.022], [0.3, 0, 0]); // 방아쇠
   part(g, M.worn, [0.006, 0.012, 0.02], [0.027, 0.04, -0.005]);         // 조정간
   const mag = new THREE.Group();
-  part(mag, M.tan, [0.027, 0.11, 0.068], [0, -0.05, 0], [-0.12, 0, 0]);
-  part(mag, M.tan, [0.027, 0.09, 0.064], [0, -0.135, 0.018], [-0.32, 0, 0]);
-  for (let i = 0; i < 4; i++) part(mag, M.polymer, [0.029, 0.006, 0.05], [0, -0.03 - i * 0.03, 0.002 + i * 0.005], [-0.15 - i * 0.05, 0, 0]);
-  part(mag, M.polymer, [0.03, 0.014, 0.075], [0, -0.182, 0.035], [-0.32, 0, 0]);
+  // 탄창은 아래로 갈수록 앞(총구 쪽)으로 휜다(이전에는 뒤로 휘어 있었다)
+  part(mag, M.tan, [0.027, 0.11, 0.068], [0, -0.05, 0], [0.12, 0, 0]);
+  part(mag, M.tan, [0.027, 0.09, 0.064], [0, -0.135, -0.018], [0.32, 0, 0]);
+  for (let i = 0; i < 4; i++) part(mag, M.polymer, [0.029, 0.006, 0.05], [0, -0.03 - i * 0.03, -0.002 - i * 0.005], [0.15 + i * 0.05, 0, 0]);
+  part(mag, M.polymer, [0.03, 0.014, 0.075], [0, -0.182, -0.035], [0.32, 0, 0]);
   mag.position.set(0, 0.0, -0.13);
   g.add(mag);
   cylPart(g, M.steel, 0.016, 0.22, [0, 0.072, 0.17]);                   // 완충관
@@ -126,11 +147,23 @@ function buildRifle(M) {
   const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.072, -0.83); g.add(muzzle);
   const ejection = new THREE.Object3D(); ejection.position.set(0.03, 0.088, -0.05); g.add(ejection);
   return { group: g, mag, muzzle, ejection, scope, eyePoint: SCOPE.pupil.clone(),
-    // 손 위치·회전(총 기준)
-    rightHand: V(0.034, -0.03, 0.055), rightQ: new THREE.Euler(0.32, 0, -Math.PI / 2, 'ZYX'),
-    // 왼손은 핸드가드 밑을 받친다: 손등이 아래, 손가락이 오른쪽으로 뻗어 핸드가드 오른쪽 옆을 감아 올라간다
-    leftHand: V(-0.02, 0.022, -0.37), leftQ: new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(V(0, 0, -1), V(0, -1, 0), V(-1, 0, 0))),
-    rightCurl: [0.15, 1.25, 1.35, 1.4], leftCurl: [1.25, 1.3, 1.3, 1.25],
+    // 쥐는 자리(총 기준). 손등 방향, 손가락 방향, 손바닥 가운데가 닿는 점을 정하고 손가락은 닿을 때까지 오므린다(fitGrips)
+    //  오른손: 권총손잡이를 오른쪽에서 감싼다. 손등은 바깥(오른쪽 조금 위), 손가락은 손잡이 앞면을 감아 왼쪽으로, 검지는 방아쇠, 엄지는 손잡이 윗부분 왼쪽
+    //  왼손: 핸드가드 왼쪽 아래 모서리를 손바닥으로 감싼다. 손등은 바깥(왼쪽 아래)을 보고, 손가락은 밑면을 지나 오른쪽 옆을 감아 올라가고, 엄지는 왼쪽 옆을 따라 앞으로.
+    //  가슴 카메라에서 손등과 엄지가 보인다(손바닥을 위로 받치면 손이 핸드가드 밑에 숨어 손끝만 보였다)
+    grip: (() => {
+      const pg = gripBox([0, -0.035, 0.035], [0.032, 0.105, 0.046], [-0.32, 0, 0], 0.007);
+      const lower = gripBox([0, 0.034, -0.07], [0.05, 0.06, 0.28], [0, 0, 0], 0.004);
+      const trig = gripBox([0, 0.0, -0.026], [0.06, 0.03, 0.012], [0.3, 0, 0], 0.003);
+      const hg = gripBox([0, 0.072, -0.385], [0.064, 0.07, 0.31], [0, 0, 0], 0.012);
+      return {
+        R: { back: V(1, 0.3, 0.12), dir: V(0, -0.315, -0.949), palm: V(0.0178, -0.0075, 0.026), boxes: [pg],
+          start: { f: [[0.1, -0.05, 0.1, 0.05], [0.1, 0, 0.1, 0.05], [0.1, 0.03, 0.1, 0.05], [0.1, 0.08, 0.1, 0.05]], t: [0.0, 0.25, 0.5, 0.1, 0.1] },
+          per: { 0: { boxes: [trig], max: [0.95, 1.3, 0.9] }, 4: { boxes: [pg, lower] } } },
+        L: { back: V(-0.85, -0.38, 0.05), dir: V(0.62, -0.32, -0.6), palm: V(-0.037, 0.041, -0.32), boxes: [hg],
+          start: { f: [[0.05, -0.08, 0.05, 0.03], [0.05, -0.02, 0.05, 0.03], [0.05, 0.04, 0.05, 0.03], [0.05, 0.1, 0.05, 0.03]], t: [0.0, 0.55, 0.3, 0.05, 0.05] } },
+      };
+    })(),
     magPos: mag.position.clone() };
 }
 
@@ -139,7 +172,7 @@ function buildPistol(M) {
   const slide = part(g, M.steel, [0.03, 0.032, 0.19], [0, 0.058, -0.06]);   // 슬라이드
   for (let i = 0; i < 6; i++) part(slide, M.polymer, [0.031, 0.024, 0.003], [0, 0, 0.07 + i * 0.006]); // 톱니
   part(g, M.polymer, [0.028, 0.025, 0.16], [0, 0.03, -0.05]); // 프레임
-  part(g, M.polymer, [0.031, 0.11, 0.05], [0, -0.03, 0.02], [0.26, 0, 0]); // 손잡이
+  part(g, M.polymer, [0.031, 0.11, 0.05], [0, -0.03, 0.02], [-0.26, 0, 0]); // 손잡이(아래가 뒤로 누웠다)
   part(g, M.polymer, [0.01, 0.008, 0.045], [0, 0.005, -0.03]);
   part(g, M.steel, [0.006, 0.01, 0.006], [0, 0.079, -0.145]);
   part(g, M.steel, [0.022, 0.01, 0.008], [0, 0.079, 0.025]);
@@ -147,41 +180,49 @@ function buildPistol(M) {
   const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.058, -0.16); g.add(muzzle);
   const ejection = new THREE.Object3D(); ejection.position.set(0.02, 0.07, -0.03); g.add(ejection);
   return { group: g, mag, muzzle, ejection, slide, sightY: 0.08,
-    rightHand: V(0.03, -0.025, 0.04), rightQ: new THREE.Euler(0.26, 0, -Math.PI / 2, 'ZYX'),
-    leftHand: V(-0.032, -0.03, 0.035), leftQ: new THREE.Euler(0.26, 0, Math.PI / 2, 'ZYX'),
-    rightCurl: [0.2, 1.3, 1.4, 1.45], leftCurl: [1.2, 1.25, 1.3, 1.3],
+    // 오른손은 손잡이를 감싸고, 왼손은 손잡이 왼쪽 빈자리를 손바닥으로 메우며 오른손 손가락 위를 감싼다(두 엄지는 앞으로)
+    grip: (() => {
+      const pg = gripBox([0, -0.03, 0.02], [0.031, 0.11, 0.05], [-0.26, 0, 0], 0.008);
+      const trig = gripBox([0, 0.012, -0.018], [0.05, 0.026, 0.008], [0.2, 0, 0], 0.003);
+      const fist = gripBox([0, -0.04, -0.016], [0.058, 0.075, 0.026], [-0.26, 0, 0], 0.009);
+      const frame = gripBox([0, 0.03, -0.05], [0.028, 0.025, 0.16], [0, 0, 0], 0.004);
+      return {
+        R: { back: V(1, 0.3, 0.1), dir: V(0, -0.257, -0.966), palm: V(0.017, -0.001, 0.0125), boxes: [pg],
+          start: { f: [[0.1, -0.05, 0.1, 0.05], [0.1, 0, 0.1, 0.05], [0.1, 0.03, 0.1, 0.05], [0.1, 0.08, 0.1, 0.05]], t: [0.0, 0.3, 0.45, 0.05, 0.05] },
+          per: { 0: { boxes: [trig], max: [0.95, 1.3, 0.9] }, 4: { boxes: [pg, frame] } } },
+        L: { back: V(-1, 0.15, 0.05), dir: V(0.3, -0.6, -0.75), palm: V(-0.0215, -0.03, 0.012), boxes: [pg, fist],
+          start: { f: [[0.1, -0.03, 0.1, 0.05], [0.1, 0, 0.1, 0.05], [0.1, 0.02, 0.1, 0.05], [0.1, 0.05, 0.1, 0.05]], t: [0.0, 0.2, 0.3, 0.05, 0.05] },
+          per: { 4: { boxes: [pg, frame] } } },
+      };
+    })(),
     magPos: mag.position.clone() };
 }
 
-// 장갑 낀 손: 손바닥(손등 +y, 손가락 -z) + 마디 세 개짜리 손가락 넷 + 엄지
-function buildHand(M, mirror = false) {
-  const h = new THREE.Group();
-  part(h, M.glove, [0.084, 0.03, 0.09], [0, 0, 0]);
-  part(h, M.gloveKnuckle, [0.08, 0.012, 0.03], [0, 0.017, -0.03]);           // 손등 보호대
-  part(h, M.cuff, [0.074, 0.04, 0.04], [0, 0.002, 0.058]);                  // 손목 조임
-  h.userData.fingers = [];
-  for (let i = 0; i < 4; i++) {
-    const root = new THREE.Group(); root.position.set(-0.03 + i * 0.02, -0.002, -0.045); h.add(root);
-    const lens = [0.042 - Math.abs(i - 1.3) * 0.004, 0.028, 0.022];
-    let parent = root; const segs = [];
-    for (let k = 0; k < 3; k++) {
-      const seg = new THREE.Group(); parent.add(seg); if (k > 0) seg.position.z = -lens[k - 1];
-      part(seg, M.glove, [0.019, 0.02, lens[k] + 0.004], [0, 0, -lens[k] / 2]);
-      segs.push(seg); parent = seg;
-    }
-    h.userData.fingers.push(segs);
+// 손바닥 가운데(손바닥 면 위의 점, 손 기준). 쥐는 자리와 짚는 자리를 이 점으로 맞춘다
+const PALM = V(0, -0.019, -0.055);
+// 손목 행렬(총 기준): 손등 방향 back, 손가락 방향 dir, 손바닥 가운데가 닿을 점 palm
+function wristFrame(back, dir, palm) {
+  const Y = back.clone().normalize(), Z = dir.clone().normalize().negate();
+  Z.addScaledVector(Y, -Z.dot(Y)).normalize();
+  const X = new THREE.Vector3().crossVectors(Y, Z);
+  const m = new THREE.Matrix4().makeBasis(X, Y, Z);
+  return m.setPosition(palm.clone().sub(PALM.clone().applyMatrix4(m)));
+}
+// 무기마다 두 손의 자리와 쥔 자세를 처음 한 번 구한다(손가락을 손잡이 거리장에 닿을 때까지 오므린다)
+function fitGrips(mdl) {
+  const out = {};
+  for (const side of ['R', 'L']) {
+    const G = mdl.grip[side];
+    const m = wristFrame(G.back, G.dir, G.palm);
+    const pose = fitGrasp(makeSkeleton(side === 'R' ? 1 : -1), m, G.boxes, G.start, { fingers: G.per });
+    out[side] = { m, pose, q: new THREE.Quaternion().setFromRotationMatrix(m), p: new THREE.Vector3().setFromMatrixPosition(m), palm: G.palm.clone() };
   }
-  const th = new THREE.Group(); th.position.set(0.04, -0.008, 0.01); th.rotation.set(-0.3, -0.7, -0.5); h.add(th);
-  part(th, M.glove, [0.022, 0.021, 0.04], [0, 0, -0.02]);
-  const th2 = new THREE.Group(); th2.position.z = -0.04; th2.rotation.x = -0.5; th.add(th2);
-  part(th2, M.glove, [0.02, 0.02, 0.03], [0, 0, -0.015]);
-  h.userData.thumb = th;
-  if (mirror) h.scale.x = -1;
-  return h;
+  return out;
 }
-function curlHand(h, curls) {
-  h.userData.fingers.forEach((segs, i) => { const c = curls[i]; segs[0].rotation.x = -c * 0.55; segs[1].rotation.x = -c * 0.75; segs[2].rotation.x = -c * 0.6; });
-}
+// 짚는 손(파쿠르)과 탄창을 쥐는 손
+const _qTmp = new THREE.Quaternion();
+const PLANT = { f: [[0.1, -0.13, 0.12, 0.06], [0.08, -0.03, 0.12, 0.06], [0.08, 0.05, 0.12, 0.06], [0.12, 0.15, 0.14, 0.08]], t: [0.0, 0.55, 0.25, 0.1, 0.1] };
+const GRAB = { f: [[0.75, -0.04, 1.0, 0.6], [0.8, 0, 1.05, 0.6], [0.8, 0.03, 1.05, 0.6], [0.75, 0.08, 1.0, 0.6]], t: [0.25, 0.35, 0.55, 0.35, 0.35] };
 
 const WEAPONS = {
   rifle: { mag: 30, spareMags: 4, interval: 0.088, auto: true, reload: 2.35, recoil: 1.0, kind: 'rifle', damage: 1, spread: 0.0016,
@@ -223,12 +264,17 @@ export class Viewmodel {
     this.gunHolder = new THREE.Group();
     this.leadPivot.add(this.gunHolder);
     for (const k in this.models) { this.gunHolder.add(this.models[k].group); this.models[k].group.visible = false; }
-    this.handR = buildHand(this.M); this.handL = buildHand(this.M, true);
+    // 손: 거리장으로 지은 스키닝 메시(hands.js). 쥔 자세는 무기마다 손잡이에 맞춰 구한다
+    this.gloveMat = bcMaterial({ map: fabricTexture('#3b3a35', 5), roughness: 0.84, envMapIntensity: 0.2, specularIntensity: 0.3, vertexColors: true }, { grime: 0, physical: true });
+    this.hR = createHand(this.gloveMat, false); this.hL = createHand(this.gloveMat, true);
+    this.handR = this.hR.mesh; this.handL = this.hL.mesh;
     this.gunHolder.add(this.handR, this.handL);
-    this.foreR = limb(this.M.sleeve, 0.042, 0.06, 1); this.foreL = limb(this.M.sleeve, 0.042, 0.06, 1);
-    this.cuffR = limb(this.M.cuff, 0.041, 0.041); this.cuffL = limb(this.M.cuff, 0.041, 0.041);
-    scene.add(this.foreR, this.foreL, this.cuffR, this.cuffL);
-    for (const m of [this.foreR, this.foreL, this.cuffR, this.cuffL]) m.frustumCulled = false;
+    for (const k in this.models) this.models[k].grips = fitGrips(this.models[k]);
+    const sleeveMat = bcMaterial({ map: fabricTexture('#3f413a', 9), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15, side: THREE.DoubleSide }, { grime: 0, physical: true });
+    this.foreR = new THREE.Mesh(sleeveGeo(0.056, 0.044, 1.3), sleeveMat); this.foreL = new THREE.Mesh(sleeveGeo(0.056, 0.044, 4.1), sleeveMat);
+    scene.add(this.foreR, this.foreL);
+    for (const m of [this.foreR, this.foreL]) m.frustumCulled = false;
+    this.plantW = 0; this.planted = false; this.handLWorld = null;
     this.heldMag = null;
     this.state = {
       rifle: { ammo: WEAPONS.rifle.mag, spare: WEAPONS.rifle.spareMags },
@@ -331,7 +377,7 @@ export class Viewmodel {
         R.outDone = true; mdl.mag.visible = false; this.events.push({ type: 'magOut', weapon: this.current });
         this.dropMag(mdl);
       }
-      const lh = mdl.leftHand.clone();
+      const lh = mdl.grips.L.palm.clone();
       const pouch = V(-0.12, -0.32, 0.1);
       const magWell = mdl.magPos.clone().add(V(0, -0.1, 0));
       if (u > R.out - 0.08 && u < R.reach) {
@@ -348,7 +394,7 @@ export class Viewmodel {
       } else if (u >= R.insert + 0.1 && R.empty && u < 0.93) {
         const k = (u - R.insert - 0.1) / (0.93 - R.insert - 0.1);
         const charge = this.current === 'rifle' ? V(0, 0.11, 0.12) : V(0, 0.06, -0.05);
-        rl.handL = mdl.leftHand.clone().lerp(charge, Math.sin(Math.min(1, k * 2) * Math.PI * 0.5) * (1 - Math.max(0, k - 0.7) / 0.3));
+        rl.handL = mdl.grips.L.palm.clone().lerp(charge, Math.sin(Math.min(1, k * 2) * Math.PI * 0.5) * (1 - Math.max(0, k - 0.7) / 0.3));
         if (!R.charged && k > 0.55) { R.charged = true; this.events.push({ type: 'charge', weapon: this.current }); this.recoilT.kick(V(0, 0, 0.6)); }
       }
       if (u >= 1) {
@@ -379,8 +425,8 @@ export class Viewmodel {
 
     const rt = this.recoilT.step(dt), rr = this.recoilR.step(dt);
     const base = def.hip.clone().lerp(def.ads, this.ads).lerp(def.sprint, this.sprint);
-    const drop = Math.max(switchDrop, this.stow);
-    const pos = base.add(V(bx + sx + dX, by + sy + dY - rl.drop - this.lower * 0.06 - drop * 0.25, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
+    const drop = switchDrop, sw = this.stow * this.stow * (3 - 2 * this.stow);
+    const pos = base.add(V(bx + sx + dX + sw * 0.09, by + sy + dY - rl.drop - this.lower * 0.06 - drop * 0.25 - sw * 0.14, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
     pos.x += rt.x * 0.02; pos.y += rt.y * 0.02;
     const sh = p.shake || [0, 0, 0], rc = p.camRecoil || [0, 0, 0];
 
@@ -388,10 +434,10 @@ export class Viewmodel {
     // 걸음마다 총끝이 흔들린다: 몸은 가슴 카메라와 함께 움직이지만 두 팔에 든 총은 한 박자 늦게 끄덕이고 좌우로 돈다(조준할수록 줄어든다)
     const walkK = p.moving * (1 - this.ads * 0.7) * (1 + this.sprint * 0.6);
     const wPitch = Math.sin(p.stepPhase * Math.PI * 2 + 0.9) * 0.03 * walkK, wYaw = Math.sin(p.stepPhase * Math.PI + 0.5) * 0.035 * walkK;
-    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - drop * 0.9 + rl.pitch + dPitch + wPitch - sh[0] * 0.25 - rc[0];
-    const rotY = rr.y * 0.035 + this.sprint * 0.55 + wYaw - sh[1] * 0.25 - rc[1];
+    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - drop * 0.9 - sw * 1.0 + rl.pitch + dPitch + wPitch - sh[0] * 0.25 - rc[0];
+    const rotY = rr.y * 0.035 + this.sprint * 0.55 + wYaw - sh[1] * 0.25 - rc[1] - sw * 0.5;
     // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다. 카메라가 걸음에 따라 기울면 총은 그 25%만큼 늦는다
-    const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt - sh[2] * 0.25 - rc[2] + (def.cant || 0) * (1 - this.ads) + dRoll;
+    const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt - sh[2] * 0.25 - rc[2] + (def.cant || 0) * (1 - this.ads) + dRoll + sw * 0.5;
 
     // 뛰고 내릴 때의 관성: 몸이 위로 가속하면 두 팔에 든 총은 한 박자 늦게 처지고, 공중에서는 살짝 뜨고, 착지하면 다시 처진다
     const vy = p.vy || 0, dvy = vy - (this.lastVy ?? vy); this.lastVy = vy;
@@ -420,23 +466,44 @@ export class Viewmodel {
       this.models.pistol.slide.position.z = -0.06 + this.slideBack * 0.03 + (this.state.pistol.ammo === 0 ? 0.03 : 0);
     }
 
-    // 손과 팔
+    // 손과 팔. 오른손은 늘 권총손잡이를 쥔다
     this.root.updateMatrixWorld(true);
-    const lhLocal = rl.handL || mdl.leftHand;
-    this.handR.position.copy(mdl.rightHand); this.handR.rotation.copy(mdl.rightQ);
-    this.handL.position.copy(lhLocal); this.handL.rotation.copy(mdl.leftQ);
-    if (rl.handL) { this.handL.rotation.x += 0.5; }
-    curlHand(this.handR, mdl.rightCurl); curlHand(this.handL, rl.handL ? [0.9, 0.9, 0.9, 0.9] : mdl.leftCurl);
+    const gr = mdl.grips;
+    this.handR.position.copy(gr.R.p); this.handR.quaternion.copy(gr.R.q);
+    setPose(this.hR.sk, gr.R.pose);
+    // 왼손: 쥔 자리 → (재장전) 탄창을 쥔 손바닥이 rl.handL로 간다 → (파쿠르) 장애물 윗면 모서리를 짚는다(월드에 고정)
+    let lp = gr.L.p.clone(), lq = gr.L.q.clone(), lpose = gr.L.pose;
+    if (rl.handL) {
+      lq.premultiply(_qTmp.setFromAxisAngle(V(1, 0, 0), 0.5));
+      lp = rl.handL.clone().sub(PALM.clone().applyQuaternion(lq));
+      lpose = GRAB;
+    }
+    const pk = p.plant;
+    this.plantW = pk ? pk.w : Math.max(0, this.plantW - dt * 8);
+    if (pk && pk.w > 0) {
+      // 손바닥이 윗면에 닿고, 손등은 위, 손가락은 넘는 쪽으로 뻗되 조금 안쪽(오른쪽)으로 돈다. 손은 월드에 머물고 몸이 그 위를 지나간다
+      const fwd = V(pk.fx, 0, pk.fz), right = V(-pk.fz, 0, pk.fx);
+      const mw = wristFrame(V(0, 1, 0), fwd.multiplyScalar(0.94).addScaledVector(right, 0.34), pk.pos.clone().add(V(0, 0.003, 0)));
+      const ml = new THREE.Matrix4().copy(this.gunHolder.matrixWorld).invert().multiply(mw);
+      const pp = V(0, 0, 0), pq = new THREE.Quaternion(), ps = V(1, 1, 1); ml.decompose(pp, pq, ps);
+      const w = pk.w * pk.w * (3 - 2 * pk.w);
+      lp.lerp(pp, w); lq.slerp(pq, w); lpose = lerpPose(lpose, PLANT, w);
+    }
+    this.handL.position.copy(lp); this.handL.quaternion.copy(lq);
+    setPose(this.hL.sk, lpose);
     this.root.updateMatrixWorld(true);
+    this.handLWorld = this.handL.localToWorld(PALM.clone());
+    this.planted = !!(pk && pk.w > 0.9);
     const rootQ = this.root.quaternion;
-    // 팔꿈치는 화면 밖 왼쪽 아래와 오른쪽 아래에 있다. 왼팔은 화면 왼쪽 아래에서 비스듬히 건너와 핸드가드를 받친다
+    // 팔꿈치는 화면 밖 왼쪽 아래와 오른쪽 아래에 있다. 왼팔은 화면 왼쪽 아래에서 비스듬히 건너와 핸드가드를 받친다.
+    // 짚을 때 왼팔은 곧게 뻗으므로 소매가 어깨(카메라 왼쪽 위 뒤)에서 손목까지 이어진다
     const elbowR = V(0.24, -0.36, 0.14).applyQuaternion(rootQ).add(this.root.position);
-    const elbowL = V(-0.24, -0.38, this.current === 'rifle' ? -0.1 : 0.06).applyQuaternion(rootQ).add(this.root.position);
-    const wristR = this.handR.localToWorld(V(0, 0.0, 0.07));
-    const wristL = this.handL.localToWorld(V(0, 0.0, 0.07));
+    const elbowL = (this.current === 'rifle' ? V(-0.16, -0.36, -0.3) : V(-0.24, -0.38, 0.06)).applyQuaternion(rootQ).add(this.root.position);
+    if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); elbowL.lerp(V(-0.2, 0.02, 0.1).applyQuaternion(rootQ).add(this.root.position), k); }
+    // 소매 끝은 장갑 소맷부리의 뒤쪽 절반을 덮는다
+    const wristR = this.handR.localToWorld(V(0, 0, 0.042));
+    const wristL = this.handL.localToWorld(V(0, 0, 0.042));
     placeLimb(this.foreR, elbowR, wristR); placeLimb(this.foreL, elbowL, wristL);
-    placeLimb(this.cuffR, wristR, wristR.clone().lerp(elbowR, 0.13));
-    placeLimb(this.cuffL, wristL, wristL.clone().lerp(elbowL, 0.13));
 
     mdl.muzzle.getWorldPosition(this.muzzleWorld);
     this.dirWorld.set(0, 0, -1).applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(mdl.muzzle.matrixWorld)).normalize();
@@ -458,7 +525,8 @@ export class Viewmodel {
     if (this.droppedMags.length > 8) { const o = this.droppedMags.shift(); o.m.parent?.remove(o.m); }
   }
   showHeldMag(mdl, on) {
-    if (on && !this.heldMag) { this.heldMag = mdl.mag.clone(true); this.heldMag.visible = true; this.handL.add(this.heldMag); this.heldMag.position.set(0.0, 0.06, -0.02); this.heldMag.rotation.set(0.2, 0, 0); }
+    // 쥔 손가락 안에 탄창 몸통이 있고 윗부분(급탄구)이 엄지 쪽으로 나온다
+    if (on && !this.heldMag) { this.heldMag = mdl.mag.clone(true); this.heldMag.visible = true; this.handL.add(this.heldMag); this.heldMag.position.set(0.012, -0.04, -0.072); this.heldMag.rotation.set(0, 0, -Math.PI / 2); }
     if (!on && this.heldMag) { this.handL.remove(this.heldMag); this.heldMag = null; }
   }
 
