@@ -2,6 +2,7 @@
 //   save <이름>                              지금 out/shots/를 out/baseline/<이름>/에 기준선으로 복사
 //   sheet <이름> [--round N] [--per-page 2]   판정용 A/B 시트를 out/ab/round-N-*.png에, 정답 키를 out/keys/ab-round-N.json에
 //   score <라운드> "<판정>" ["<판정>" ...]      판정(예: "1=A, 2=B, 3=구분 안 됨")을 키와 대조해 새 빌드 선호 비율만 출력
+//         [--scenes "vault;turn-sway,strafe"]   이름에 그 글자가 든 장면끼리(쉼표로 묶고 세미콜론으로 나눈다) 쌍별 다수결을 따로 센다
 //   report <이름> --out docs/shots/<폴더>      사람이 보는 전후 시트(왼쪽 기준선, 오른쪽 새 빌드)를 JPEG로
 //   solo --out docs/shots/<폴더>              지금 out/shots/만 모은 시트를 JPEG로 (전후가 없는 0단계용)
 //   diff <이름>                              기준선과 지금 화면의 장면별 픽셀 차이 (키와 무관, 촬영이 얼마나 같은지 확인)
@@ -134,8 +135,17 @@ else if (cmd === 'score') {
   const mt = tally(maj);
   console.log(`  쌍별 다수결: 새 빌드 선호 ${pct(ratio(mt))} (새 빌드 ${mt.N}쌍, 기준선 ${mt.O}쌍, 구분 안 됨·갈림 ${mt.T}쌍)`);
   console.log(`  한쪽 쏠림(영점 확인용): ${n}쌍 중 최대 ${Math.max(mt.N, mt.O)}쌍`);
+  // 장면 묶음별 쌍별 다수결(세션 통과 기준이 일부 장면을 따로 볼 때). 쌍 번호와 어느 쪽이 새 빌드인지는 출력하지 않는다
+  const groups = [];
+  for (const grp of String(opt('scenes') || '').split(';').map(s => s.trim()).filter(Boolean)) {
+    const subs = grp.split(',').map(s => s.trim()).filter(Boolean);
+    const idx = key.pairs.map((p, i) => (subs.some(s => p.scene.includes(s)) ? i : -1)).filter(i => i >= 0);
+    const t = tally(idx.map(i => maj[i]));
+    console.log(`  장면 [${subs.join(', ')}] ${idx.length}쌍: 새 빌드 ${t.N}쌍, 기준선 ${t.O}쌍, 구분 안 됨·갈림 ${t.T}쌍`);
+    groups.push({ scenes: subs, pairs: idx.length, ...t });
+  }
   ensureDir(AB);
-  fs.writeFileSync(path.join(AB, `round-${round}-result.json`), JSON.stringify({ round: +round, baseline: key.baseline, pairs: n, judgments: sets, perJudge, pooled: { ratio: +ratio(all).toFixed(3), ...all }, majority: { ratio: +ratio(mt).toFixed(3), ...mt }, scoredAt: new Date().toISOString() }, null, 2));
+  fs.writeFileSync(path.join(AB, `round-${round}-result.json`), JSON.stringify({ round: +round, baseline: key.baseline, pairs: n, judgments: sets, perJudge, pooled: { ratio: +ratio(all).toFixed(3), ...all }, majority: { ratio: +ratio(mt).toFixed(3), ...mt }, groups, scoredAt: new Date().toISOString() }, null, 2));
 }
 
 // ---------------- report / solo ----------------

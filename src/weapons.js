@@ -26,21 +26,34 @@ function cylPart(group, mat, r, len, pos, axis = 'z', seg = 12, r2) {
 }
 
 // 소매(팔뚝): 팔꿈치(y 0)에서 손목(y 1)까지. 반지름은 실제 치수(m)이고 길이만 placeLimb가 늘린다.
-// 손목 쪽 절반에 눌려 접힌 고리 주름(골이 날카롭고 마루가 둥글다), 팔 전체에 비틀린 주름, 소맷부리는 조금 벌어지고 끝이 고르지 않다
+// 팔뚝 단면은 납작한 타원(가로가 넓다)이고 팔꿈치 쪽 3분의 1이 근육으로 부푼다. 손목 쪽은 장갑 소맷부리 위로 소매가 밀려 올라가
+// 1~1.5 cm 깊이로 겹겹이 접힌다(골이 날카롭고 마루가 둥글다). 팔 전체에 팔꿈치에서 비틀려 내려오는 큰 주름, 팔꿈치 쪽 끝에도 접힘.
+// 접힌 골은 정점 색으로 어둡게 칠한다(천이 겹친 그늘). 소맷부리는 조금 벌어지고 끝이 고르지 않다
 function sleeveGeo(rElbow, rWrist, seed) {
-  const g = new THREE.CylinderGeometry(1, 1, 1, 30, 48, true); g.translate(0, 0.5, 0);
-  const p = g.attributes.position;
+  const g = new THREE.CylinderGeometry(1, 1, 1, 40, 72, true); g.translate(0, 0.5, 0);
+  const p = g.attributes.position, col = new Float32Array(p.count * 3);
+  const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
-    const w = Math.max(0, (y - 0.55) / 0.45);
     let r = rElbow + (rWrist - rElbow) * Math.pow(y, 0.8);
-    const fold = Math.pow(Math.abs(Math.sin(y * 34 + Math.sin(a * 2 + seed) * 0.9 + seed)), 0.45) - 0.62;
-    r += fold * 0.0065 * w;
-    r += (Math.sin(a * 3 + y * 13 + seed * 2.1) * 0.0034 + Math.sin(a * 5 - y * 21 + seed) * 0.0017) * (0.5 + 0.5 * w);
+    r *= 1 + 0.07 * Math.exp(-Math.pow((y - 0.22) / 0.18, 2));
+    const wW = sm(0.5, 0.9, y), wE = 1 - sm(0.0, 0.18, y);
+    // 손목 쪽 겹친 주름: 고리가 비스듬하고 고르지 않다
+    const ph = y * 30 + Math.sin(a * 2 + seed) * 1.3 + Math.sin(a * 3 - seed * 1.7) * 0.7 + seed;
+    const fold = Math.pow(Math.abs(Math.sin(ph)), 0.4) - 0.66;
+    // 팔꿈치에서 비틀려 내려오는 큰 주름
+    const tw = Math.sin(a * 2 + y * 9 + seed * 2.1), tw2 = Math.sin(a * 5 - y * 17 + seed);
+    const elb = Math.pow(Math.abs(Math.sin(y * 34 + a * 1.5 + seed * 0.3)), 0.5) - 0.62;
+    r += fold * 0.013 * wW + tw * 0.0045 * (0.4 + 0.6 * (1 - wW)) + tw2 * 0.002 + elb * 0.009 * wE;
     r += Math.sin(a * 2 + seed * 0.7) * 0.0025;
     if (y > 0.965) r += (y - 0.965) * 0.22 + Math.sin(a * 4 + seed) * 0.0012;
-    p.setXYZ(i, x * r, y, z * r);
+    p.setXYZ(i, x * r * 1.06, y, z * r * 0.94);
+    // 골의 그늘: 접힘이 깊을수록 어둡다
+    const valley = Math.max(0, -fold) * wW * 1.25 + Math.max(0, -elb) * wE * 1.1 + Math.max(0, -tw) * 0.18;
+    const c = Math.max(0.5, 1 - valley * 0.75);
+    col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = c;
   }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.computeVertexNormals();
   return g;
 }
@@ -270,7 +283,7 @@ export class Viewmodel {
     this.handR = this.hR.mesh; this.handL = this.hL.mesh;
     this.gunHolder.add(this.handR, this.handL);
     for (const k in this.models) this.models[k].grips = fitGrips(this.models[k]);
-    const sleeveMat = bcMaterial({ map: fabricTexture('#3f413a', 9), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15, side: THREE.DoubleSide }, { grime: 0, physical: true });
+    const sleeveMat = bcMaterial({ map: fabricTexture('#3f413a', 9), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15, side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true });
     this.foreR = new THREE.Mesh(sleeveGeo(0.056, 0.044, 1.3), sleeveMat); this.foreL = new THREE.Mesh(sleeveGeo(0.056, 0.044, 4.1), sleeveMat);
     scene.add(this.foreR, this.foreL);
     for (const m of [this.foreR, this.foreL]) m.frustumCulled = false;
