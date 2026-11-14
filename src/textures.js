@@ -206,7 +206,7 @@ const GEN = {
       const n = fbm(u * 9, v * 9, 9, 5, 31), big = fbm(u * 1.5, v * 1.5, 1.5, 3, 32), fine = vnoise(u * 300, v * 300, 300, 38);
       const rain = sstep(0.5, 0.85, fbm(u * 14, v * 0.7, 14, 3, 33)) * (0.4 + 0.6 * sstep(0.2, 1.0, 1 - v));
       const patch = sstep(0.68, 0.7, fbm(u * 3, v * 3, 3, 4, 34));
-      let g = 150 + (n - 0.5) * 34 - big * 26 - rain * 40 + (fine - 0.5) * 14;
+      let g = 150 + (n - 0.5) * 34 - big * 26 - rain * 16 + (fine - 0.5) * 14;
       g += patch * 14;
       const rust = sstep(0.72, 0.92, fbm(u * 10, v * 1.3, 10, 3, 37)) * sstep(0.3, 0.9, 1 - v) * 0.5;
       const green = sstep(0.6, 0.85, fbm(u * 4, v * 4, 4, 3, 39)) * sstep(0.5, 1.0, v) * 0.5;
@@ -280,7 +280,8 @@ const GEN = {
       const w = fbm(u * 2, v * 30, 2, 3, 71 + k);
       const grain = Math.sin((v * (54 + vr * 9) + w * 12) * Math.PI) * 0.5 + 0.5;
       const n = fbm(u * 6, v * 6, 6, 4, 72 + k);
-      const dirt = sstep(0.55, 0.8, fbm(u * 3, v * 3, 3, 4, 73 + k)) * 0.35 + sstep(0.7, 1, v) * 0.25;
+      // 큰 물 얼룩은 셰이더가 월드 좌표로 넣는다(여기 그리면 낱장마다 같은 자리에 되풀이된다). 여기에는 옅은 때만 둔다
+      const dirt = sstep(0.55, 0.8, fbm(u * 3, v * 3, 3, 4, 73 + k)) * 0.1 + sstep(0.7, 1, v) * 0.1;
       const r = (150 + grain * 18 + (n - 0.5) * 28) * tint[0], g = (132 + grain * 15 + (n - 0.5) * 24) * tint[1], b = (106 + grain * 10 + (n - 0.5) * 20) * tint[2];
       const h = 0.5 + (grain - 0.5) * 0.12 + (n - 0.5) * 0.1;
       return [r * (1 - dirt), g * (1 - dirt * 1.05), b * (1 - dirt * 1.1), h, 0.78 + dirt * 0.2];

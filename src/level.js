@@ -195,10 +195,10 @@ export class Level {
     M('contBlue', { map: t.corrugated, normalMap: t.corrugatedN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.corrugatedR, color: 0x5f7486, roughness: 1, metalness: 0.3 }, { grime: 0.6 });
     M('contRust', { map: t.corrugated, normalMap: t.corrugatedN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.corrugatedR, color: 0x8a4e36, roughness: 1, metalness: 0.3 }, { grime: 0.6 });
     M('roofMetal', { map: t.corrugated, normalMap: t.corrugatedN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.corrugatedR, color: 0x6a6e70, roughness: 1, metalness: 0.4 }, { grime: 0.4 });
-    M('plywood', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodR, roughness: 1 }, { grime: 0.6 });
-    M('plywoodB', { map: t.plywoodB, normalMap: t.plywoodBN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodBR, roughness: 1 }, { grime: 0.6 });
-    M('plywoodC', { map: t.plywoodC, normalMap: t.plywoodCN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodCR, roughness: 1 }, { grime: 0.6 });
-    M('pallet', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(1.4, 1.4), roughnessMap: t.plywoodR, color: 0xb59a7a, roughness: 1 }, { grime: 0.8 });
+    M('plywood', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodR, roughness: 1 }, { grime: 0.6, weather: 1 });
+    M('plywoodB', { map: t.plywoodB, normalMap: t.plywoodBN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodBR, roughness: 1 }, { grime: 0.6, weather: 1 });
+    M('plywoodC', { map: t.plywoodC, normalMap: t.plywoodCN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodCR, roughness: 1 }, { grime: 0.6, weather: 1 });
+    M('pallet', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(1.4, 1.4), roughnessMap: t.plywoodR, color: 0xb59a7a, roughness: 1 }, { grime: 0.8, weather: 1 });
     M('linoleum', { map: t.linoleum, normalMap: t.linoleumN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.linoleumR, roughness: 1 }, { grime: 0.8 });
     M('cardboard', { map: t.cardboard, normalMap: t.cardboardN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.cardboardR, roughness: 1 }, { grime: 0.3 });
     M('cardboardB', { map: t.cardboard, normalMap: t.cardboardN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.cardboardR, color: 0xc4b8a4, roughness: 1 }, { grime: 0.5 });

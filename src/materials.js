@@ -6,6 +6,9 @@ export const envUniforms = {
   uBldg: { value: new THREE.Vector4(-12, -16, 12, 0) },
   uRoofY: { value: 5.7 },
   uFL: { value: 0.7 },
+  // 바깥벽 꼭대기: 창고 홀(xz 범위 uHall)은 uRoofY, 나머지는 uEave. 빗물 줄이 시작하는 높이다(level.js의 extWallZ/X 높이와 맞춘다)
+  uHall: { value: new THREE.Vector4(-12.2, -16.2, 4.7, -6.55) },
+  uEave: { value: 3.9 },
 };
 
 const VERT_HEAD = `
@@ -30,9 +33,12 @@ varying float vBcWear;
 uniform vec4 uBldg;
 uniform float uRoofY;
 uniform float uFL;
+uniform vec4 uHall;
+uniform float uEave;
 uniform float uGrime;
 uniform float uAO;
 uniform float uDamp;
+uniform float uWeather;
 uniform highp sampler3D uAmb; uniform highp sampler3D uSkyV; uniform highp sampler3D uVisA; uniform highp sampler3D uVisB;
 uniform vec3 uVolMin; uniform vec3 uVolInv; uniform float uVolOff; uniform vec3 uVisMin; uniform vec3 uVisInv; uniform float uVisOff;
 uniform float uVolOn; uniform float uLmOn; uniform float uClay; uniform vec4 uLmA[10]; uniform vec4 uLmB[10]; uniform float uLm1[10];
@@ -90,6 +96,44 @@ const FRAG_GRIME = `
     vec3 mor = vec3(0.17, 0.165, 0.155) * (0.85 + 0.3 * bcNoise(vBcW.xz * 53.0 + vBcW.y * 47.0));
     diffuseColor.rgb = mix(diffuseColor.rgb, mix(blk, mor, mortar), bcCore);
   }
+  // 노출: 그 자리에서 하늘이 보이는 정도(빛 굽기의 하늘 가시도, 마당 0.77, 차양 밑 0.23, 사무실 0.02).
+  // 비, 햇빛, 바람에 실려 온 흙이 그 자리에 닿는 정도로 쓴다. 낡음은 원인이 닿는 자리에 생긴다
+  vec3 bcEq = (vBcW + bcNg * uVolOff - uVolMin) * uVolInv;
+  vec3 bcEd = min(bcEq, 1.0 - bcEq);
+  float bcEIn = uVolOn * smoothstep(0.0, 0.015, min(bcEd.x, bcEd.z)) * smoothstep(0.0, 0.04, 1.0 - bcEq.y);
+  float expo = mix(1.0 - ins, textureLod(uSkyV, bcEq.xzy, 0.0).r, bcEIn);
+  float alongW = dot(vBcW.xz, vec2(0.71, 0.71)) + vBcW.x * 0.3;
+  // 나무(합판, 팔레트)의 물 얼룩은 월드 좌표로 둔다. 텍스처에 그리면 1.22 m 낱장마다 같은 자리에 되풀이된다(A/B 라운드 18).
+  // 젖은 바닥에 선 판은 아래에서 물을 빨아올려 밑동이 어둡고 경계에 물때가 남는다. 바깥에 둔 나무는 햇빛과 비에 바래 은회색이 되고 빗물 줄이 진다
+  if (uWeather > 0.5) {
+    float ex = smoothstep(0.12, 0.45, expo);
+    float wl = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
+    float streak = smoothstep(0.5, 0.8, bcFbm(vec2(alongW * 7.0, vBcW.y * 0.4 + 2.0))) * wall;
+    float blot = smoothstep(0.42, 0.7, bcFbm(vBcW.xz * 1.3 + vBcW.y * 1.1 + 4.0));
+    float ws = bcFbm(vBcW.xz * 0.9 + vBcW.y * 0.8 + 6.0);
+    float wst = smoothstep(0.5, 0.56, ws), wring = smoothstep(0.49, 0.52, ws) * (1.0 - smoothstep(0.52, 0.56, ws));
+    diffuseColor.rgb *= 1.0 - wst * 0.16 - wring * 0.24;
+    float wl2 = 0.06 + 0.32 * bcFbm(vec2(alongW * 1.8, 41.0));
+    float wick = (1.0 - smoothstep(wl2 - 0.03, wl2, hF)) * wall;
+    float wrim = smoothstep(wl2 - 0.04, wl2 - 0.01, hF) * (1.0 - smoothstep(wl2 - 0.01, wl2 + 0.01, hF)) * wall;
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(wl) * vec3(0.8, 0.81, 0.83), ex * 0.7);
+    diffuseColor.rgb *= 1.0 - blot * (0.25 + 0.1 * ex) - streak * ex * 0.3;
+    diffuseColor.rgb *= 1.0 - wick * 0.3 - wrim * 0.25;
+  }
+  // 바깥벽: 빗물이 지붕 끝에서 흘러내린 줄. 줄마다 길이가 다르고 위에서 진하다(텍스처의 빗물 줄은 2 m마다 되풀이되어 약하게 줄였다)
+  if (uDamp > 0.0 && wall > 0.5 && ins < 0.5) {
+    float ex = smoothstep(0.15, 0.45, expo);
+    bool hall = vBcW.x > uHall.x && vBcW.x < uHall.z && vBcW.z > uHall.y && vBcW.z < uHall.w;
+    float hR = (hall ? uRoofY : uEave) - 0.05 - vBcW.y;
+    float len = 0.5 + 2.4 * bcFbm(vec2(alongW * 2.3, 5.0));
+    float st = smoothstep(0.42, 0.75, bcFbm(vec2(alongW * 5.5, 1.7))) * (1.0 - smoothstep(len * 0.35, len, hR)) * smoothstep(-0.05, 0.05, hR);
+    diffuseColor.rgb *= 1.0 - st * ex * 0.4;
+  }
+  // 건물 안 바닥: 문과 창으로 들어온 흙. 하늘이 조금이라도 보이는 자리(출입구, 창 밑)에 몰린다
+  if (uGrime > 0.5 && bcNg.y > 0.7 && ins > 0.5) {
+    float tr = smoothstep(0.03, 0.16, expo) * smoothstep(0.35, 0.7, bcFbm(vBcW.xz * 0.9 + 13.0) + 0.2);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.17, 0.13) * (0.8 + 0.4 * bcNoise(vBcW.xz * 5.0)), tr * 0.45);
+  }
   float dirt = mix(1.0, (0.6 + 0.64 * g) * (0.84 + 0.32 * g2), uGrime);
   float base = mix(1.0, mix(0.45, 1.0, smoothstep(0.0, 0.45 + g * 0.35, hF)), uGrime * wall);
   diffuseColor.rgb *= dirt * base;
@@ -105,6 +149,17 @@ const FRAG_GRIME = `
     diffuseColor.rgb *= 0.82 + 0.36 * bcFbm(q * 0.05 + 21.0);
     float track = smoothstep(0.035, 0.0, abs(fract(dot(q, vec2(0.27, 0.96)) * 0.31 + bcFbm(q * 0.09) * 0.6) - 0.5)) * smoothstep(0.45, 0.65, bcFbm(q * 0.07 + 5.0));
     diffuseColor.rgb *= 1.0 - track * 0.25;
+  }
+  // 천장에서 샌 물: 벽 위쪽에서 아래로 번진 누런 얼룩. 아래 경계에 진한 물때 테두리가 남는다. 벽을 따라 몇 군데(누수 자리)에만 있다
+  if (uDamp > 0.9 && wall > 0.5 && ins > 0.5) {
+    bool hallL = vBcW.x > uHall.x && vBcW.x < uHall.z && vBcW.z > uHall.y && vBcW.z < uHall.w;
+    float hC = (hallL ? uRoofY - 0.4 - uFL : 2.8) - hF;
+    float leak = smoothstep(0.52, 0.66, bcFbm(vec2(alongW * 0.45, 31.0)));
+    float reach = leak * (0.3 + 1.1 * bcFbm(vec2(alongW * 2.2, 33.0)) + 0.08 * bcNoise(vec2(alongW * 14.0, 35.0)));
+    float lk = (1.0 - smoothstep(reach - 0.06, reach, hC)) * step(-0.02, hC) * step(0.08, reach);
+    float rim = smoothstep(reach - 0.07, reach - 0.015, hC) * (1.0 - smoothstep(reach - 0.015, reach + 0.005, hC)) * step(0.08, reach);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.82, 0.72, 0.52), lk * 0.8);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.58, 0.5, 0.38), rim * 0.7);
   }
   if (uDamp > 0.9 && wall > 0.5 && ins > 0.5) {
     float along2 = vBcW.x + vBcW.z;
@@ -197,9 +252,10 @@ if (uDamp > 0.9) {
 }
 `;
 
-export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0, physical = false } = {}) {
+// weather: 1이면 바깥에 놓였을 때 바래는 나무(노출에 따라 은회색과 빗물 얼룩)
+export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0, physical = false, weather = 0 } = {}) {
   const m = physical ? new THREE.MeshPhysicalMaterial({ envMapIntensity: 0.5, ...params }) : new THREE.MeshStandardMaterial({ envMapIntensity: 0.5, ...params });
-  const local = { uGrime: { value: grime }, uAO: { value: ao }, uDamp: { value: damp } };
+  const local = { uGrime: { value: grime }, uAO: { value: ao }, uDamp: { value: damp }, uWeather: { value: weather } };
   m.userData.bc = local;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, envUniforms, volUniforms, local);
