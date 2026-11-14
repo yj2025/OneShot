@@ -870,7 +870,7 @@ export class Level {
         const d = Math.hypot(px - o.x, pz - o.z);
         // 바람에 실려 온 잎(짧고 진하다)과, 신발에 묻어 들어와 문을 지나 복도와 방 안쪽까지 퍼진 잎(길고 옅다. 문으로 다니므로 벽에 막히지 않는다)
         if (d < o.L * 3) p += o.s * Math.exp(-d / o.L) * (cross(o.x, o.z, px, pz) ? 0.12 : 1);
-        if (o.L > 2) p += 0.35 * o.s * Math.exp(-d / 11);
+        if (o.L > 2) p += 0.6 * o.s * Math.exp(-d / 11);
       }
       if (p < 0.03) continue;
       const wf = near(px, pz);
