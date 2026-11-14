@@ -34,7 +34,7 @@ void main(){
   gl_FragColor = vec4(v, avg, 0.0, 1.0);
 }`;
 const BRIGHT_FS = `
-uniform sampler2D tScene; uniform sampler2D tAdapt; uniform float uKey; uniform float uCap; uniform vec2 uTexel; varying vec2 vUv;
+uniform sampler2D tScene; uniform sampler2D tAdapt; uniform float uKey; uniform float uKnee; uniform float uSlope; uniform vec2 uTexel; varying vec2 vUv;
 void main(){
   float ad = texture2D(tAdapt, vec2(0.5)).r;
   float ex = clamp(uKey / ad, 0.03, 7.0);
@@ -43,10 +43,10 @@ void main(){
   c += texture2D(tScene, vUv + uTexel * vec2(-1.0, 1.0)).rgb; c += texture2D(tScene, vUv + uTexel * vec2(1.0, 1.0)).rgb;
   c = clamp(c * (0.25 * ex), 0.0, 1e4);   // NaN 화소 하나가 저해상도 번짐에서 네모난 검은 구역으로 퍼지지 않게 묶는다
   float l = dot(c, vec3(0.333));
-  // 번짐은 '얼마나 밝은가'가 아니라 '얼마나 넓게 날아갔는가'를 따른다(센서 블루밍은 포화된 만큼만 넘친다).
-  // 상한이 없으면 하늘이 비치는 창(노출 뒤 약 20)이 창 안의 창살과 나무줄기까지 흰 덩어리로 덮는다(A/B 라운드 22).
-  // 형광등 관(약 4.7)은 거의 그대로다
-  c *= min(1.0, uCap / max(l, 1e-4));
+  // 번짐의 세기는 1단계 ①에서 하늘 밝기 2.5배일 때 맞춘 값이다. 하늘을 6.0배로 밝힌 뒤(1단계 ④)에도 같은 번짐이 나오도록
+  // 형광등 관(노출 뒤 약 4.7)보다 밝은 부분은 하늘을 밝힌 비율(2.5/6)만큼만 더 번지게 한다.
+  // 그대로 두면 창(노출 뒤 약 20)이 창살과 나무줄기까지 흰 덩어리로 덮고(라운드 22), 위를 자르면 형광등과 창의 번짐이 기준선보다 작아진다(라운드 23)
+  if (l > uKnee) c *= (uKnee + (l - uKnee) * uSlope) / l;
   gl_FragColor = vec4(c * smoothstep(0.75, 2.2, l), 1.0);
 }`;
 const BLUR_FS = `
@@ -267,7 +267,7 @@ export class Post {
     this.rtCam = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];
     this.mLum = pass(LUM_FS, { tScene: { value: null }, tPrev: { value: null }, uInit: { value: 1 } });
     this.mAdapt = pass(ADAPT_FS, { tLum: { value: null }, tPrev: { value: null }, uDt: { value: 0.016 }, uInit: { value: 1 } });
-    this.mBright = pass(BRIGHT_FS, { tScene: { value: null }, tAdapt: { value: null }, uKey: { value: 0.2 }, uCap: { value: 4.0 }, uTexel: { value: new THREE.Vector2() } });
+    this.mBright = pass(BRIGHT_FS, { tScene: { value: null }, tAdapt: { value: null }, uKey: { value: 0.2 }, uKnee: { value: 5.0 }, uSlope: { value: 2.5 / 6.0 }, uTexel: { value: new THREE.Vector2() } });
     this.mBlur = pass(BLUR_FS, { tIn: { value: null }, uDir: { value: new THREE.Vector2() } });
     this.mCam = pass(CAM_FS, {
       tScene: { value: null }, tBloomA: { value: null }, tBloomB: { value: null }, tBloomC: { value: null }, tAdapt: { value: null }, tPrev: { value: null },
