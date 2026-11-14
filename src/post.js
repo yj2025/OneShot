@@ -1,5 +1,6 @@
 // 후처리: 실제 카메라 순서 — 렌즈(왜곡·색수차·번짐·테두리) → 센서(자동 노출·좁은 계조·노이즈·모션 블러) → 압축
 import * as THREE from 'three';
+import { skyGain } from './lightbake.js';
 
 // 장면은 화면보다 가로세로 OVERSCAN배 넓은 화각과 그만큼 큰 렌더 타깃에 그린다(화소 밀도는 그대로).
 // 어안 왜곡은 화면 가장자리에서 화면 밖을 읽는다(좌우 끝 중간 높이에서 약 9%). 렌더 타깃이 화면과 같으면 맨 끝 화소 열이 가로로 늘어난 줄무늬가 된다.
@@ -201,8 +202,11 @@ void main(){
   // 좁은 계조: 빠르게 하얗게 날아가는 어깨, 뭉개지는 그늘
   // 렌즈 안에서 흩어진 빛이 가장 어두운 곳을 조금 띄운다
   vec3 x = col + 0.002;
-  // 센서 포화: 평균보다 3~4스톱 밝으면 하얗게 날아간다
-  x = 1.0 - exp(-x * 0.85);
+  // 센서 포화: 평균보다 1스톱 위까지는 지수 곡선 그대로이고, 그 위로는 어깨가 단단해져
+  // 2.5~3스톱 밝으면 하얗게 날아간다. 이전 곡선(1 - exp(-0.85x))은 +2.6스톱이 210/255에 머물러
+  // 어두운 실내에서 본 문과 창 너머 나무가 또렷하게 남았다('계조가 넓다, HDR 같다', A/B 라운드 20~31)
+  vec3 over = max(x - 0.5, 0.0);
+  x = 1.0 - exp(-(x * 0.85 + over * over * 0.6));
   // 화면 인코딩. 지수 0.7은 표준 감마(1/2.2)에 카메라의 대비 보정을 곱한 값이다.
   // 이전 곡선은 감마 없이 S자 곡선만 써서 어두운 쪽이 입력의 제곱으로 뭉개졌다(평균보다 1스톱 어두우면 8/255).
   // 지금은 평균이 76/255, 2스톱 아래가 27/255, 4스톱 아래가 6/255쯤에 놓인다. 레퍼런스 프레임의 밝기 분포에 맞춘 값이다(scripts/tones.mjs)
@@ -278,7 +282,7 @@ export class Post {
     this.rtCam = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];
     this.mLum = pass(LUM_FS, { tScene: { value: null }, tPrev: { value: null }, uInit: { value: 1 }, uOver: { value: OVERSCAN } });
     this.mAdapt = pass(ADAPT_FS, { tLum: { value: null }, tPrev: { value: null }, uDt: { value: 0.016 }, uInit: { value: 1 } });
-    this.mBright = pass(BRIGHT_FS, { tScene: { value: null }, tAdapt: { value: null }, uKey: { value: 0.2 }, uKnee: { value: 5.0 }, uSlope: { value: 2.5 / 6.0 }, uTexel: { value: new THREE.Vector2() } });
+    this.mBright = pass(BRIGHT_FS, { tScene: { value: null }, tAdapt: { value: null }, uKey: { value: 0.2 }, uKnee: { value: 5.0 }, uSlope: { value: 2.5 / skyGain }, uTexel: { value: new THREE.Vector2() } });
     this.mBlur = pass(BLUR_FS, { tIn: { value: null }, uDir: { value: new THREE.Vector2() } });
     this.mCam = pass(CAM_FS, {
       tScene: { value: null }, tBloomA: { value: null }, tBloomB: { value: null }, tBloomC: { value: null }, tBloomD: { value: null }, tBloomE: { value: null }, uVeil: { value: 0.4 }, tAdapt: { value: null }, tPrev: { value: null },
