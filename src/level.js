@@ -866,7 +866,12 @@ export class Level {
       const px = x + (r() - 0.5) * st, pz = z + (r() - 0.5) * st;
       if (!this.insideBuilding(px, pz)) continue;
       let p = 0;
-      for (const o of ops) { const d = Math.hypot(px - o.x, pz - o.z); if (d > o.L * 3) continue; p += o.s * Math.exp(-d / o.L) * (cross(o.x, o.z, px, pz) ? 0.12 : 1); }
+      for (const o of ops) {
+        const d = Math.hypot(px - o.x, pz - o.z);
+        // 바람에 실려 온 잎(짧고 진하다)과, 신발에 묻어 들어와 문을 지나 복도와 방 안쪽까지 퍼진 잎(길고 옅다. 문으로 다니므로 벽에 막히지 않는다)
+        if (d < o.L * 3) p += o.s * Math.exp(-d / o.L) * (cross(o.x, o.z, px, pz) ? 0.12 : 1);
+        if (o.L > 2) p += 0.35 * o.s * Math.exp(-d / 11);
+      }
       if (p < 0.03) continue;
       const wf = near(px, pz);
       p = Math.min(1, p) * (0.35 + 1.1 * wf);
