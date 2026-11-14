@@ -130,7 +130,7 @@ void main(){
 
 // 렌즈 + 센서
 const CAM_FS = `
-uniform sampler2D tScene; uniform sampler2D tBloomA; uniform sampler2D tBloomB; uniform sampler2D tBloomC;
+uniform sampler2D tScene; uniform sampler2D tBloomA; uniform sampler2D tBloomB; uniform sampler2D tBloomC; uniform sampler2D tBloomD; uniform sampler2D tBloomE; uniform float uVeil;
 uniform sampler2D tAdapt; uniform sampler2D tPrev; uniform sampler2D tDepth; uniform sampler2D tAO; uniform float uAOAmt; uniform float uNear; uniform float uFar;
 uniform float uOver; uniform float uAspect; uniform float uK; uniform float uCA; uniform vec2 uBlur; uniform float uBlurAmt; uniform float uZoomBlur;
 uniform float uTime; uniform float uKey; uniform float uFlash; uniform vec2 uRimShift; uniform float uGhost; uniform float uNoise;
@@ -189,6 +189,9 @@ void main(){
   col *= mix(1.0, texture2D(tAO, uvG).r, uAOAmt);
   // 하이라이트 번짐(렌즈 산란)
   vec3 bloom = texture2D(tBloomA, uvG).rgb * 0.45 + texture2D(tBloomB, uvG).rgb * 0.55 + texture2D(tBloomC, uvG).rgb * 0.75;
+  // 베일링 글레어: 렌즈 안에서 여러 번 반사된 빛이 밝은 면 둘레로 화면 폭의 10~20%까지 옅게 퍼진다.
+  // 위 세 단계는 화면 폭의 4% 안쪽만 번지게 해서, 하늘이 꽉 찬 문이 아니면 문 둘레 벽이 밝아지지 않았다(A/B 라운드 26, 29, 30의 가까운 문간)
+  bloom += (texture2D(tBloomD, uvG).rgb * 0.5 + texture2D(tBloomE, uvG).rgb * 0.5) * uVeil;
   // --- 센서: 자동 노출
   float ad = texture2D(tAdapt, vec2(0.5)).r;
   float ex = clamp(uKey / ad, 0.03, 7.0);
@@ -271,14 +274,14 @@ export class Post {
     this.rtScene.depthTexture = new THREE.DepthTexture(4, 4); this.rtScene.depthTexture.type = THREE.UnsignedIntType;
     this.rtLum = new THREE.WebGLRenderTarget(64, 64, { ...HF, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
     this.rtAdapt = [new THREE.WebGLRenderTarget(1, 1, HF), new THREE.WebGLRenderTarget(1, 1, HF)];
-    this.rtB = [0, 1, 2].map(() => [new THREE.WebGLRenderTarget(4, 4, HF), new THREE.WebGLRenderTarget(4, 4, HF)]);
+    this.rtB = [0, 1, 2, 3, 4].map(() => [new THREE.WebGLRenderTarget(4, 4, HF), new THREE.WebGLRenderTarget(4, 4, HF)]);
     this.rtCam = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];
     this.mLum = pass(LUM_FS, { tScene: { value: null }, tPrev: { value: null }, uInit: { value: 1 }, uOver: { value: OVERSCAN } });
     this.mAdapt = pass(ADAPT_FS, { tLum: { value: null }, tPrev: { value: null }, uDt: { value: 0.016 }, uInit: { value: 1 } });
     this.mBright = pass(BRIGHT_FS, { tScene: { value: null }, tAdapt: { value: null }, uKey: { value: 0.2 }, uKnee: { value: 5.0 }, uSlope: { value: 2.5 / 6.0 }, uTexel: { value: new THREE.Vector2() } });
     this.mBlur = pass(BLUR_FS, { tIn: { value: null }, uDir: { value: new THREE.Vector2() } });
     this.mCam = pass(CAM_FS, {
-      tScene: { value: null }, tBloomA: { value: null }, tBloomB: { value: null }, tBloomC: { value: null }, tAdapt: { value: null }, tPrev: { value: null },
+      tScene: { value: null }, tBloomA: { value: null }, tBloomB: { value: null }, tBloomC: { value: null }, tBloomD: { value: null }, tBloomE: { value: null }, uVeil: { value: 0.4 }, tAdapt: { value: null }, tPrev: { value: null },
       uOver: { value: OVERSCAN }, uAspect: { value: 1.78 }, uK: { value: 0.32 }, uCA: { value: 0.035 }, uBlur: { value: new THREE.Vector2() }, uBlurAmt: { value: 1 }, uZoomBlur: { value: 0 },
       uTime: { value: 0 }, uKey: { value: 0.2 }, uFlash: { value: 0 }, uRimShift: { value: new THREE.Vector2() }, uGhost: { value: 0.12 }, uNoise: { value: 1 },
       uSat: { value: 0.62 }, uHit: { value: 0 }, uFrame: { value: 0 }, uDead: { value: 0 }, tDepth: { value: null }, uNear: { value: 0.04 }, uFar: { value: 420 }, tAO: { value: null }, uAOAmt: { value: 0.9 },
@@ -320,7 +323,7 @@ export class Post {
     this.mBright.uniforms.tScene.value = this.rtScene.texture; this.mBright.uniforms.tAdapt.value = adapt; this.mBright.uniforms.uKey.value = P.key;
     this.mBright.uniforms.uTexel.value.set(1 / this.rtScene.width, 1 / this.rtScene.height);
     this.run(this.mBright, this.rtB[0][0]);
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < this.rtB.length; i++) {
       const [A, B] = this.rtB[i];
       if (i > 0) { this.mBlur.uniforms.tIn.value = this.rtB[i - 1][0].texture; this.mBlur.uniforms.uDir.value.set(0, 0); this.run(this.mBlur, A); }
       this.mBlur.uniforms.tIn.value = A.texture; this.mBlur.uniforms.uDir.value.set(1 / A.width, 0); this.run(this.mBlur, B);
@@ -339,7 +342,7 @@ export class Post {
     const U = this.mCam.uniforms;
     U.tAO.value = this.rtAO[0].texture; U.uAOAmt.value = this.aoEnabled ? 1.0 : 0.0;
     const cur = this.rtCam[this.ping], prev = this.rtCam[1 - this.ping];
-    U.tScene.value = this.rtScene.texture; U.tBloomA.value = this.rtB[0][0].texture; U.tBloomB.value = this.rtB[1][0].texture; U.tBloomC.value = this.rtB[2][0].texture;
+    U.tScene.value = this.rtScene.texture; U.tBloomA.value = this.rtB[0][0].texture; U.tBloomB.value = this.rtB[1][0].texture; U.tBloomC.value = this.rtB[2][0].texture; U.tBloomD.value = this.rtB[3][0].texture; U.tBloomE.value = this.rtB[4][0].texture;
     U.tAdapt.value = adapt; U.tPrev.value = prev.texture; U.tDepth.value = this.rtScene.depthTexture; U.uNear.value = camera.near; U.uFar.value = camera.far;
     U.uBlur.value.copy(P.blurVec); U.uBlurAmt.value = P.blur; U.uZoomBlur.value = P.zoomBlur * P.blur;
     U.uKey.value = P.key; U.uFlash.value = P.flash; U.uRimShift.value.copy(P.rim); U.uHit.value = P.hit; U.uDead.value = P.dead;

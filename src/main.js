@@ -472,7 +472,7 @@ class Game {
     this.deadFade = !p.alive ? Math.min(1, this.deadFade + dt * 0.5) : Math.max(0, this.deadFade - dt * 2);
     P.dead = this.deadFade;
     P.q = Math.min(1, 0.12 + P.blurVec.length() * 25 + speed * 0.04);
-    P.key = 0.30;   // 노출 목표. 화면값 중앙값을 레퍼런스(81)에 맞춘다(82). 하늘을 6.0배로 밝힌 뒤(1단계 ④) 창과 문이 보이는 실내 장면의 측광이 내려가, 0.275(중앙값 77)에서는 문간 장면의 실내가 기준선보다 7~9% 어두웠다(A/B 라운드 28)
+    P.key = 0.28;   // 노출 목표. 화면값 중앙값을 레퍼런스(81) 가까이 둔다(85). 0.275(77)에서는 하늘을 6.0배로 밝힌 뒤 문간 장면의 실내가 기준선보다 어두웠고(A/B 라운드 28) 0.30으로 올렸다. 넓은 번짐(post.js uVeil)을 더한 뒤 실제 카메라처럼 글레어가 낀 화면을 측광한 만큼 0.28로 내렸다
     this.post.render(this.scene, this.camera, dt);
     this.osd.draw(this.playTime, true);
   }
