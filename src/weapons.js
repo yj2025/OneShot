@@ -76,8 +76,10 @@ export function buildMaterials() {
     polymer: bcMaterial({ map: blk, roughness: 0.6, metalness: 0.0, envMapIntensity: 0.15, specularIntensity: 0.45 }, { grime: 0, physical: true }),
     // 검게 처리한 금속(아노다이징, 파커라이징)은 무광에 가깝다. 금속성을 낮게 두고 정반사 세기도 줄인다
     steel: bcMaterial({ map: stl, roughness: 0.46, metalness: 0.25, envMapIntensity: 0.25, specularIntensity: 0.5 }, { grime: 0, physical: true }),
-    // 조준경 몸통: 무광 검정 아노다이징 알루미늄. 총의 강철보다 조금 더 검고 매끈하다
-    scopeBody: bcMaterial({ map: wearTexture('#191b1c', 17), roughness: 0.4, metalness: 0.3, envMapIntensity: 0.3, specularIntensity: 0.55 }, { grime: 0, physical: true }),
+    // 조준경 몸통: 무광 검정 아노다이징 알루미늄. 총의 강철보다 조금 더 검고, 반사는 넓고 흐리다.
+    // 거칠기 0.4에서는 원통 윗면에 총구 화염과 창이 작고 밝은 반사점으로 맺혔고, 렌즈 앞 초점 흐림이
+    // 그것을 둥근 원판으로 퍼뜨려 '빛나는 구슬'로 읽혔다(A/B 라운드 35 사격 쌍). '광택이 강하다'는 지적도 같은 원인이다
+    scopeBody: bcMaterial({ map: wearTexture('#191b1c', 17), roughness: 0.62, metalness: 0.15, envMapIntensity: 0.3, specularIntensity: 0.5 }, { grime: 0, physical: true }),
     worn: bcMaterial({ color: 0x4c4e50, roughness: 0.32, metalness: 0.65, envMapIntensity: 0.6 }, { grime: 0 }),
     tan: bcMaterial({ map: tan, roughness: 0.72, metalness: 0.0, envMapIntensity: 0.25, specularIntensity: 0.45 }, { grime: 0, physical: true }),
     glove: bcMaterial({ map: fabricTexture('#363530', 5), roughness: 0.85, envMapIntensity: 0.2, specularIntensity: 0.3 }, { grime: 0, physical: true }),
