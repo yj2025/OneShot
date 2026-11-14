@@ -203,7 +203,8 @@ void main(){
   // --- 센서: 자동 노출
   float ad = texture2D(tAdapt, vec2(0.5)).r;
   float ex = clamp(uKey / ad, 0.03, 7.0);
-  col = col * ex + bloom * 0.32 + uFlash * vec3(1.0, 0.85, 0.6) * 0.02;
+  // 총구 화염의 번쩍임은 화면 전체에 색을 더하지 않는다. 화염(HDR)과 그 빛이 번짐과 노출을 거쳐 스스로 만든다(fx.js FLASH)
+  col = col * ex + bloom * 0.32;
   // 렌즈 주변부 광량 저하
   col *= mix(1.0, 0.55, smoothstep(0.35, 1.0, r));
   // 좁은 계조: 빠르게 하얗게 날아가는 어깨, 뭉개지는 그늘

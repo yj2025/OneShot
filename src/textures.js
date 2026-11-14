@@ -445,6 +445,55 @@ const GEN = {
 
 export const TEXTURE_LIST = Object.keys(GEN);
 
+// 총구 화염: 총구 쪽에서 본 별꼴(심과 꽃잎)과 옆에서 본 불꽃. 발마다 모양이 다르게 네 벌씩 만든다.
+// 색은 온도를 따른다(심은 거의 흰 노랑, 끝은 주황과 적갈). 밝기는 재질 색(HDR 배율)이 정한다.
+// 공용 난수를 쓰지 않는다. 쓰면 뒤에 만드는 텍스처가 모두 바뀐다
+export function makeFlashTextures(seed = 1) {
+  const rng = mulberry32(seed * 131 + 17);
+  const tex = (c) => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t; };
+  const stars = [], plumes = [];
+  for (let v = 0; v < 4; v++) { stars.push(tex(flashStar(rng, 128))); plumes.push(tex(flashPlume(rng, 64, 128))); }
+  return { stars, plumes };
+}
+// 소염기 틈으로 뿜어 나온 가스가 3~5갈래로 탄다. 불꽃 덩어리를 겹쳐 그려 가장자리가 고르지 않게 한다
+function flashStar(rng, S) {
+  const c = canvas(S), x = c.getContext('2d');
+  x.translate(S / 2, S / 2);
+  x.globalCompositeOperation = 'lighter';
+  const n = 3 + Math.floor(rng() * 3), a0 = rng() * Math.PI * 2;
+  for (let i = 0; i < n; i++) {
+    const a = a0 + i * Math.PI * 2 / n + (rng() - 0.5) * 0.6, len = S * (0.26 + rng() * 0.21);
+    for (let k = 0; k < 16; k++) {
+      const t = k / 15, r = len * t, w = S * (0.075 * (1 - t) + 0.022) * (0.7 + rng() * 0.6);
+      const px = Math.cos(a) * r + (rng() - 0.5) * w * 0.7, py = Math.sin(a) * r + (rng() - 0.5) * w * 0.7;
+      const hot = 1 - t, g = x.createRadialGradient(px, py, 0, px, py, w);
+      g.addColorStop(0, `rgba(255,${Math.round(140 + 105 * hot)},${Math.round(50 + 160 * hot * hot)},${(0.34 * (1 - t * 0.75)).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(255,100,25,0)');
+      x.fillStyle = g; x.beginPath(); x.arc(px, py, w, 0, Math.PI * 2); x.fill();
+    }
+  }
+  const g = x.createRadialGradient(0, 0, 0, 0, 0, S * 0.2);
+  g.addColorStop(0, 'rgba(255,253,244,1)'); g.addColorStop(0.35, 'rgba(255,228,165,0.85)'); g.addColorStop(0.7, 'rgba(255,165,70,0.3)'); g.addColorStop(1, 'rgba(255,120,40,0)');
+  x.fillStyle = g; x.beginPath(); x.arc(0, 0, S * 0.2, 0, Math.PI * 2); x.fill();
+  return c;
+}
+// 옆에서 본 불꽃: 아래 끝이 총구다(텍스처 v=0). 총구 바로 앞이 가장 뜨겁고, 부풀었다가 끝으로 가며 식고 가늘어진다
+function flashPlume(rng, W, H) {
+  const c = canvas(W, H), x = c.getContext('2d');
+  x.globalCompositeOperation = 'lighter';
+  const bend = (rng() - 0.5) * 0.25 * W;
+  for (let k = 0; k < 30; k++) {
+    const t = k / 29;
+    const half = W * 0.42 * (0.28 + 0.72 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.15)), 0.8)) * (0.75 + rng() * 0.5);
+    const cx = W / 2 + bend * t * t + (rng() - 0.5) * half * 0.5, cy = H * (1 - t * 0.96) - 2;
+    const hot = Math.pow(1 - t, 1.3), g = x.createRadialGradient(cx, cy, 0, cx, cy, half);
+    g.addColorStop(0, `rgba(255,${Math.round(120 + 128 * hot)},${Math.round(40 + 180 * hot * hot)},${(0.3 * (1 - t * 0.8)).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(230,90,20,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(cx, cy, half, 0, Math.PI * 2); x.fill();
+  }
+  return c;
+}
+
 // 진행률을 알리며 하나씩 생성
 export async function buildTextures(seed, onProgress) {
   const out = {};

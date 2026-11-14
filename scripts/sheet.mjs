@@ -29,7 +29,8 @@ const cropped = crop.left > 0 || crop.right < 1 || crop.top > 0 || crop.bottom <
 
 // 장면이 라운드마다 달라지면 난이도가 흔들린다. 빌드 정지 화면은 전부 넣는다
 // 가까운 장면(-close-)과 조준 장면(-aim-)은 A/B에만 쓴다. 레퍼런스 비교는 칸 수와 구성을 이전 라운드와 같게 둔다
-const buildImgs = fs.readdirSync(shotsDir).filter(f => /^\d\d-.*\.png$/.test(f) && !/-close-|-aim-/.test(f)).sort().map(f => path.join(shotsDir, f));
+// 사격 장면을 더 찍은 것(-fire-)과 방벽 넘기 연속 프레임(strip-vault-)도 A/B에만 쓴다(2026-11-14)
+const buildImgs = fs.readdirSync(shotsDir).filter(f => /^\d\d-.*\.png$/.test(f) && !/-close-|-aim-|-fire-/.test(f)).sort().map(f => path.join(shotsDir, f));
 const refAll = fs.existsSync(refDir) ? fs.readdirSync(refDir).filter(f => /\.(png|jpe?g|webp)$/i.test(f)).sort() : [];
 const refImgs = refAll.filter(f => !exclude.has(f)).map(f => path.join(refDir, f));
 if (!buildImgs.length) { console.error('out/shots/에 정지 화면이 없다. 먼저 npm run shots'); process.exit(1); }
@@ -61,7 +62,7 @@ for (let s = 0; s < items.length; s += PER) {
 }
 
 // 연속 프레임 묶음: 판정자가 읽기 좋은 크기로 다시 놓는다 (이름은 중립 번호)
-const stripFiles = fs.readdirSync(shotsDir).filter(f => /^strip-.*\.png$/.test(f) && !/^strip-aim-/.test(f)).sort();
+const stripFiles = fs.readdirSync(shotsDir).filter(f => /^strip-.*\.png$/.test(f) && !/^strip-(aim|vault)-/.test(f)).sort();
 const strips = [];
 for (const f of stripFiles) {
   const b = await stripBlock(path.join(shotsDir, f), 380, 214);

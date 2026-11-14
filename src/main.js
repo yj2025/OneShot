@@ -142,9 +142,9 @@ class Game {
     const gnd = new THREE.Mesh(new THREE.CircleGeometry(250, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(0.42 * skyGain, 0.4 * skyGain, 0.36 * skyGain) })); gnd.position.y = -2; envScene.add(gnd);
     this.scene.environment = pm.fromScene(envScene, 0.02).texture;
     pm.dispose();
-    this.flashLight = new THREE.PointLight(0xffb36a, 0, 10, 1.8); this.scene.add(this.flashLight);
-    this.botFlashLight = new THREE.PointLight(0xffb36a, 0, 9, 1.8); this.scene.add(this.botFlashLight);
+    // 총구 화염의 점광원 두 개는 FX가 만든다(형광등 뒤에 놓여야 가시도 채널이 없다)
     this.fx = new FX(this.scene, this.tex, this.level, this.rng);
+    this.fx.cameraPos = this.camera.position;
     this.fx.onCasingLand = (pos, mat, b) => this.sound.play('tink_' + (mat === 'metal' ? 'metal' : (mat === 'gravel' || mat === 'water') ? 'gravel' : 'concrete'), { gain: 0.16 / (b + 1), send: 0.15 });
     this.vm = new Viewmodel(this.scene, this.rng);
     this.player = new Player(this.level, this.rng);
@@ -295,11 +295,9 @@ class Game {
       const c = b.chest; const t = c.clone().sub(start).dot(dir);
       if (t > 0) { const d = start.clone().addScaledVector(dir, t).distanceTo(c); if (d < 1.6) b.suppressed = now; }
     }
-    // 총구 화염, 탄피, 반동, 소리
-    this.fx.muzzleFlash(origin, dir, vm.current === 'rifle' ? 0.55 : 0.4);
-    this.flashLight.position.copy(origin).addScaledVector(dir, 0.15);
-    this.flashLight.intensity = 5 + r() * 5; this.flashT = 0.03;
-    this.flash = 1;
+    // 총구 화염, 탄피, 반동, 소리. 총구가 벽 너머로 나가 있으면(벽에 바짝 붙어 쏨) 화염의 빛은 벽 이쪽에 둔다
+    const lightPos = block ? chest.clone().addScaledVector(toM, Math.max(0, block.dist - 0.08)) : null;
+    this.fx.muzzleFlash(origin, dir, vm.current === 'rifle' ? 'rifle' : 'pistol', 'player', lightPos);
     vm.ejectCasing(this.fx, p.vel);
     p.shotKick(this.settings.shake * (vm.current === 'rifle' ? 1 : 0.8));
     // 총이 위로 튀며 조준이 조금 올라간다
@@ -339,10 +337,10 @@ class Game {
       const dl = hitL.point.distanceTo(p.pos);
       if (dl < 25) this.sound.play('impact_' + ({ metal: 'metal', wood: 'wood', gravel: 'gravel' }[hitL.mat] || 'concrete'), { pos: hitL.point, listener: this.listener(), gain: 0.5, zone: this.level.zoneAt(hitL.point.x, hitL.point.z) });
     }
-    this.fx.muzzleFlash(m, dir, 0.9);
-    this.botFlashLight.position.copy(m); this.botFlashLight.intensity = 30; this.botFlashT = 0.035;
     const L = this.listener();
     const occ = !this.level.lineClear(V(p.pos.x, p.pos.y + 1.4, p.pos.z), m);
+    // 봇의 총구가 플레이어에게서 가려져 있으면 빛도 작게 둔다(그림자가 없어 벽 너머 바닥까지 비추지 않게)
+    this.fx.muzzleFlash(m, dir, 'rifle', 'bot', null, occ ? 0.15 : 1);
     const d = this.sound.play('rifle', { pos: m, listener: L, gain: 2.2, zone: this.level.zoneAt(m.x, m.z), occluded: occ, send: 0.6 });
     if (d !== undefined && d < 6) this.sound.duck(0.35, 1.0);
     for (const b of this.bots) if (b !== bot) b.hear(m, 30, this.time);
@@ -392,10 +390,11 @@ class Game {
     let wallDist = wh ? wh.dist : 2;
     for (const b of this.bots) if (b.alive) { const h = b.hitTest(ct.pos, aimDir, 1.0); if (h) wallDist = Math.min(wallDist, h.dist + 0.2); }
     vm.update(dt, this.time, {
-      anchor: ct.pos, aimQuat: aq, ads: inp.rmb && p.alive, sprint: p.sprinting ? 1 : 0, wallDist,
+      // 파쿠르 중에는 두 손으로 짚으니 총을 화면 아래로 내린다(stow). 조준과 사격은 막는다
+      anchor: ct.pos, aimQuat: aq, ads: inp.rmb && p.alive && !p.pk, sprint: p.sprinting ? 1 : 0, wallDist, stow: !!p.pk,
       camYawVel: p.yawVel, camPitchVel: p.pitchVel, vy: p.vel.y, exertion: p.exertion, moving: p.moving, stepPhase: p.stepPhaseFrac || 0, roll: ct.roll, level: this.level,
     });
-    if (p.alive && vm.tryFire(dt, true)) this.playerShot();
+    if (p.alive && vm.tryFire(dt, !p.pk)) this.playerShot();
     if (inp.pressed('KeyR') && vm.ammo === 0 && !vm.reload) vm.startReload();
     // 봇
     for (const b of this.bots) b.update(dt, this.time);
@@ -428,6 +427,13 @@ class Game {
         // 디딤발이 바닥을 차는 소리와 장비가 출렁이는 소리
         this.sound.play('step_' + e.mat, { gain: 0.32, send: 0.2, rate: 1.1 }); this.sound.play('rustle', { gain: 0.3, delay: 0.04 });
         for (const b of this.bots) b.hear(p.pos, 5, this.time);
+      }
+      else if (e.type === 'vault') {
+        // 손바닥과 무릎이 장애물을 짚는 소리와 장비가 부딪는 소리. 봇이 듣는다
+        const m = e.mat === 'metal' || e.mat === 'fence' ? 'metal' : e.mat === 'gravel' ? 'gravel' : 'concrete';
+        this.sound.play('step_' + m, { gain: e.phase === 'hands' ? 0.36 : 0.24, send: 0.2, rate: 1.2 + this.rng() * 0.15 });
+        this.sound.play('rustle', { gain: 0.3, send: 0.1, delay: 0.03 });
+        for (const b of this.bots) b.hear(p.pos, 6, this.time);
       }
       else if (e.type === 'death') { this.sound.play('bodyFall', { gain: 0.9, send: 0.3, delay: 0.5 }); }
     }
@@ -462,8 +468,6 @@ class Game {
       this.camera.position.copy(ct.pos); this.camera.quaternion.copy(ct.quat);
       for (const b of this.bots) b.render();
     }
-    this.flashT = (this.flashT || 0) - dt; if (this.flashT <= 0) this.flashLight.intensity = 0;
-    this.botFlashT = (this.botFlashT || 0) - dt; if (this.botFlashT <= 0) this.botFlashLight.intensity = 0;
     this.sky.position.copy(this.camera.position);
     this.sky.material.uniforms.uTime.value = this.time;
     // 후처리 매개변수
@@ -476,7 +480,7 @@ class Game {
     if (P.blurVec.length() > 0.05) P.blurVec.setLength(0.05);
     P.zoomBlur = Math.min(0.012, speed * 0.0018) * shutter;
     P.blur = S.blur;
-    P.flash = this.flash; this.flash = Math.max(0, this.flash - dt * 30);
+    P.flash = 0;
     this.hitFx = Math.max(0, this.hitFx - dt * 2.5); P.hit = this.hitFx;
     P.rim.set(Math.sin(p.camShake.x.y * 0.02) * 0.02 * S.shake, -p.camShake.x.x * 0.0004 * S.shake);
     this.deadFade = !p.alive ? Math.min(1, this.deadFade + dt * 0.5) : Math.max(0, this.deadFade - dt * 2);
@@ -554,7 +558,7 @@ class Game {
         return {
           phase: g.phase, kills: g.bots.filter(b => !b.alive).length,
           player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.bodyYaw, pitch: p.camPitch, gunYaw: Math.atan2(-d.x, -d.z), gunPitch: Math.asin(Math.max(-1, Math.min(1, d.y))), hp: p.hp, alive: p.alive, weapon: vm.current, ammo: vm.ammo, reloading: !!vm.reload, crouch: p.crouch,
-            speed: Math.hypot(p.vel.x, p.vel.z), vy: p.vel.y, onGround: p.onGround, sprinting: p.sprinting, ads: vm.ads },
+            speed: Math.hypot(p.vel.x, p.vel.z), vy: p.vel.y, onGround: p.onGround, sprinting: p.sprinting, ads: vm.ads, parkour: p.pk ? p.pk.plan.kind : null },
           bots: g.bots.map(b => ({ x: b.pos.x, y: b.pos.y, z: b.pos.z, alive: b.alive, state: b.state })),
           stats: { ...g.stats }, radPerPixel: 0.0021 * g.settings.sens * (1 - vm.ads * 0.35),
           renderer: (() => { const gl = g.renderer.getContext(); const ext = gl.getExtension('WEBGL_debug_renderer_info'); return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ''; })(),
@@ -599,6 +603,9 @@ class Game {
       // 조준경 상태: 상을 그리는지, 그린 횟수, 카메라와 사출동공의 어긋남(m)
       scope() { const s = g.scope; return { on: s.on, frames: s.frames, pupilOffset: s.pupilOffset, axialOffset: s.axialOffset, size: s.size, calls: s.calls, tris: s.tris, cpu: s.cpu, ads: g.vm.ads, weapon: g.vm.current }; },
       scopeSkip(b) { g.scope.skip = !!b; },
+      // 충돌 상자 목록과 플레이어 옮기기(검사와 살펴보기용)
+      boxes() { return g.level.boxes.map(b => ({ min: b.min, max: b.max, mat: b.mat, thin: !!b.thin, cover: !!b.cover })); },
+      place(x, z, yaw, pitch = 0) { g.player.spawn(x, z, yaw, pitch); g.player.crouchToggle = false; return { x: g.player.pos.x, y: g.player.pos.y, z: g.player.pos.z }; },
       scopeDiag() {
         const names = new Map([[g.level.group, 'level'], [g.vm.root, 'viewmodel'], [g.sky, 'sky']]);
         g.bots.forEach((b, i) => { for (const k of ['grp', 'group', 'root', 'mesh']) if (b[k] && b[k].isObject3D) names.set(b[k], 'bot' + i); });
@@ -644,6 +651,8 @@ const VIEWS = [
   { pos: [1.5, -2.5], yaw: 1.07, pitch: -0.75 },
   { pos: [-10, -5.9], yaw: -1.07, pitch: 0 },
   { pos: [6.8, -7.6], yaw: 0.3, pitch: -0.1, weapon: 'pistol' },
+  // 13: 마당의 콘크리트 방벽(높이 0.8 m) 1 m 앞. 파쿠르(Space 두 번) 연속 프레임용(2026-11-14)
+  { pos: [9.0, 10.6], yaw: 0.0, pitch: -0.08 },
 ];
 
 const game = new Game();

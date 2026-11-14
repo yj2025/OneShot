@@ -502,6 +502,7 @@ export class Level {
     this.box('cardboard', [-11.65, FL + 0.45, -0.95], [-11.15, FL + 0.8, -0.5], { tile: 0.6, mat: 'cardboard' });
     this.box('drumRed', [-3.25, FL + 0.5, -1.0], [-3.1, FL + 1.0, -0.85], { collide: false });
     this.box('plywood', [-11.84, FL + 1.1, -4.3], [-11.82, FL + 2.0, -3.0], { collide: false, tile: 2 });
+    this.collider([-11.86, FL + 0.9, -4.3], [-11.8, FL + 2.1, -3.0], 'wood');   // 합판으로 막은 창은 지나갈 수 없다(파쿠르, 2026-11-14)
     // 사무실: 책상 두 개, 캐비닛, 종이
     this.desk(-1.4, -1.6, 0); this.desk(2.4, -3.2, Math.PI / 2 + 0.1);
     this.box('metalGalv', [3.3, FL, -4.85], [3.85, FL + 1.32, -4.25], { tile: 1, mat: 'metal', cover: true });
@@ -764,6 +765,9 @@ export class Level {
     for (let i = 0; i < 6; i++) this.cyl('metalDark', [-5.2 + i * 0.24, FL + 1.5, 0.05], 0.009, 1.2, { collide: false, seg: 5 });
     this.box('metalDark', [-5.35, FL + 0.95, 0.03], [-3.85, FL + 0.98, 0.07], { collide: false });
     this.box('metalDark', [-5.35, FL + 2.02, 0.03], [-3.85, FL + 2.05, 0.07], { collide: false });
+    // 막힌 창(합판, 방범창)은 몸이 지나갈 수 없다. 창살은 철망처럼 얇은 상자라 탄은 대부분 사이로 지나간다(파쿠르를 넣으며 더했다, 2026-11-14)
+    this.collider([-11.25, FL + 0.9, 0.0], [-9.75, FL + 2.1, 0.03], 'wood');
+    this.boxes.push({ min: [-5.35, FL + 0.9, 0.02], max: [-3.85, FL + 2.1, 0.08], mat: 'fence', thin: true });
     { const g = new THREE.PlaneGeometry(1.3, 1.0, 6, 4); const p = g.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin(p.getX(i) * 7 + p.getY(i) * 3) * 0.04); g.translate(2.2, FL + 1.45, 0.04); const m = new THREE.Mesh(g, this.mats.sheet); this.group.add(m); }
     // 서쪽 옆 차양(골판 지붕이 기울어진 헛간)
     this.obox('roofMetal', [-14.0, 2.55, -10.5], [4.2, 0.05, 6.4], 0, { collide: false, tile: 2.4, rotZ: 0.18 });

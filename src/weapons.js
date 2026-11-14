@@ -235,7 +235,7 @@ export class Viewmodel {
     this.swaySpring = new Spring(48, 8.5);
     this.vSpring = new Spring(70, 9);     // 점프와 착지의 위아래 관성
     this.holdPhase = 0;   // 떠도는 자세의 위상. 생명마다 다르다(Game.reset이 정한다)
-    this.ads = 0; this.sprint = 0; this.lower = 0; this.switchT = 0; this.switchTo = null;
+    this.ads = 0; this.sprint = 0; this.lower = 0; this.stow = 0; this.switchT = 0; this.switchTo = null;
     this.reload = null; this.cool = 0; this.triggerHeld = false; this.triggerWas = false;
     this.fatigue = 0; this.stress = 0;
     this.muzzleWorld = V(0, 0, 0); this.dirWorld = V(0, 0, -1);
@@ -282,7 +282,7 @@ export class Viewmodel {
     const st = this.state[this.current];
     const pressed = this.triggerHeld && (!this.triggerWas || this.def.auto);
     this.triggerWas = this.triggerHeld;
-    if (!pressed || !canFire || this.reload || this.switchTo || this.cool > 0 || this.sprint > 0.4) return false;
+    if (!pressed || !canFire || this.reload || this.switchTo || this.cool > 0 || this.sprint > 0.4 || this.stow > 0.3) return false;
     if (st.ammo <= 0) { if (!this.triggerWasDry) this.events.push({ type: 'dry' }); this.triggerWasDry = true; this.cool = 0.25; return false; }
     this.triggerWasDry = false;
     st.ammo--;
@@ -302,6 +302,8 @@ export class Viewmodel {
     this.sprint += ((p.sprint > 0.5 ? 1 : 0) - this.sprint) * (1 - Math.exp(-dt * 7));
     this.lower += ((p.wallDist < 0.8 ? 1 - Math.max(0, p.wallDist - 0.25) / 0.55 : 0) - this.lower) * (1 - Math.exp(-dt * 9));
     this.stress = Math.max(0, this.stress - dt * 0.08);
+    // 파쿠르: 두 손으로 짚어야 하니 총을 무기 교체 때처럼 화면 아래로 내렸다가 끝나면 다시 든다
+    this.stow += ((p.stow ? 1 : 0) - this.stow) * (1 - Math.exp(-dt * 10));
 
     // 무기 교체: 내리고(0.25 s) 바꾸고 올림
     let switchDrop = 0;
@@ -364,14 +366,15 @@ export class Viewmodel {
 
     const rt = this.recoilT.step(dt), rr = this.recoilR.step(dt);
     const base = def.hip.clone().lerp(def.ads, this.ads).lerp(def.sprint, this.sprint);
-    const pos = base.add(V(sway.x + bx + sx + dX, sway.y + by + sy + dY - rl.drop - this.lower * 0.06 - switchDrop * 0.25, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
+    const drop = Math.max(switchDrop, this.stow);
+    const pos = base.add(V(sway.x + bx + sx + dX, sway.y + by + sy + dY - rl.drop - this.lower * 0.06 - drop * 0.25, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
     pos.x += rt.x * 0.02; pos.y += rt.y * 0.02;
 
     // 총 회전(총 기준): 반동, 달리기 자세, 벽 앞에서 내림, 재장전 기울임
     // 걸음마다 총끝이 흔들린다: 몸은 가슴 카메라와 함께 움직이지만 두 팔에 든 총은 한 박자 늦게 끄덕이고 좌우로 돈다(조준할수록 줄어든다)
     const walkK = p.moving * (1 - this.ads * 0.7) * (1 + this.sprint * 0.6);
     const wPitch = Math.sin(p.stepPhase * Math.PI * 2 + 0.9) * 0.03 * walkK, wYaw = Math.sin(p.stepPhase * Math.PI + 0.5) * 0.035 * walkK;
-    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - switchDrop * 0.9 + rl.pitch + sway.y * 1.5 + dPitch + wPitch;
+    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - drop * 0.9 + rl.pitch + sway.y * 1.5 + dPitch + wPitch;
     const rotY = rr.y * 0.035 + this.sprint * 0.55 + sway.x * -2.0 + wYaw;
     // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다
     const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt + p.roll * 0.4 + (def.cant || 0) * (1 - this.ads) + dRoll;

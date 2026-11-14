@@ -118,6 +118,29 @@ for (const [name, v] of [['16-aim-hall', 3], ['17-aim-yard', 0]]) {
   await mouse.up('right');
   await page.close();
 }
+// 사격 순간을 밝기가 다른 세 곳에서 더 찍는다: 어두운 복도, 흐린 마당, 권총(가까운 실내). 첫 발이 나간 바로 그 프레임이다.
+// 총구 화염의 빛을 고칠 때 더했다(2026-11-14). A/B에만 쓴다(npm run sheet의 레퍼런스 비교에는 넣지 않는다)
+for (const [name, v] of [['18-fire-corridor', 2], ['19-fire-yard', 0], ['20-fire-pistol', 12]]) {
+  const { page } = await open(v);
+  const mouse = makeMouse(page, W, H); await mouse.center();
+  await step(page, 1);
+  await mouse.down('left');
+  await step(page, 1);
+  await shot(page, name);
+  await mouse.up('left');
+  await page.close();
+}
+// 마당 방벽 앞으로 걸어가며 Space를 두 번 누른다(파쿠르). A/B에만 쓴다
+{
+  const { page } = await open(13);
+  await page.keyboard.down('KeyW');
+  await strip(page, 'vault-barrier', async (f) => {
+    if (f === 6 || f === 15) await page.keyboard.down('Space');
+    if (f === 9 || f === 18) await page.keyboard.up('Space');
+  });
+  await page.keyboard.up('KeyW');
+  await page.close();
+}
 // 걷기, 달리며 회전
 {
   const { page } = await open(2);
