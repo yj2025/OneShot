@@ -10,6 +10,9 @@ import { mulberry32 } from './rng.js';
 import { bcMaterial } from './materials.js';
 
 // ---------------- 텍스처 ----------------
+// 색은 실측 반사율에서 정한다(선형): 자작나무 껍질 0.45, 어두운 껍질 0.15, 잔가지 0.13, 마른 잎 0.25, 노란 잎 0.35, 침엽 0.08, 땅의 낙엽 0.15~0.25.
+// 처음에는 잔가지를 0.03, 껍질을 0.07로 칠했다. 마당 조도가 실내의 약 12배인데도 나무가 실내 벽보다 어두워져서, 실내에서 본 문밖 나무가 날아가지 않고
+// 검은 덩어리로 또렷이 남았다(A/B 라운드 20에서 '계조가 지나치게 넓다'로 졌다).
 // 껍질: 왼쪽 반은 자작나무(희고 가로 껍질눈, 밑동은 검게 갈라짐), 오른쪽 반은 어두운 활엽수·침엽수 껍질(세로 골)
 function barkTexture(rng) {
   const W = 256, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H;
@@ -20,9 +23,9 @@ function barkTexture(rng) {
   for (let i = 0; i < 400; i++) { const x = rng() * W / 2, y = rng() * H; g.fillStyle = `rgba(${150 + rng() * 60},${145 + rng() * 55},${130 + rng() * 50},0.35)`; g.fillRect(x, y, 2 + rng() * 10, 4 + rng() * 20); }
   for (let i = 0; i < 18; i++) { const x = rng() * W / 2, y = rng() * H; g.fillStyle = 'rgba(30,28,25,0.75)'; g.beginPath(); g.ellipse(x, y, 4 + rng() * 9, 3 + rng() * 6, 0, 0, Math.PI * 2); g.fill(); }
   // 어두운 껍질
-  g.fillStyle = '#4b4640'; g.fillRect(W / 2, 0, W / 2, H);
-  for (let i = 0; i < 70; i++) { let x = W / 2 + rng() * W / 2, y = 0; g.strokeStyle = `rgba(${18 + rng() * 15},${16 + rng() * 12},${14 + rng() * 10},${0.5 + rng() * 0.4})`; g.lineWidth = 1 + rng() * 3; g.beginPath(); g.moveTo(x, y); while (y < H) { y += 10 + rng() * 30; x += (rng() - 0.5) * 6; g.lineTo(x, y); } g.stroke(); }
-  for (let i = 0; i < 600; i++) { const x = W / 2 + rng() * W / 2, y = rng() * H; g.fillStyle = `rgba(${90 + rng() * 50},${85 + rng() * 45},${75 + rng() * 40},0.25)`; g.fillRect(x, y, 1 + rng() * 4, 3 + rng() * 12); }
+  g.fillStyle = '#6e675e'; g.fillRect(W / 2, 0, W / 2, H);
+  for (let i = 0; i < 70; i++) { let x = W / 2 + rng() * W / 2, y = 0; g.strokeStyle = `rgba(${52 + rng() * 15},${48 + rng() * 12},${42 + rng() * 10},${0.5 + rng() * 0.4})`; g.lineWidth = 1 + rng() * 3; g.beginPath(); g.moveTo(x, y); while (y < H) { y += 10 + rng() * 30; x += (rng() - 0.5) * 6; g.lineTo(x, y); } g.stroke(); }
+  for (let i = 0; i < 600; i++) { const x = W / 2 + rng() * W / 2, y = rng() * H; g.fillStyle = `rgba(${130 + rng() * 40},${124 + rng() * 36},${112 + rng() * 32},0.25)`; g.fillRect(x, y, 1 + rng() * 4, 3 + rng() * 12); }
   // 이끼 기운(아래쪽에서 옅게): 실제 줄기의 그늘진 쪽은 푸르스름하다
   return c;
 }
@@ -40,7 +43,7 @@ function twigTexture(rng) {
     for (let i = 1; i <= n; i++) {
       a += (rng() - 0.5) * 0.35;
       const nx = px + Math.sin(a) * len / n, ny = py - Math.cos(a) * len / n;
-      g.strokeStyle = kind === 3 ? '#2b2a22' : `rgb(${46 + rng() * 14},${42 + rng() * 12},${38 + rng() * 10})`;
+      g.strokeStyle = kind === 3 ? '#5a5548' : `rgb(${92 + rng() * 18},${86 + rng() * 15},${77 + rng() * 12})`;
       g.lineWidth = Math.max(0.7, w * (1 - i / (n + 1) * 0.6));
       g.beginPath(); g.moveTo(ox + px, oy + py); g.lineTo(ox + nx, oy + ny); g.stroke();
       pts.push([nx, ny, a]); px = nx; py = ny;
@@ -51,7 +54,7 @@ function twigTexture(rng) {
         const t = rng(), bx = nx - Math.sin(aa) * len / n * t, by = ny + Math.cos(aa) * len / n * t;
         for (const sd of [-1, 1]) {
           const na = aa + sd * (0.9 + rng() * 0.5), nl = 10 + rng() * 12 * (w / 3 + 0.4);
-          g.strokeStyle = `rgb(${28 + rng() * 18},${42 + rng() * 22},${30 + rng() * 14})`; g.lineWidth = 1.2 + rng();
+          g.strokeStyle = `rgb(${60 + rng() * 20},${78 + rng() * 22},${58 + rng() * 16})`; g.lineWidth = 1.2 + rng();
           g.beginPath(); g.moveTo(ox + bx, oy + by); g.lineTo(ox + bx + Math.sin(na) * nl, oy + by - Math.cos(na) * nl); g.stroke();
         }
       }
@@ -60,7 +63,7 @@ function twigTexture(rng) {
       const n2 = 1 + Math.floor(rng() * 2);
       for (let k = 0; k < n2; k++) {
         const lx = nx + (rng() - 0.5) * 14, ly = ny + (rng() - 0.5) * 14, r = kind === 1 ? 5 + rng() * 5 : 7 + rng() * 7;
-        g.fillStyle = kind === 1 ? `rgb(${170 + rng() * 50},${140 + rng() * 45},${40 + rng() * 40})` : `rgb(${105 + rng() * 45},${70 + rng() * 30},${38 + rng() * 22})`;
+        g.fillStyle = kind === 1 ? `rgb(${178 + rng() * 40},${150 + rng() * 38},${62 + rng() * 34})` : `rgb(${132 + rng() * 38},${98 + rng() * 26},${58 + rng() * 22})`;
         g.beginPath(); g.ellipse(ox + lx, oy + ly, r, r * (0.55 + rng() * 0.2), rng() * Math.PI, 0, Math.PI * 2); g.fill();
       }
     }
@@ -94,7 +97,7 @@ function litterTexture(rng) {
     const x = ox + S * (m + (1 - 2 * m) * rng()), y = S * (m + (1 - 2 * m) * rng());
     const r = 7 + rng() * 11, t = rng();
     // 땅에 떨어진 지 오래된 잎은 갈색과 회갈색이고, 젖은 잎은 검다. 노란 잎은 갓 떨어진 몇 장뿐이다
-    g.fillStyle = t < 0.38 ? `rgb(${92 + rng() * 34},${70 + rng() * 22},${48 + rng() * 16})` : t < 0.5 ? `rgb(${140 + rng() * 35},${118 + rng() * 28},${70 + rng() * 25})` : t < 0.78 ? `rgb(${54 + rng() * 20},${46 + rng() * 14},${38 + rng() * 10})` : `rgb(${118 + rng() * 28},${108 + rng() * 22},${92 + rng() * 18})`;
+    g.fillStyle = t < 0.38 ? `rgb(${112 + rng() * 34},${88 + rng() * 22},${62 + rng() * 16})` : t < 0.5 ? `rgb(${150 + rng() * 35},${126 + rng() * 28},${78 + rng() * 25})` : t < 0.72 ? `rgb(${70 + rng() * 20},${60 + rng() * 14},${50 + rng() * 10})` : `rgb(${128 + rng() * 28},${118 + rng() * 22},${100 + rng() * 18})`;
     g.save(); g.translate(x, y); g.rotate(rng() * Math.PI);
     g.beginPath(); g.ellipse(0, 0, r, r * (0.45 + rng() * 0.25), 0, 0, Math.PI * 2); g.fill();
     g.strokeStyle = 'rgba(40,30,20,0.5)'; g.lineWidth = 1; g.beginPath(); g.moveTo(-r, 0); g.lineTo(r * 1.2, 0); g.stroke();
@@ -121,7 +124,9 @@ const SWAY = `
   transformed.y += fl * aSway * aSway * 0.015;
 }
 `;
-// 알파 시험: 밉맵이 내려갈수록 알파 평균이 낮아져 먼 나무의 잔가지가 사라진다. 밉 단계만큼 알파를 키워 덮는 면적을 지킨다
+// 알파 시험(바닥의 낙엽 판): 밉맵이 내려갈수록 알파 평균이 낮아져 먼 판이 사라진다. 밉 단계만큼 알파를 키워 덮는 면적을 지킨다.
+// 잔가지 카드에는 쓰지 않는다. 잔가지는 실제로 화소보다 가늘어서 멀리서는 하늘과 섞여 옅은 그물로 보여야 한다. 키워서 불투명하게 그리면
+// 먼 수관이 검은 덩어리가 되고, 실내에서 본 문밖이 날아가지 않았다(A/B 라운드 20). 그래서 잔가지 카드는 밉맵의 알파 그대로 반투명하게 섞는다
 const ALPHA_MIP = `
 #ifdef USE_ALPHATEST
 {
@@ -133,7 +138,7 @@ const ALPHA_MIP = `
 }
 #endif
 `;
-function treeMaterial(params, opt, key, cards) {
+function treeMaterial(params, opt, key, cards, boost) {
   const m = bcMaterial({ vertexColors: true, roughness: 1, ...params }, opt);
   const base = m.onBeforeCompile;
   m.onBeforeCompile = (sh) => {
@@ -141,7 +146,7 @@ function treeMaterial(params, opt, key, cards) {
     Object.assign(sh.uniforms, swayU);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSway;\nuniform float uTreeT;').replace('#include <begin_vertex>', SWAY);
     if (cards) {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', ALPHA_MIP);
+      if (boost) sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', ALPHA_MIP);
       // 양면 카드: 뒷면에서 법선을 뒤집지 않는다(법선은 수관 바깥쪽이다)
       const nb = THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', '');
       if (nb === THREE.ShaderChunk.normal_fragment_begin) console.warn('잔가지 카드: 법선 뒤집기를 찾지 못했다');
@@ -306,7 +311,7 @@ export class TreeTool {
     const ctx = { scale: Math.max(0.6, Math.min(1.3, scale)), ao: (p) => {
       const dx = (p.x - x) / cr, dy = (p.y - cy) / cry, dz = (p.z - z) / cr, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
       const inner = Math.max(0, 1 - d), below = Math.max(0, Math.min(1, -dy));
-      return 1 - inner * (sp.conifer ? 0.55 : 0.35) - below * 0.18;
+      return 1 - inner * (sp.conifer ? 0.4 : 0.25) - below * 0.12;
     } };
     const leaders = Array.isArray(sp.leaders) ? sp.leaders[0] + Math.floor(r() * (sp.leaders[1] - sp.leaders[0] + 1)) : sp.leaders;
     const lean = V((r() - 0.5) * sp.lean * 2, 1, (r() - 0.5) * sp.lean * 2).normalize();
@@ -359,8 +364,9 @@ export class TreeTool {
     const bt = canvasTex(barkTexture(r), true), tt = canvasTex(twigTexture(r)), lt = canvasTex(litterTexture(r));
     bt.wrapS = THREE.ClampToEdgeWrapping;
     const mBark = treeMaterial({ map: bt, color: 0xffffff }, { grime: 0.3, ao: 1 }, 'B', false);
-    const mCard = treeMaterial({ map: tt, alphaTest: 0.5, side: THREE.DoubleSide, color: 0xffffff }, { grime: 0, ao: 1 }, 'C', true);
-    const mLit = treeMaterial({ map: lt, alphaTest: 0.45, color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }, { grime: 0.2, ao: 1 }, 'L', true);
+    // 잔가지 카드는 반투명으로 섞는다(깊이를 쓰지 않는다). 수관 하나 안의 카드끼리는 색이 비슷해 그리는 순서가 드러나지 않는다
+    const mCard = treeMaterial({ map: tt, alphaTest: 0.02, transparent: true, depthWrite: false, side: THREE.DoubleSide, color: 0xffffff }, { grime: 0, ao: 1 }, 'C', true, false);
+    const mLit = treeMaterial({ map: lt, alphaTest: 0.45, color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }, { grime: 0.2, ao: 1 }, 'L', true, true);
     const out = [];
     for (const [B, m] of [[this.bark, mBark], [this.cards, mCard], [this.litter, mLit]]) {
       if (!B.count) continue;

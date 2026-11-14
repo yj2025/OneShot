@@ -332,6 +332,7 @@ export class Level {
   extWallZ(zOut, dir, x0, x1, y1, ops) {
     // dir: 바깥쪽이 +z면 +1
     const t = 0.15;
+    (this.extOps ||= []).push(...ops.map(o => ({ ax: 'z', at: zOut, dir, c: o.c, w: o.w, b: o.b })));   // 바깥에서 잎이 들어오는 자리
     const zo0 = dir > 0 ? zOut - t : zOut, zo1 = dir > 0 ? zOut : zOut + t;
     const zi0 = dir > 0 ? zOut - 2 * t : zOut + t, zi1 = dir > 0 ? zOut - t : zOut + 2 * t;
     this.wallZ(zo0, zo1, x0, x1, 0, y1, ops, 'block');
@@ -339,6 +340,7 @@ export class Level {
   }
   extWallX(xOut, dir, z0, z1, y1, ops, yIn1) {
     const t = 0.15;
+    (this.extOps ||= []).push(...ops.map(o => ({ ax: 'x', at: xOut, dir, c: o.c, w: o.w, b: o.b })));
     const xo0 = dir > 0 ? xOut - t : xOut, xo1 = dir > 0 ? xOut : xOut + t;
     const xi0 = dir > 0 ? xOut - 2 * t : xOut + t, xi1 = dir > 0 ? xOut - t : xOut + 2 * t;
     this.wallX(xo0, xo1, z0, z1, 0, y1, ops, 'block');
@@ -839,6 +841,19 @@ export class Level {
       const y = inYard ? this.groundHeight(px, pz, 0, 0, 0.1) : -0.05;
       const dense = r() < (p - 0.2) * 1.6;
       T.leafPatch(px, y, pz, (dense ? 0.6 + r() * 0.5 : 0.45 + r() * 0.35) + wf * 0.25, r() < 0.3, dense);
+    }
+    // 건물 안: 열린 문과 깨진 창으로 바람에 실려 들어온 잎. 문턱 안쪽으로 부채꼴로 퍼지고, 창 밑에는 좁게 떨어진다
+    for (const o of this.extOps || []) {
+      const door = o.b < FL + 0.1, reach = door ? 3.2 : 1.3, n = Math.round((door ? 22 : 7) * o.w * (this.quality === 'low' ? 0.5 : 1));
+      for (let i = 0; i < n; i++) {
+        const d = 0.3 + Math.pow(r(), 1.6) * reach, lat = (r() - 0.5) * (o.w + d * (door ? 0.9 : 0.4)), inw = -o.dir;
+        const px = o.ax === 'z' ? o.c + lat : o.at + inw * d, pz = o.ax === 'z' ? o.at + inw * d : o.c + lat;
+        if (!this.insideBuilding(px, pz)) continue;
+        const y = this.groundHeight(px, pz, FL, 0, 0.1);
+        if (Math.abs(y - FL) > 0.05) continue;
+        const dense = r() < (1 - d / reach) * 0.45;
+        T.leafPatch(px, y, pz, dense ? 0.4 + r() * 0.3 : 0.28 + r() * 0.3, r() < 0.4, dense);
+      }
     }
   }
 
