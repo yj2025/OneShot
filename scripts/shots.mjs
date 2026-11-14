@@ -141,6 +141,34 @@ for (const [name, v] of [['18-fire-corridor', 2], ['19-fire-yard', 0], ['20-fire
   await page.keyboard.up('KeyW');
   await page.close();
 }
+// 사용자 지시 세션 3(2026-11-15)에 더한 장면. 모두 A/B에만 쓴다(npm run sheet의 레퍼런스 비교에는 넣지 않는다)
+// 실내의 금속 통(높이 0.9 m) 0.9 m 앞에 서서 Space를 두 번 누른다. 서 있다가 넘을 때 튕겨 나가던 장면이다
+{
+  const g = await openGame(L.context, 'test=1&clock=manual&seed=11&vp=1.92,-15.4,-1.5708,-0.12');
+  await clickStart(g.page); await step(g.page, 156);
+  const page = g.page;
+  await strip(page, 'vault-barrel', async (f) => {
+    if (f === 4 || f === 13) await page.keyboard.down('Space');
+    if (f === 7 || f === 16) await page.keyboard.up('Space');
+  });
+  await page.close();
+}
+// 제자리에서 마우스로 오른쪽, 왼쪽으로 돌았다가 멈춘다(총이 먼저 가고 몸이 따라오는 움직임). 이어서 D, A로 옆걸음
+{
+  const { page } = await open(4);
+  const mouse = makeMouse(page, W, H); await mouse.center();
+  await strip(page, 'turn-sway', async (f) => { if (f < 20) await mouse.move(12, 0); else if (f < 40) await mouse.move(-12, 0); });
+  await page.close();
+}
+{
+  const { page } = await open(0);
+  await strip(page, 'strafe', async (f) => {
+    if (f === 0) await page.keyboard.down('KeyD');
+    if (f === 30) { await page.keyboard.up('KeyD'); await page.keyboard.down('KeyA'); }
+  });
+  await page.keyboard.up('KeyA');
+  await page.close();
+}
 // 걷기, 달리며 회전
 {
   const { page } = await open(2);

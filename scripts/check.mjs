@@ -51,24 +51,29 @@ async function main() {
     const tap = await jumpPeak(3), hold = await jumpPeak(24);
     rec('누른 시간에 따른 점프 높이 (50 ms ↔ 400 ms)', tap <= hold * 0.65 && hold > 0.4, `50 ms ${tap.toFixed(2)} m, 400 ms ${hold.toFixed(2)} m (${(tap / Math.max(hold, 1e-3) * 100).toFixed(0)}%)`);
     // W를 누른 채 다가가며 Space를 taps번 누른다(누름 3프레임, 간격 8프레임). holdLong이면 한 번을 30프레임 동안 누른다
+    //  after: 파쿠르가 끝나고 2프레임 뒤(내려선 자리)의 상태. W를 계속 누르고 있으니 끝난 자리에서 더 걸어간다(방벽 뒤 1.2 m에 0.35 m 높이 천 더미가 있다).
+    //  넘은 자리를 보려면 이 순간을 본다(2026-11-15: 넘기가 느려져 2.5초 뒤의 자리가 천 더미 위가 되자 (a)가 실패했다. 걸어서 턱에 오른 것은 정상)
     const run = async (x, z, taps, holdLong = false) => {
       await place(x, z, 0); await step(30);
       await P.keyboard.down('KeyW');
+      let was = false, endF = -1, after = null;
       for (let f = 0; f < 150; f++) {
         if (f === 4) await P.keyboard.down('Space');
         if (f === (holdLong ? 34 : 7)) await P.keyboard.up('Space');
         if (taps >= 2 && f === 12) await P.keyboard.down('Space');
         if (taps >= 2 && f === 15) await P.keyboard.up('Space');
         await step(1);
+        if (endF < 0 || f === endF + 2) { const s = await st(); if (was && !s.parkour && endF < 0) endF = f; if (s.parkour) was = true; if (f === endF + 2) after = { ...s, hit: overlaps(s) }; }
       }
       await P.keyboard.up('KeyW');
       await step(40);
       const p = await st();
-      return { ...p, hit: overlaps(p) };
+      return { ...p, hit: overlaps(p), after };
     };
     const fmt = (p) => `x ${p.x.toFixed(2)}, y ${p.y.toFixed(2)}, z ${p.z.toFixed(2)}, 겹친 상자 ${p.hit}`;
     const a = await run(9.0, 10.5, 2);
-    rec('파쿠르 (a) 0.8 m 방벽 넘기', a.z < 8.2 && Math.abs(a.y) < 0.06 && a.hit === 0, fmt(a));
+    const aa = a.after || a;
+    rec('파쿠르 (a) 0.8 m 방벽 넘기', aa.z < 8.2 && Math.abs(aa.y) < 0.06 && aa.hit === 0 && a.hit === 0, `내려선 자리 ${fmt(aa)} / 더 걸은 뒤 ${fmt(a)}`);
     const b = await run(6.5, 4.2, 2);
     rec('파쿠르 (b) 0.7 m 하역장 오르기', b.z < 3.0 && Math.abs(b.y - 0.7) < 0.06 && b.hit === 0, fmt(b));
     const c = await run(2.2, 1.2, 2);
@@ -77,6 +82,84 @@ async function main() {
     rec('파쿠르 (d) Space 한 번은 방벽을 넘지 않는다', d1.z > 9.4 && d2.z > 9.4 && d1.hit === 0 && d2.hit === 0, `짧게 ${fmt(d1)} / 길게 ${fmt(d2)}`);
     const e1 = await run(-4.6, 1.2, 2), e2 = await run(-10.5, 1.2, 2);
     rec('파쿠르 (e) 방범창과 합판으로 막은 창은 넘지 않는다', e1.z > 0 && e2.z > 0 && e1.y < 0.1 && e2.y < 0.1, `방범창 ${fmt(e1)} / 합판 ${fmt(e2)}`);
+    // (f) 이동 키 없이 서서 Space 두 번으로 얇은 장애물을 넘을 때 튕겨 나가지 않는다(2026-11-15 사용자 지적. 고치기 전에 실패를 확인했다)
+    //  시작부터 끝난 뒤 1초까지 수평 속도 최고 3.0 m/s 이하, 끝난 뒤 1초 동안 미끄러진 거리 0.08 m 이하,
+    //  넘었으면 착지 지점(몸 중심)이 장애물의 먼 면에서 0.9 m 안, 카메라가 시작 때보다 max(0.35, 높이 − 0.77) m 넘게 솟지 않는다(올라서면 높이 + 0.35 m).
+    //  넘을 수 없는 자리면 하지 않아도 된다(방벽은 넘어야 한다)
+    const colTop = (x, z, foot) => { let t = foot; for (const b of boxes) if (x + 0.04 > b.min[0] && x - 0.04 < b.max[0] && z + 0.04 > b.min[2] && z - 0.04 < b.max[2] && b.min[1] <= t + 0.05 && b.max[1] > t) t = b.max[1]; return t; };
+    const standVault = async (x, z, yaw, mustGo) => {
+      const p0 = await place(x, z, yaw); await step(30);
+      const s0 = await st(), fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+      // 앞쪽 장애물의 가까운 면 d0, 꼭대기, 먼 면 d1(꼭대기 높이가 0.2 m 넘게 떨어지는 곳)
+      let d0 = -1, top = 0, d1 = -1;
+      for (let d = 0.2; d < 3.5; d += 0.02) {
+        const t = colTop(s0.x + fx * d, s0.z + fz * d, s0.y);
+        if (d0 < 0) { if (t > s0.y + 0.42) { d0 = d; top = t; } }
+        else if (t < top - 0.2) { d1 = d; break; } else top = Math.max(top, t);
+      }
+      const tr = [];
+      let started = -1, ended = -1, kind = null;
+      for (let f = 0; f < 200 && (ended < 0 || f < ended + 61); f++) {
+        if (f === 4 || f === 12) await P.keyboard.down('Space');
+        if (f === 7 || f === 15) await P.keyboard.up('Space');
+        await step(1);
+        const s = await st(); tr.push(s);
+        if (s.parkour && started < 0) { started = f; kind = s.parkour; }
+        if (started >= 0 && ended < 0 && !s.parkour) ended = f;
+      }
+      let vmax = 0, rise = 0;
+      for (let f = 1; f < tr.length; f++) vmax = Math.max(vmax, Math.hypot(tr[f].x - tr[f - 1].x, tr[f].z - tr[f - 1].z) * 60);
+      for (const s of tr) rise = Math.max(rise, s.eye - s0.eye);
+      const h = top - s0.y;
+      const res = { kind, vmax, rise, h, d0, d1, ok: true, why: [] };
+      if (started < 0) { res.ok = !mustGo; if (mustGo) res.why.push('넘지 않음'); return res; }
+      if (ended < 0) { res.ok = false; res.why.push('끝나지 않음'); return res; }
+      const e = tr[ended], e60 = tr[Math.min(tr.length - 1, ended + 60)];
+      res.slide = Math.hypot(e60.x - e.x, e60.z - e.z);
+      res.beyond = ((e.x - s0.x) * fx + (e.z - s0.z) * fz) - d1;
+      const riseMax = kind === 'climb' ? h + 0.35 : Math.max(0.35, h - 0.77);
+      if (vmax > 3.0) res.why.push(`수평 속도 ${vmax.toFixed(2)} m/s`);
+      if (res.slide > 0.08) res.why.push(`미끄러짐 ${res.slide.toFixed(2)} m`);
+      if (kind !== 'climb' && res.beyond > 0.9) res.why.push(`먼 면 뒤 ${res.beyond.toFixed(2)} m`);
+      if (rise > riseMax) res.why.push(`카메라 상승 ${rise.toFixed(2)} m > ${riseMax.toFixed(2)}`);
+      res.ok = res.why.length === 0;
+      return res;
+    };
+    const fv = [['방벽', 9.0, 10.6, 0, true], ['실내 금속 통', 1.92, -15.4, -Math.PI / 2, false], ['창 아래 벽', 2.2, 0.9, 0, false]];
+    const fres = [];
+    for (const [name, x, z, yaw, must] of fv) fres.push([name, await standVault(x, z, yaw, must)]);
+    rec('파쿠르 (f) 서서 넘을 때 튕겨 나가지 않는다', fres.every(([, r]) => r.ok),
+      fres.map(([n, r]) => `${n} ${r.kind || '안 넘음'}${r.kind ? ` 최고 ${r.vmax.toFixed(2)} m/s, 상승 ${r.rise.toFixed(2)} m(높이 ${r.h.toFixed(2)}), 미끄러짐 ${(r.slide ?? 0).toFixed(2)} m${r.kind !== 'climb' && r.beyond != null ? `, 먼 면 뒤 ${r.beyond.toFixed(2)} m` : ''}` : ''}${r.why.length ? ' ✗ ' + r.why.join(', ') : ''}`).join(' / '));
+    // (g) 제자리에서 마우스로 1.5 rad/s로 돌 때 총이 화면 위를 크게 미끄러지지 않는다(2026-11-15 사용자 지적)
+    //  총구와 권총손잡이(오른손) 두 점의 가로 위치를 본다. 가까운 쪽(손잡이)은 옆으로 밀리면 화면에서 더 크게 움직인다
+    //  숨과 떠도는 자세도 총을 천천히 옮긴다. 그래서 같은 시드로 새로 연 두 페이지에서 똑같이 진행하되 한쪽만 마우스를 움직이고,
+    //  두 기록의 차이(돌기만의 몫)를 잰다. 돌 때 화면 폭의 6%(투영 좌표 0.12) 안, 멈춘 뒤 반대로 넘치는 폭 2%(0.04) 이하
+    {
+      const run = async (turn) => {
+        const q = await openGame(L.context, 'test=1&clock=manual&seed=11&view=13');
+        const Q = q.page; await clickStart(Q);
+        const mouse = makeMouse(Q, W, H); await mouse.center();
+        await Q.evaluate(([x, z, yaw]) => window.__bc.place(x, z, yaw), [3.2, -0.8, 1.07]);
+        await Q.evaluate(() => window.__bc.step(90));
+        const out = [];
+        for (let f = 0; f < 100; f++) {
+          if (turn) { if (f < 20) await mouse.move(12, 0); else if (f < 40) await mouse.move(-12, 0); }
+          await Q.evaluate(() => window.__bc.step(1));
+          const p = await Q.evaluate(() => window.__bc.state().player);
+          out.push([p.gunNdc[0], p.gripNdc[0]]);
+        }
+        extraErrors.push(...q.errors); extraExternal.push(...q.external);
+        await Q.close();
+        return out;
+      };
+      const still = await run(false), turned = await run(true);
+      let dev = 0, over = 0;
+      for (let f = 0; f < 100; f++) {
+        const gx = turned[f][0] - still[f][0], hx = turned[f][1] - still[f][1];
+        if (f < 40) dev = Math.max(dev, Math.abs(gx), Math.abs(hx)); else over = Math.max(over, gx, hx);   // 마지막은 왼쪽으로 돌았다: 멈춘 뒤 오른쪽(+)으로 넘치는 폭
+      }
+      rec('좌우로 돌 때 총이 화면을 크게 미끄러지지 않는다 (1.5 rad/s)', dev <= 0.12 && over <= 0.04, `총구·손잡이 가로 이동 최대 ${(dev * 50).toFixed(1)}% (화면 폭 대비), 멈춘 뒤 넘침 ${(over * 50).toFixed(1)}%`);
+    }
     extraErrors.push(...g.errors); extraExternal.push(...g.external);
     await P.close();
   }

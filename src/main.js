@@ -392,6 +392,7 @@ class Game {
     vm.update(dt, this.time, {
       // 파쿠르 중에는 두 손으로 짚으니 총을 화면 아래로 내린다(stow). 조준과 사격은 막는다
       anchor: ct.pos, aimQuat: aq, ads: inp.rmb && p.alive && !p.pk, sprint: p.sprinting ? 1 : 0, wallDist, stow: !!p.pk,
+      camQuat: ct.quat, aimYawOff: p.aimYaw - p.bodyYaw, aimPitchOff: p.aimPitch - p.camPitch, shake: ct.shake, camRecoil: ct.recoil,
       camYawVel: p.yawVel, camPitchVel: p.pitchVel, vy: p.vel.y, exertion: p.exertion, moving: p.moving, stepPhase: p.stepPhaseFrac || 0, roll: ct.roll, level: this.level,
     });
     if (p.alive && vm.tryFire(dt, !p.pk)) this.playerShot();
@@ -558,7 +559,12 @@ class Game {
         return {
           phase: g.phase, kills: g.bots.filter(b => !b.alive).length,
           player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.bodyYaw, pitch: p.camPitch, gunYaw: Math.atan2(-d.x, -d.z), gunPitch: Math.asin(Math.max(-1, Math.min(1, d.y))), hp: p.hp, alive: p.alive, weapon: vm.current, ammo: vm.ammo, reloading: !!vm.reload, crouch: p.crouch,
-            speed: Math.hypot(p.vel.x, p.vel.z), vy: p.vel.y, onGround: p.onGround, sprinting: p.sprinting, ads: vm.ads, parkour: p.pk ? p.pk.plan.kind : null },
+            speed: Math.hypot(p.vel.x, p.vel.z), vy: p.vel.y, onGround: p.onGround, sprinting: p.sprinting, ads: vm.ads, parkour: p.pk ? p.pk.plan.kind : null,
+            // 검사용: 카메라 높이, 총구와 왼손의 화면 위치(투영 좌표 -1~1, 어안 왜곡 전), 왼손이 짚은 자리
+            eye: g.camera.position.y,
+            gunNdc: (() => { const v = vm.muzzleWorld.clone().project(g.camera); return [v.x, v.y]; })(),
+            gripNdc: (() => { const v = new THREE.Vector3(); vm.gunHolder.getWorldPosition(v); v.project(g.camera); return [v.x, v.y]; })(),
+            handL: vm.handLWorld ? (() => { const v = vm.handLWorld.clone().project(g.camera); return { x: vm.handLWorld.x, y: vm.handLWorld.y, z: vm.handLWorld.z, ndc: [v.x, v.y, v.z], planted: !!vm.planted }; })() : null },
           bots: g.bots.map(b => ({ x: b.pos.x, y: b.pos.y, z: b.pos.z, alive: b.alive, state: b.state })),
           stats: { ...g.stats }, radPerPixel: 0.0021 * g.settings.sens * (1 - vm.ads * 0.35),
           renderer: (() => { const gl = g.renderer.getContext(); const ext = gl.getExtension('WEBGL_debug_renderer_info'); return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ''; })(),

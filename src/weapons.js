@@ -191,6 +191,9 @@ const WEAPONS = {
     hip: V(0.09, -0.21, -0.32), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.28, -0.2), cant: 0.06 },
 };
 
+// 조준 앞섬과 관성의 축(카메라 기준): 소총은 오른쪽 겨드랑이 밑에 낀 개머리판 끝, 권총은 두 어깨 사이 앞
+const PIVOT = { rifle: V(0.17, -0.2, 0.02), pistol: V(0.06, -0.2, 0.0) };
+
 class Spring {
   constructor(k = 120, d = 14) { this.k = k; this.d = d; this.x = V(0, 0, 0); this.v = V(0, 0, 0); }
   step(dt, target = V(0, 0, 0)) {
@@ -214,8 +217,11 @@ export class Viewmodel {
     this.root = new THREE.Group();
     scene.add(this.root);
     this.models = { rifle: buildRifle(this.M), pistol: buildPistol(this.M) };
+    // root(카메라 = 몸) → leadPivot(어깨 쪽 축: 조준 앞섬과 관성) → gunHolder(총의 자세)
+    this.leadPivot = new THREE.Group();
+    this.root.add(this.leadPivot);
     this.gunHolder = new THREE.Group();
-    this.root.add(this.gunHolder);
+    this.leadPivot.add(this.gunHolder);
     for (const k in this.models) { this.gunHolder.add(this.models[k].group); this.models[k].group.visible = false; }
     this.handR = buildHand(this.M); this.handL = buildHand(this.M, true);
     this.gunHolder.add(this.handR, this.handL);
@@ -232,7 +238,7 @@ export class Viewmodel {
     this.models.rifle.group.visible = true;
     this.recoilT = new Spring(150, 13);   // 위치 반동
     this.recoilR = new Spring(110, 11);   // 회전 반동
-    this.swaySpring = new Spring(48, 8.5);
+    this.leadSpring = new Spring(330, 31); // 조준 앞섬과 관성(고유 진동수 18 rad/s, 감쇠비 0.85)
     this.vSpring = new Spring(70, 9);     // 점프와 착지의 위아래 관성
     this.holdPhase = 0;   // 떠도는 자세의 위상. 생명마다 다르다(Game.reset이 정한다)
     this.ads = 0; this.sprint = 0; this.lower = 0; this.stow = 0; this.switchT = 0; this.switchTo = null;
@@ -352,10 +358,17 @@ export class Viewmodel {
       }
     }
 
-    // 흔들림: 카메라 회전 속도에 반대로 끌리는 관성 + 호흡 + 걸음
-    const swayTarget = V(-p.camYawVel * 0.032, p.camPitchVel * 0.024, 0);
-    swayTarget.x = Math.max(-0.13, Math.min(0.13, swayTarget.x)); swayTarget.y = Math.max(-0.09, Math.min(0.09, swayTarget.y));
-    const sway = this.swaySpring.step(dt, swayTarget);
+    // 총은 몸(가슴 카메라)에 붙은 두 팔이 든다. root는 카메라를 따르고, 총은 그 안에서
+    //  - 조준 앞섬: 마우스가 먼저 움직인 만큼(몸이 따라오며 줄어든다) 어깨 쪽(개머리판 끝)을 축으로 앞서 돈다
+    //  - 관성: 몸이 도는 속도가 바뀌면 팔에 든 총이 한 박자 늦는다(감쇠비 0.85라 멈출 때 크게 넘치지 않는다)
+    //  - 카메라의 흔들림(걸음 충격, 피격)은 75%만 따르고, 카메라 반동은 따르지 않는다(총의 반동은 따로 있다)
+    // 이전에는 총이 마우스 방향(aimQuat)에 붙고 카메라가 최대 10° 늦게 따라왔으며, 흔들림 스프링이 같은 쪽으로 13 cm를 더 밀어
+    // 돌 때 총이 화면 폭의 4분의 1쯤 미끄러졌다(2026-11-15 사용자 지적, PROGRESS.md)
+    const ld = 1 - this.ads * 0.85;
+    const dYv = (p.camYawVel || 0) - (this.lastYawVel ?? (p.camYawVel || 0)), dPv = (p.camPitchVel || 0) - (this.lastPitchVel ?? (p.camPitchVel || 0));
+    this.lastYawVel = p.camYawVel || 0; this.lastPitchVel = p.camPitchVel || 0;
+    if (Math.abs(dYv) < 20 && Math.abs(dPv) < 20) this.leadSpring.kick(V(-dPv * 0.3 * ld, -dYv * 0.3 * ld, 0));
+    const lead = this.leadSpring.step(dt, V(p.aimPitchOff || 0, (p.aimYawOff || 0) * ld, 0));
     const breath = (1 - this.ads * 0.6) * (0.003 + p.exertion * 0.006);
     const by = Math.sin(t * (1.6 + p.exertion * 1.8)) * breath, bx = noise1(t * 0.6, 3) * breath * 1.2;
     const stepAmp = p.moving * (0.036 + this.sprint * 0.03) * (1 - this.ads * 0.5);
@@ -367,17 +380,18 @@ export class Viewmodel {
     const rt = this.recoilT.step(dt), rr = this.recoilR.step(dt);
     const base = def.hip.clone().lerp(def.ads, this.ads).lerp(def.sprint, this.sprint);
     const drop = Math.max(switchDrop, this.stow);
-    const pos = base.add(V(sway.x + bx + sx + dX, sway.y + by + sy + dY - rl.drop - this.lower * 0.06 - drop * 0.25, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
+    const pos = base.add(V(bx + sx + dX, by + sy + dY - rl.drop - this.lower * 0.06 - drop * 0.25, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
     pos.x += rt.x * 0.02; pos.y += rt.y * 0.02;
+    const sh = p.shake || [0, 0, 0], rc = p.camRecoil || [0, 0, 0];
 
     // 총 회전(총 기준): 반동, 달리기 자세, 벽 앞에서 내림, 재장전 기울임
     // 걸음마다 총끝이 흔들린다: 몸은 가슴 카메라와 함께 움직이지만 두 팔에 든 총은 한 박자 늦게 끄덕이고 좌우로 돈다(조준할수록 줄어든다)
     const walkK = p.moving * (1 - this.ads * 0.7) * (1 + this.sprint * 0.6);
     const wPitch = Math.sin(p.stepPhase * Math.PI * 2 + 0.9) * 0.03 * walkK, wYaw = Math.sin(p.stepPhase * Math.PI + 0.5) * 0.035 * walkK;
-    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - drop * 0.9 + rl.pitch + sway.y * 1.5 + dPitch + wPitch;
-    const rotY = rr.y * 0.035 + this.sprint * 0.55 + sway.x * -2.0 + wYaw;
-    // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다
-    const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt + p.roll * 0.4 + (def.cant || 0) * (1 - this.ads) + dRoll;
+    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - drop * 0.9 + rl.pitch + dPitch + wPitch - sh[0] * 0.25 - rc[0];
+    const rotY = rr.y * 0.035 + this.sprint * 0.55 + wYaw - sh[1] * 0.25 - rc[1];
+    // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다. 카메라가 걸음에 따라 기울면 총은 그 25%만큼 늦는다
+    const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt - sh[2] * 0.25 - rc[2] + (def.cant || 0) * (1 - this.ads) + dRoll;
 
     // 뛰고 내릴 때의 관성: 몸이 위로 가속하면 두 팔에 든 총은 한 박자 늦게 처지고, 공중에서는 살짝 뜨고, 착지하면 다시 처진다
     const vy = p.vy || 0, dvy = vy - (this.lastVy ?? vy); this.lastVy = vy;
@@ -385,15 +399,20 @@ export class Viewmodel {
     pos.y += this.vSpring.step(dt).y;
     // 볼 받침: 조준경을 들여다보면 뺨이 개머리판에 붙어 눈(카메라)이 사출동공 가까이 머문다.
     // 흔들림, 걸음, 반동이 총을 밀어도 눈과 사출동공의 어긋남은 일부(조준 끝에서 12%)만 남는다. 남은 만큼 조준경 그림자가 생긴다
+    const piv = this.current === 'rifle' ? PIVOT.rifle : PIVOT.pistol;
+    const qLead = new THREE.Quaternion().setFromEuler(new THREE.Euler(lead.x, lead.y, 0, 'YXZ'));
     if (mdl.eyePoint && this.ads > 0.001) {
-      const e = mdl.eyePoint.clone().applyEuler(new THREE.Euler(rotX, rotY, rotZ, 'YXZ')).add(pos);
-      pos.addScaledVector(e, -this.ads * this.ads * 0.88);
+      // 눈점을 카메라(root) 기준으로 구해(어깨 축의 회전까지) 그만큼 총을 되민다
+      const e = mdl.eyePoint.clone().applyEuler(new THREE.Euler(rotX, rotY, rotZ, 'YXZ')).add(pos).sub(piv).applyQuaternion(qLead).add(piv);
+      pos.addScaledVector(e.applyQuaternion(qLead.clone().invert()), -this.ads * this.ads * 0.88);
     }
 
-    // root = 총 조준 방향 (aimQuat), anchor에서 pos만큼 떨어짐
+    // root = 카메라(몸). leadPivot = 어깨 쪽 축에서 조준 앞섬과 관성만큼 돈다. gunHolder = 총의 자세
     this.root.position.copy(p.anchor);
-    this.root.quaternion.copy(p.aimQuat);
-    this.gunHolder.position.copy(pos);
+    this.root.quaternion.copy(p.camQuat || p.aimQuat);
+    this.leadPivot.position.copy(piv);
+    this.leadPivot.quaternion.copy(qLead);
+    this.gunHolder.position.copy(pos).sub(piv);
     this.gunHolder.rotation.set(rotX, rotY, rotZ, 'YXZ');
 
     if (this.current === 'pistol' && this.models.pistol.slide) {

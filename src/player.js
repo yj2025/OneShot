@@ -37,7 +37,7 @@ export class Player {
     this.lastHitDir = V(0, 0, 0);
     // 점프와 파쿠르
     this.jumpBoost = 0; this.lastSpaceT = -9; this.groundY = 0;
-    this.pk = null; this.eyeDip = 0; this.pkPitch = 0;
+    this.pk = null; this.eyeDip = 0; this.pkPitch = 0; this.pkRoll = 0; this.pkYaw = 0; this.pkHand = null;
   }
 
   spawn(x, z, yaw, pitch = 0) {
@@ -50,7 +50,7 @@ export class Player {
     this.hp = 100; this.alive = true; this.deathT = 0; this.crouch = 0;
     this.camShake.x.set(0, 0, 0); this.camShake.v.set(0, 0, 0); this.camOffset.x.set(0, 0, 0); this.camOffset.v.set(0, 0, 0);
     this.eyeSmooth = this.pos.y; this.exertion = 0.1;
-    this.pk = null; this.eyeDip = 0; this.pkPitch = 0; this.jumpBoost = 0; this.groundY = this.pos.y; this.vel.y = 0; this.onGround = true;
+    this.pk = null; this.eyeDip = 0; this.pkPitch = 0; this.pkRoll = 0; this.pkYaw = 0; this.pkHand = null; this.jumpBoost = 0; this.groundY = this.pos.y; this.vel.y = 0; this.onGround = true;
   }
 
   get eyeHeight() { return 1.37 - this.crouch * 0.45 - this.eyeDip; }
@@ -78,19 +78,19 @@ export class Player {
     this.aimYaw -= input.dx * sens;
     this.aimPitch -= input.dy * sens;
     this.aimPitch = Math.max(-1.35, Math.min(1.3, this.aimPitch));
-    // 몸(카메라)은 뒤따르고, 총과 몸의 차이는 최대 ~10°
-    const maxLag = 0.17 - weapon.ads * 0.08;
+    // 몸(카메라)은 뒤따르고, 총과 몸의 차이는 최대 4°(조준하면 1.7°). 이전에는 10°까지 벌어져 돌 때 총이 화면 위를 크게 미끄러졌다(2026-11-15)
+    const maxLag = 0.07 - weapon.ads * 0.04;
     let dyaw = this.aimYaw - this.bodyYaw;
-    this.bodyYaw += dyaw * (1 - Math.exp(-dt * (5.5 + weapon.ads * 6)));
+    this.bodyYaw += dyaw * (1 - Math.exp(-dt * (8 + weapon.ads * 6)));
     dyaw = this.aimYaw - this.bodyYaw;
     if (dyaw > maxLag) this.bodyYaw = this.aimYaw - maxLag; if (dyaw < -maxLag) this.bodyYaw = this.aimYaw + maxLag;
     const pitchTarget = this.aimPitch * (0.7 + weapon.ads * 0.15);
-    this.camPitch += (pitchTarget - this.camPitch) * (1 - Math.exp(-dt * 5));
+    this.camPitch += (pitchTarget - this.camPitch) * (1 - Math.exp(-dt * 8));
 
     // 파쿠르 중에는 경로를 따라 움직인다(충돌, 중력, 걸음 없음). 끝나면 웅크림과 숙임이 천천히 풀린다
     if (this.pk) this.updateParkour(dt);
     else this.move(dt, t, input, settings, weapon);
-    if (!this.pk) { this.eyeDip *= Math.exp(-dt * 6); this.pkPitch *= Math.exp(-dt * 5); }
+    if (!this.pk) { this.eyeDip *= Math.exp(-dt * 6); this.pkPitch *= Math.exp(-dt * 5); this.pkRoll *= Math.exp(-dt * 6); this.pkYaw *= Math.exp(-dt * 6); this.pkHand = null; }
 
     // 카메라 회전 속도 (모션 블러·바람·총 흔들림)
     const ny = this.bodyYaw, np = this.camPitch;
@@ -132,13 +132,19 @@ export class Player {
     this.vel.x += (wish.x - this.vel.x) * (1 - Math.exp(-dt * accel));
     this.vel.z += (wish.z - this.vel.z) * (1 - Math.exp(-dt * accel));
 
-    const before = this.pos.clone();
     this.pos.x += this.vel.x * dt; this.pos.z += this.vel.z * dt;
+    const mx = this.pos.x, mz = this.pos.z;
     // 공중에서는 무릎을 당겨 넘는 15 cm까지만 턱으로 친다(땅에서는 계단 한 단 0.42 m). 그래서 0.7~0.8 m 턱은 뛰어서 오를 수 없고 파쿠르로 넘는다
     const stepUp = this.onGround ? 0.42 : 0.15;
     L.collide(this.pos, this.radius, this.pos.y, 1.75 - this.crouch * 0.5, stepUp);
-    // 실제 이동량으로 속도 보정 (벽에 막히면 멈춤)
-    if (dt > 0) { this.vel.x = (this.pos.x - before.x) / dt; this.vel.z = (this.pos.z - before.z) / dt; }
+    // 벽에 막히면 벽 쪽 속도만 없앤다(벽을 따라 미끄러진다). 밀려난 거리를 속도로 바꾸지 않는다.
+    // 이전에는 실제 이동량을 속도로 삼아서, 상자 위에서 걸어 내려가다 두 상자 사이 틈(몸보다 좁다)에 떨어지면
+    // 한 프레임에 19 cm 밀려난 것이 11~13 m/s 속도가 되어 10프레임 넘게 옆으로 날아갔다(2026-11-15 파쿠르 조사에서 찾음)
+    const px = this.pos.x - mx, pz = this.pos.z - mz, pl = Math.hypot(px, pz);
+    if (pl > 1e-6) {
+      const nx = px / pl, nz = pz / pl, vn = this.vel.x * nx + this.vel.z * nz;
+      if (vn < 0) { this.vel.x -= vn * nx; this.vel.z -= vn * nz; }
+    }
 
     // 높이: 계단은 올라서고, 낮은 곳으로는 떨어진다
     const gh = L.groundHeight(this.pos.x, this.pos.z, this.pos.y, 0.2, stepUp);
@@ -219,8 +225,16 @@ export class Player {
     if (dt > 0) this.vel.subVectors(this.pos, before).divideScalar(dt);
     // 경로가 이미 매끄러우니 카메라 높이를 늦추지 않는다(늦추면 창턱을 지날 때 카메라가 벽 속으로 들어간다)
     this.eyeSmooth = this.pos.y;
-    this.eyeDip = path.dip(t); this.pkPitch = path.pitch(t);
+    this.eyeDip = path.dip(t); this.pkPitch = path.pitch(t); this.pkRoll = path.roll(t); this.pkYaw = path.yaw(t);
     this.onGround = false; this.airTime = 0; this.sprinting = false;
+    // 왼손이 짚는 자리(월드). 짚기 0.15초 전부터 손이 가고, 떼고 0.12초 뒤 총으로 돌아간다(weapons.js가 손을 옮긴다)
+    const H = path.hand;
+    if (H) {
+      const w = Math.min(1, Math.max(0, (k.t - H.t0 + 0.15) / 0.15)) * Math.min(1, Math.max(0, (H.t1 + 0.12 - k.t) / 0.12));
+      const rx = -P.fz, rz = P.fx;   // 몸의 오른쪽
+      const side = H.kind === 'vault' ? -0.13 : -0.17;
+      this.pkHand = { pos: V(k.x0 + P.fx * H.s + rx * side, H.y, k.z0 + P.fz * H.s + rz * side), fx: P.fx, fz: P.fz, w, kind: H.kind };
+    }
     this.moving += (0 - this.moving) * (1 - Math.exp(-dt * 6));
     this.exertion = Math.min(1, this.exertion + dt * 0.3);
     // 손을 짚는 순간, 무릎을 올리는 순간: 몸이 덜컥 서고 장비가 부딪는다
@@ -231,16 +245,13 @@ export class Player {
         this.camShake.v.add(V((1.0 + r() * 0.8) * g, (r() - 0.5) * 1.2 * g, (r() - 0.5) * 2.0 * g));
         this.camOffset.v.add(V((r() - 0.5) * 0.3, (-0.4 - r() * 0.3) * g, 0));
         this.events.push({ type: 'vault', mat: P.mat, phase: e });
-      }
+      } else if (e === 'land') this.land(Math.max(1.5, -this.vel.y, Math.sqrt(2 * 9.8 * Math.max(0, P.top - P.landY - 0.5))));
+      else if (e === 'stand') this.events.push({ type: 'step', mat: this.level.floorMaterial(this.pos.x, this.pos.y, this.pos.z), speed: 1, sprint: false, crouch: 0 });
     }
     if (k.t < path.T) return;
-    // 끝: 탐색에서 확인한 자리에 정확히 선다. 넘기는 앞으로 나가던 힘이 조금 남는다
-    const vy = this.vel.y;
+    // 끝: 탐색에서 확인한 자리에 정확히 선다. 들어오던 속도의 일부(경로 끝의 속도)로 이어 걷는다. 이동 키를 놓고 있으면 곧 선다
     this.pos.set(k.x0 + P.fx * P.land, P.landY, k.z0 + P.fz * P.land);
-    const out = P.kind === 'vault' ? 2.0 : P.kind === 'over' ? 0.6 : 0.4;
-    this.vel.set(P.fx * out, 0, P.fz * out);
-    if (P.kind === 'climb') this.events.push({ type: 'step', mat: this.level.floorMaterial(this.pos.x, this.pos.y, this.pos.z), speed: 1, sprint: false, crouch: 0 });
-    else this.land(Math.max(1.5, -vy));
+    this.vel.set(P.fx * path.vExit, 0, P.fz * path.vExit);
     if (P.crouch) { this.crouchToggle = true; this.crouch = 1; this.eyeDip = Math.max(0, this.eyeDip - 0.45); }
     this.eyeSmooth = this.pos.y;
     this.onGround = true; this.groundY = P.landY; this.jumpCD = 0.3; this.airTime = 0;
@@ -273,8 +284,8 @@ export class Player {
     pos.x += cy * bobL * sh; pos.z -= sy * bobL * sh;
     pos.addScaledVector(this.camOffset.x, 0.02 * sh);
     let pitch = this.camPitch + this.pkPitch + (this.camShake.x.x * 0.02 + idleN + this.camRecoil.x.x) * sh;
-    let yaw = this.bodyYaw + (this.camShake.x.y * 0.02 + this.camRecoil.x.y + noise1(t * 0.4, 14) * 0.004 * (1 + this.exertion)) * sh;
-    let rollF = roll + this.camRecoil.x.z * sh;
+    let yaw = this.bodyYaw + this.pkYaw + (this.camShake.x.y * 0.02 + this.camRecoil.x.y + noise1(t * 0.4, 14) * 0.004 * (1 + this.exertion)) * sh;
+    let rollF = roll + this.pkRoll + this.camRecoil.x.z * sh;
     if (!this.alive) {
       // 쓰러짐: 무릎이 꺾이고 옆으로 넘어간다
       const k = Math.min(1, this.deathT / 0.9), e = k * k;
@@ -283,7 +294,10 @@ export class Player {
       pitch = pitch * (1 - e) + e * (-0.25);
     }
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, rollF, 'YXZ'));
-    return { pos, quat: q, roll: rollF, pitch, yaw };
+    // 총(weapons.js)은 카메라에 붙어 흔들림의 75%를 따르고 카메라 반동은 따르지 않는다. 그 몫을 따로 넘긴다
+    const recoil = [this.camRecoil.x.x * sh, this.camRecoil.x.y * sh, this.camRecoil.x.z * sh];
+    const shake = [pitch - this.camPitch - this.pkPitch - recoil[0], yaw - this.bodyYaw - this.pkYaw - recoil[1], rollF - this.pkRoll - recoil[2]];
+    return { pos, quat: q, roll: rollF, pitch, yaw, recoil, shake };
   }
 
   aimQuat(t) {

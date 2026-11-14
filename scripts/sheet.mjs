@@ -62,7 +62,8 @@ for (let s = 0; s < items.length; s += PER) {
 }
 
 // 연속 프레임 묶음: 판정자가 읽기 좋은 크기로 다시 놓는다 (이름은 중립 번호)
-const stripFiles = fs.readdirSync(shotsDir).filter(f => /^strip-.*\.png$/.test(f) && !/^strip-(aim|vault)-/.test(f)).sort();
+// 제자리 회전(strip-turn-)과 옆걸음(strip-strafe)은 2026-11-15에 더했다. A/B에만 쓴다
+const stripFiles = fs.readdirSync(shotsDir).filter(f => /^strip-.*\.png$/.test(f) && !/^strip-(aim|vault|turn)-|^strip-strafe/.test(f)).sort();
 const strips = [];
 for (const f of stripFiles) {
   const b = await stripBlock(path.join(shotsDir, f), 380, 214);
