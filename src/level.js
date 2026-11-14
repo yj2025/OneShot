@@ -843,18 +843,38 @@ export class Level {
       const dense = r() < (p - 0.2) * 1.6;
       T.leafPatch(px, y, pz, (dense ? 0.6 + r() * 0.5 : 0.45 + r() * 0.35) + wf * 0.25, r() < 0.3, dense);
     }
-    // 건물 안: 열린 문과 깨진 창으로 바람에 실려 들어온 잎. 문턱 안쪽으로 부채꼴로 퍼지고, 창 밑에는 좁게 떨어진다
-    for (const o of this.extOps || []) {
-      const door = o.b < FL + 0.1, reach = door ? 3.2 : 1.3, n = Math.round((door ? 22 : 7) * o.w * (this.quality === 'low' ? 0.5 : 1));
-      for (let i = 0; i < n; i++) {
-        const d = 0.3 + Math.pow(r(), 1.6) * reach, lat = (r() - 0.5) * (o.w + d * (door ? 0.9 : 0.4)), inw = -o.dir;
-        const px = o.ax === 'z' ? o.c + lat : o.at + inw * d, pz = o.ax === 'z' ? o.at + inw * d : o.c + lat;
-        if (!this.insideBuilding(px, pz)) continue;
-        const y = this.groundHeight(px, pz, FL, 0, 0.1);
-        if (Math.abs(y - FL) > 0.05) continue;
-        const dense = r() < (1 - d / reach) * 0.45;
-        T.leafPatch(px, y, pz, dense ? 0.4 + r() * 0.3 : 0.28 + r() * 0.3, r() < 0.4, dense);
+    // 건물 안: 열린 문과 깨진 창으로 바람에 실려 들어온 잎. 건물 바닥 전체에 같은 규칙을 쓴다.
+    // - 개구부에서 멀어질수록 준다(문 4 m, 창 1.5 m). 벽 너머로는 거의 가지 못한다(문을 돌아가야 한다).
+    // - 바닥을 굴러 다니다 벽, 가구 밑동, 모서리에 멈춰 모인다
+    const ops = (this.extOps || []).map((o) => {
+      const door = o.b < FL + 0.1, inw = -o.dir;
+      return { x: o.ax === 'z' ? o.c : o.at + inw * 0.35, z: o.ax === 'z' ? o.at + inw * 0.35 : o.c, L: door ? 4.0 : 1.5, s: (door ? 1.0 : 0.5) * Math.min(2, o.w) };
+    });
+    const solid = this.boxes.filter(b => b.max[1] > FL + 0.25 && b.min[1] < FL + 0.3 && b.max[0] > -13 && b.min[0] < 13 && b.max[2] > -17 && b.min[2] < 1);
+    const thin = solid.filter(b => b.max[1] > FL + 1.2 && Math.min(b.max[0] - b.min[0], b.max[2] - b.min[2]) < 0.5);   // 벽
+    const cross = (x0, z0, x1, z1) => {   // 선분이 벽 상자를 지나는가(2D 슬랩)
+      for (const b of thin) {
+        let t0 = 0, t1 = 1; const dx = x1 - x0, dz = z1 - z0;
+        const sl = (p, d, lo, hi) => { if (Math.abs(d) < 1e-9) return p >= lo && p <= hi; let a = (lo - p) / d, c = (hi - p) / d; if (a > c) [a, c] = [c, a]; t0 = Math.max(t0, a); t1 = Math.min(t1, c); return t0 <= t1; };
+        if (sl(x0, dx, b.min[0], b.max[0]) && sl(z0, dz, b.min[2], b.max[2])) return true;
       }
+      return false;
+    };
+    const near = (x, z) => { let best = 9; for (const b of solid) { const dx = Math.max(b.min[0] - x, 0, x - b.max[0]), dz = Math.max(b.min[2] - z, 0, z - b.max[2]); best = Math.min(best, Math.hypot(dx, dz)); } return best > 0.6 ? 0 : 1 - best / 0.6; };
+    const st = this.quality === 'low' ? 0.85 : 0.55;
+    for (let x = -12; x < 12; x += st) for (let z = -16; z < 0; z += st) {
+      const px = x + (r() - 0.5) * st, pz = z + (r() - 0.5) * st;
+      if (!this.insideBuilding(px, pz)) continue;
+      let p = 0;
+      for (const o of ops) { const d = Math.hypot(px - o.x, pz - o.z); if (d > o.L * 3) continue; p += o.s * Math.exp(-d / o.L) * (cross(o.x, o.z, px, pz) ? 0.12 : 1); }
+      if (p < 0.03) continue;
+      const wf = near(px, pz);
+      p = Math.min(1, p) * (0.35 + 1.1 * wf);
+      if (r() > Math.min(0.9, p)) continue;
+      const y = this.groundHeight(px, pz, FL, 0, 0.1);
+      if (Math.abs(y - FL) > 0.05) continue;
+      const dense = r() < (p - 0.35) * 1.3;
+      T.leafPatch(px, y, pz, dense ? 0.4 + r() * 0.3 : 0.28 + r() * 0.3, r() < 0.4, dense);
     }
   }
 
