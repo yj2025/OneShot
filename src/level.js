@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WearTool, WEAR, hash, vnoise, noise3 } from './wear.js';
 import { bcMaterial } from './materials.js';
-import { setLightSlots, volUniforms } from './lightbake.js';
+import { setLightSlots, volUniforms, skyGain } from './lightbake.js';
 import { mulberry32 } from './rng.js';
 import { TreeTool, setTreeTime } from './trees.js';
 import { BackdropTool } from './backdrop.js';
@@ -236,7 +236,8 @@ export class Level {
     M('grass', { map: t.gravel, normalMap: t.gravelN, normalScale: new THREE.Vector2(1, 1), color: 0x7d8466, roughness: 1 }, { grime: 1, ao: 0 });
     M('cone', { color: 0xb8541f, roughness: 0.7 }, { grime: 0.8 });
     this.mats.chain = bcMaterial({ map: t.chainlink, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.6, color: 0x9a9a96 }, { grime: 0 });
-    this.mats.tube = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xeef3ff, emissiveIntensity: 3.5 });
+    // 관의 휘도는 하늘 밝기에 묶는다(기준: 하늘 2.5배일 때 3.5). 실제 형광등 관은 흐린 하늘보다 밝다. 방을 밝히는 빛은 점광원이 따로 맡는다
+    this.mats.tube = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xeef3ff, emissiveIntensity: 3.5 * skyGain / 2.5 });
     this.mats.tubeDead = bcMaterial({ color: 0x9a9a9a, roughness: 0.4 }, { grime: 0 });
     this.mats.puddle = bcMaterial({ color: 0x17191a, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.8 }, { grime: 0 });
     this.mats.stain = bcMaterial({ map: t.stain, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 }, { grime: 0 });

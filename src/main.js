@@ -471,7 +471,7 @@ class Game {
     this.deadFade = !p.alive ? Math.min(1, this.deadFade + dt * 0.5) : Math.max(0, this.deadFade - dt * 2);
     P.dead = this.deadFade;
     P.q = Math.min(1, 0.12 + P.blurVec.length() * 25 + speed * 0.04);
-    P.key = 0.26;
+    P.key = 0.275;   // 노출 목표. 하늘을 6.0배로 밝힌 뒤(1단계 ④) 실내 측광이 내려가 화면값 중앙값이 77 → 74가 되어, 1단계 ①에서 레퍼런스에 맞춘 값(77)으로 되돌렸다(0.26 → 0.275)
     this.post.render(this.scene, this.camera, dt);
     this.osd.draw(this.playTime, true);
   }
