@@ -153,9 +153,14 @@ vec3 defocus(vec2 uv, vec3 base){
   // 렌즈 바로 앞(손과 총)은 초점이 나간다. 0.7 m 안에서 흐려지기 시작해 0.2 m에서 가장 흐리다
   float coc = smoothstep(0.7, 0.2, z) * 0.017;
   if (coc < 0.0006) return base;
+  // 모든 화소가 같은 나선 10점을 쓰면 점 사이(5~6화소)로 무늬가 빠져, 흐려지는 대신 어긋난 사본이 겹쳤다
+  // (렌즈 앞 조준경 몸통의 물결무늬, A/B 라운드 34 쌍 10). 나선을 화소마다, 프레임마다 돌려
+  // 사본을 고운 입자로 바꾸고 점을 16개로 늘린다. 남는 입자는 센서 노이즈와 잔상에 묻힌다
+  vec2 fc = gl_FragCoord.xy + 5.588238 * mod(uFrame, 64.0);
+  float rot = fract(52.9829189 * fract(dot(fc, vec2(0.06711056, 0.00583715)))) * 6.2831;
   vec3 acc = base; float n = 1.0;
-  for (int i = 0; i < 10; i++) {
-    float a = float(i) * 2.39996, r = sqrt((float(i) + 0.5) / 10.0);
+  for (int i = 0; i < 16; i++) {
+    float a = float(i) * 2.39996 + rot, r = sqrt((float(i) + 0.5) / 16.0);
     vec2 o = vec2(cos(a), sin(a)) * r * coc * vec2(1.0 / uAspect, 1.0) / uOver;
     float zz = linDepth(uv + o);
     // 먼 배경이 가까운 물체 위로 번지지 않도록
