@@ -10,6 +10,7 @@ import { Bot, angDiff } from './bots.js';
 import { Sound } from './audio.js';
 import { Post, OVERSCAN } from './post.js';
 import { ScopeView } from './scope.js';
+import { LocalProbe } from './localprobe.js';
 import { OSD } from './osd.js';
 import { bakeLight, skyGain, volUniforms, probeLight } from './lightbake.js';
 import { bcMaterial, setBodyArms } from './materials.js';
@@ -142,6 +143,7 @@ class Game {
     const envSky = makeSky(); envScene.add(envSky);
     const gnd = new THREE.Mesh(new THREE.CircleGeometry(250, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(0.42 * skyGain, 0.4 * skyGain, 0.36 * skyGain) })); gnd.position.y = -2; envScene.add(gnd);
     this.scene.environment = pm.fromScene(envScene, 0.02).texture;
+    this.envScene = envScene;   // 건물 밖에서는 뷰모델의 반사 프로브가 이 장면을 그린다(localprobe.js)
     pm.dispose();
     // 총구 화염의 점광원 두 개는 FX가 만든다(형광등 뒤에 놓여야 가시도 채널이 없다)
     this.fx = new FX(this.scene, this.tex, this.level, this.rng);
@@ -159,6 +161,7 @@ class Game {
     this.bots = B.map((b, i) => new Bot(this, i, b.spawn, b.patrol, b.role));
     this.post = new Post(this.renderer);
     this.scope = new ScopeView(this.renderer);   // 소총 조준경 안의 상(조준할 때만 그린다)
+    this.probe = new LocalProbe(this.renderer);   // 뷰모델의 환경 반사(총 자리에서 그린 작은 큐브맵). 낮은 품질에서는 끈다
     // 빛 굽기: 하늘빛 가시도, 형광등 그림자, 반사광을 한 번 계산한다
     this.setLoad(0.9, '빛 계산 중: 하늘빛');
     await new Promise(r => setTimeout(r, 0));
@@ -175,6 +178,21 @@ class Game {
     this.reset();
     await new Promise(r => setTimeout(r, 0));
     this.renderer.compile(this.scene, this.camera);
+    // 반사 프로브를 한 바퀴 그리고 다시 컴파일해 PMREM 셰이더까지 만들어 둔다. 안 하면 첫 갱신 프레임이 40~70 ms 걸렸다
+    if (this.probe.on) {
+      this.scene.updateMatrixWorld();
+      this.probe.update(this.scene, this.envScene, this.vm, [this.vm.root, this.vm.foreR, this.vm.foreL], (c, fn) => this.withBotsCulled(c, fn), false);
+      this.renderer.compile(this.scene, this.camera);
+    }
+    // 장면은 화면이 아니라 선형 렌더 타깃에 그린다. 그 상태(톤 매핑 없음, 선형 출력)의 셰이더와 모든 텍스처를 여기서 만들어 둔다.
+    // 반사 프로브는 360°를 보므로, 아니면 처음 시야에 든 물체의 컴파일과 텍스처 업로드가 플레이 중에 한 프레임 45~55 ms를 썼다
+    {
+      const R = this.renderer, prevT = R.getRenderTarget();
+      R.setRenderTarget(this.post.rtScene); R.compile(this.scene, this.camera); R.setRenderTarget(prevT);
+      const seen = new Set();
+      const up = (tx) => { if (tx && tx.isTexture && !tx.isRenderTargetTexture && !seen.has(tx)) { seen.add(tx); R.initTexture(tx); } };
+      this.scene.traverse((o) => { for (const m of o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []) { for (const v of Object.values(m)) up(v); if (m.uniforms) for (const u of Object.values(m.uniforms)) up(u && u.value); } });
+    }
     this.setLoad(1, '준비 완료');
     this.bindUI();
     this.phase = 'menu';
@@ -196,6 +214,7 @@ class Game {
     this.level?.setQuality(this.settings.quality);
     this.scope?.setQuality(this.settings.quality);
     this.fx?.setQuality(this.settings.quality);
+    if (this.probe && this.vm) this.probe.attach([this.vm.root, this.vm.foreR, this.vm.foreL], this.settings.quality !== 'low');
     this.resize();
   }
 
@@ -528,7 +547,10 @@ class Game {
     this.scope.update(this.scene, this.camera, vm, [vm.root, vm.foreR, vm.foreL], cull);
     // 조준경 패스가 이번 프레임의 장면 행렬을 이미 갱신했으면 본 화면 패스는 다시 갱신하지 않는다(장면 전체를 한 번 더 훑는 비용)
     const auto = this.scene.matrixWorldAutoUpdate;
-    if (this.scope.rendered) this.scene.matrixWorldAutoUpdate = false;
+    if (this.probe.on && !this.scope.rendered) this.scene.updateMatrixWorld();
+    if (this.scope.rendered || this.probe.on) this.scene.matrixWorldAutoUpdate = false;
+    // 뷰모델의 반사 프로브: 면 하나(처음과 다시 시작 때는 여섯 면). 화염이 켜진 동안은 멈춘다
+    this.probe.update(this.scene, this.envScene, vm, [vm.root, vm.foreR, vm.foreL], cull, this.fx.flashes.length > 0);
     if (this.vmView && this.vmView.raw) { this.renderer.setRenderTarget(null); this.renderer.render(this.scene, this.camera); }   // 살펴보기용: 렌즈와 센서 효과 없이
     else cull(this.camera, () => this.post.render(this.scene, this.camera, dt));
     this.scene.matrixWorldAutoUpdate = auto;
@@ -655,7 +677,9 @@ class Game {
       // 살펴보기용: 총·손·소매 재질 값을 덮어쓴다({ env, spec, albedo, rough }). null이면 되돌린다
       vmMat(o) { return vmMatOverride(g, o); },
       // 불러오기 비용: 총의 자기 가림 굽기(ms)
-      loadStats() { return { selfOccMs: g.vm.selfOccMs }; },
+      // 뷰모델 반사 프로브를 켜고 끈다(살펴보기와 비교용). 품질 설정을 다시 적용하면 원래대로 돌아간다
+      probe(on) { g.probe.attach([g.vm.root, g.vm.foreR, g.vm.foreL], !!on); return { on: g.probe.on, mats: g.probe.mats.length }; },
+      loadStats() { return { selfOccMs: g.vm.selfOccMs, probe: g.probe.stats }; },
       // 살펴보기와 검사용: 레벨 재질마다 반사율(텍스처의 선형 평균 × 색, 셰이더의 때와 얼룩 전). [R, G, B]
       levelAlbedo() {
         const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };

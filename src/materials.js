@@ -7,7 +7,9 @@ import { volUniforms, MAXL } from './lightbake.js';
 // 머리 위 형광등이 총과 장갑을 그대로 비추고 옆과 뒤에서 오는 방의 빛이 덜 가려졌다
 const BODY_STATIC = [[0, -0.08, 0.19, 0.17], [0, -0.42, 0.17, 0.16], [-0.2, 0.05, 0.14, 0.11], [0.2, 0.05, 0.14, 0.11], [0, 0.33, 0.04, 0.14]];
 const SHOULDER = [new THREE.Vector3(0.21, 0.0, 0.1), new THREE.Vector3(-0.21, 0.0, 0.1)];
-export const bodyUniforms = { uBodyS: { value: [...BODY_STATIC.map((a) => new THREE.Vector4(...a)), ...Array.from({ length: 4 }, () => new THREE.Vector4(0, -0.3, 0.1, 0.065))] } };
+export const bodyUniforms = { uBodyS: { value: [...BODY_STATIC.map((a) => new THREE.Vector4(...a)), ...Array.from({ length: 4 }, () => new THREE.Vector4(0, -0.3, 0.1, 0.065))] },
+  // 1이면 뷰모델의 환경맵이 총 자리에서 그린 반사 프로브(localprobe.js)다. 그 반사를 그대로 쓴다
+  uLocEnv: { value: 0 } };
 // 위팔: 어깨에서 그 프레임의 팔꿈치(월드 좌표)까지 1/3, 2/3 자리에 반지름 6.5 cm 구
 const _e = new THREE.Vector3();
 export function setBodyArms(camera, elbows) {
@@ -64,7 +66,7 @@ varying vec3 vBcW;
 varying float vBcWear;
 varying vec4 vBcBox; varying vec3 vBcObj; varying float vBcGloss; varying float vBcSO;
 uniform float uFinish; uniform vec4 uBare; uniform float uPolish; uniform float uGlossOn;
-uniform float uBody;
+uniform float uBody; uniform float uLocEnv;
 // 입은 사람의 몸: 가슴에 단 카메라 바로 뒤의 가슴, 배, 두 어깨, 헬멧 쓴 머리, 두 위팔(구 두 개씩)
 // (카메라 좌표 = 셰이더의 시점 좌표, m. xyz 중심, w 반지름). 위팔은 그 프레임의 팔꿈치를 따라 JS가 채운다(setBodyArms). 뷰모델(총, 장갑, 소매)만 쓴다(uBody)
 #define BC_NB 9
@@ -407,7 +409,8 @@ const FRAG_LIGHT = `
     // 반사: 하늘이 보이는 만큼은 하늘을, 나머지는 그 자리 둘레의 밝기를 비춘다
     vec3 bcRW = inverseTransformDirection(reflect(-geometryViewDir, geometryNormal), viewMatrix);
     float eR = mix(max(uSkyU.w + dot(uSkyU.xyz, bcRW), 0.0) + uGndE * (0.5 - 0.5 * bcRW.y), max(bcSh.w + dot(bcSh.xyz, bcRW), bcSh.w * 0.3), inV);
-    radiance = mix(eR * RECIPROCAL_PI * bcTint * envMapIntensity, radiance, bcSkv * bcSkv);
+    // 뷰모델에 반사 프로브가 붙어 있으면(uLocEnv) 환경맵이 이미 그 자리에서 본 방이다. 하늘 대신 조도로 바꾸지 않는다
+    if (uBody * uLocEnv < 0.5) radiance = mix(eR * RECIPROCAL_PI * bcTint * envMapIntensity, radiance, bcSkv * bcSkv);
     radiance = mix(radiance, bcE0 * (0.06 * RECIPROCAL_PI) * envMapIntensity, bcBR);
     // 반사의 자기 가림: 가림 비율을 반사 방향의 가림으로 바꾼다(Lagarde 2014). 매끈할수록, 비스듬히 볼수록 덜 가린다
     float bcAOv = 1.0 - vBcSO, bcNV = saturate(dot(geometryNormal, geometryViewDir));

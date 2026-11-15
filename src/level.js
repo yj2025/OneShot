@@ -240,7 +240,9 @@ export class Level {
     M('drumBlue', { color: 0x2f4a6b, roughness: 0.6, metalness: 0.3 }, { grime: 0.8 });
     M('drumRed', { color: 0x7a2c22, roughness: 0.6, metalness: 0.3 }, { grime: 0.8 });
     M('jersey', { map: t.concrete, normalMap: t.concreteN, normalScale: new THREE.Vector2(1.3, 1.3), roughnessMap: t.concreteR, color: 0xc8c4b8, roughness: 1 });
-    M('doorPaint', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(0.6, 0.6), color: 0x7a8a8c, roughness: 0.7 }, { grime: 0.7 });
+    // 문 칠: 합판 무늬(노란 나무, 채널 비 0.44:0.33:0.20) 위의 바랜 회청록 칠이다. 반사율 표로 세기를 올린 뒤 0x7a8a8c에서는 나무의 노란 기가 남아
+    // 채도 0.39의 노란 올리브 결판으로 읽혔다(A/B 45·46 판정 2명). 칠의 색이 되도록 곱하는 색을 정했다(결과 약 0.20:0.23:0.23, 채도 0.13)
+    M('doorPaint', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(0.6, 0.6), color: 0x748cb0, roughness: 0.7 }, { grime: 0.7 });
     M('deskTop', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(0.5, 0.5), color: 0xe8f2ff, roughness: 0.6 }, { grime: 0.5 });
     M('fabricChair', { map: t.fabric, color: 0x6a6e78, roughness: 1 }, { grime: 0.5 });
     M('trash', { color: 0x161616, roughness: 0.35, metalness: 0.0 }, { grime: 0.2 });
