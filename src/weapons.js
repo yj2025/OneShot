@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { bcMaterial, markEdges } from './materials.js';
 import { noise1 } from './rng.js';
 import { buildScope, SCOPE } from './scope.js';
+import { bakeSelfOcclusion } from './selfocc.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { createHand, makeSkeleton, fitGrasp, rbox as gripBox, setPose, lerpPose } from './hands.js';
 
@@ -118,12 +119,14 @@ function fabricTexture(base, seed) {
 //  검은 합성섬유 장갑 천(손등)                       3%     섬유    결 반사. 합성 가죽 손바닥과 마디 보호대는 0.52, F0 0.04(hands.js aGloss)
 //  면·폴리 립스탑 소매(짙은 올리브)                   4.5%   섬유    결 반사
 // 무광 마감은 광택도가 낮아 거칠기가 0.6~0.7이다. 0.5 안팎으로 두면 렌즈 앞의 총 윗면 전체가 앞쪽 형광등을 비스듬히 비춰 옅은 회색으로 떴다.
-// 면 혼방 소매는 미세면 정반사 없이 섬유의 결 반사(sheen)만 둔다(Filament의 천 모델). 결 반사 색은 그 모델의 기본값인 반사율의 제곱근이다.
+// 면 혼방 소매는 미세면 정반사 없이 섬유의 결 반사(sheen)만 둔다(Filament의 천 모델). 결 반사 색은 반사율과 같은 색상에 세기 2배다:
+// 염색한 섬유는 빛이 섬유를 지나 나오므로 결 반사도 염료 색을 띤다. 그 모델의 기본값(반사율의 제곱근)은 채널 비를 좁혀 채도를 반으로 줄이고
+// 세기가 확산의 4~5배라, 소매가 비스듬한 면마다 빛의 색(푸른 하늘, 형광등)을 띠어 '올리브색을 잃은 푸르스름한 흰색'으로 읽혔다(A/B 43, 실내 세션)
 // 천에 거친 정반사(거칠기 0.65~0.8)를 함께 두면 장갑이 옅은 회색 스웨이드처럼, 소매가 옅은 세이지색으로 떴다
 const PHYS = { envMapIntensity: 1, specularIntensity: 1 };
 // 닳는 모서리(materials.js markEdges): 피막이 벗겨져 드러나는 금속의 반사율(강철 0.55, 알루미늄 0.9)과 손에 닳은 자리의 거칠기
 const STEEL = [0.55, 0.55, 0.55], ALU = [0.88, 0.89, 0.9];
-const fiber = (a) => ({ envMapIntensity: 1, specularIntensity: 0, sheen: 1, sheenColor: new THREE.Color().setScalar(Math.sqrt(a)), sheenRoughness: 0.6 });
+const fiber = (hex) => ({ envMapIntensity: 1, specularIntensity: 0, sheen: 1, sheenColor: new THREE.Color(hex).multiplyScalar(2), sheenRoughness: 0.6 });
 export function buildMaterials() {
   // 금속 부품은 어두운 회색, 핸드가드와 개머리판과 탄창은 탄색이다. 부품마다 색이 달라야 판정 시트 크기에서 총으로 읽힌다(검은 단색으로 바꿨을 때 "형태가 읽히지 않는 덩어리"로 보였다)
   const blk = wearTexture('#353533', 3), tan = wearTexture('#4c4942', 7), stl = wearTexture('#3c3d3b', 11);
@@ -135,8 +138,8 @@ export function buildMaterials() {
     scopeBody: bcMaterial({ map: wearTexture('#2f3031', 17), roughness: 0.6, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { bare: ALU, polish: 0.42 }, body: true }),
     worn: bcMaterial({ color: 0x59595b, roughness: 0.45, metalness: 1.0, envMapIntensity: 1 }, { grime: 0, finish: { bare: STEEL, polish: 0.42 }, body: true }),
     tan: bcMaterial({ map: tan, roughness: 0.7, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { polish: 0.52 }, body: true }),
-    glove: bcMaterial({ map: fabricTexture('#302f2c', 5), roughness: 0.8, ...fiber(0.03), vertexColors: true }, { grime: 0, physical: true, gloss: true, body: true }),
-    sleeve: bcMaterial({ map: fabricTexture('#3b3d36', 9), roughness: 1.0, ...fiber(0.045), side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true, body: true }),
+    glove: bcMaterial({ map: fabricTexture('#302f2c', 5), roughness: 0.8, ...fiber('#302f2c'), vertexColors: true }, { grime: 0, physical: true, gloss: true, body: true }),
+    sleeve: bcMaterial({ map: fabricTexture('#3b3d36', 9), roughness: 1.0, ...fiber('#3b3d36'), side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true, body: true }),
   };
   for (const k in M) M[k].name = k;   // 살펴보기(__bc.vmMat)와 검사에서 재질을 이름으로 고른다
   return M;
@@ -336,6 +339,10 @@ export class Viewmodel {
     this.root = new THREE.Group();
     scene.add(this.root);
     this.models = { rifle: buildRifle(this.M), pistol: buildPistol(this.M) };
+    // 부품끼리 가린 간접광(selfocc.js). 불러올 때 한 번 굽는다
+    const so0 = performance.now();
+    for (const k in this.models) bakeSelfOcclusion(this.models[k].group);
+    this.selfOccMs = performance.now() - so0;
     // root(카메라 = 몸) → leadPivot(어깨 쪽 축: 조준 앞섬과 관성) → gunHolder(총의 자세)
     this.leadPivot = new THREE.Group();
     this.root.add(this.leadPivot);
@@ -640,6 +647,7 @@ export class Viewmodel {
     const elbowL = toW(elbowFrom(this.root.worldToLocal(wristL.clone()), EB.L));
     if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); elbowL.lerp(V(-0.2, 0.02, 0.1).applyQuaternion(rootQ).add(this.root.position), k); }
     placeLimb(this.foreR, elbowR, wristR); placeLimb(this.foreL, elbowL, wristL);
+    this.elbowW = [elbowR, elbowL];   // 입은 사람의 위팔이 뷰모델의 빛을 가리는 자리(materials.js setBodyArms)
 
     mdl.muzzle.getWorldPosition(this.muzzleWorld);
     this.dirWorld.set(0, 0, -1).applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(mdl.muzzle.matrixWorld)).normalize();

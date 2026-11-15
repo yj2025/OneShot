@@ -24,6 +24,25 @@ const WEAR_KEYS = {
   gravel: 'ground', skirt: 'wood',
 };
 
+// 실내 면의 반사율 표(선형, 텍스처 평균 × 색, 셰이더의 때·젖음·아래 띠를 입히기 전). 실제 재료의 측정 범위 안의 값이다.
+//  낡은 연회녹색 칠 회벽 0.40~0.55(셰이더가 아래 1.2 m를 녹색 띠 ×0.65로 칠한다), 먼지 앉은 실내 콘크리트 바닥 0.25~0.35,
+//  체크무늬 비닐 바닥 0.3~0.4, 소나무 합판 0.3~0.45(바랜 것은 더 어둡다). 콘크리트 블록(0.27)과 천장 타일(0.53)은 텍스처 그대로 범위 안이다.
+// 2026-11-15 실내 세션 전에는 텍스처의 색을 눈으로 정해 회벽 0.28, 바닥 0.17~0.20, 합판 0.18~0.24로 실제의 절반쯤이었다.
+// 그래서 총과 장갑(반사율 3~7%, 실측 범위)이 둘레의 벽과 바닥보다 덜 어둡게 찍혀 실내에서 회색 석고처럼 떴다. 반사광 굽기는 이미 실내 면을 0.42로 셈한다
+//  실내 소품: 바랜 팔레트 나무 0.2~0.3, 나무결 상판 0.2~0.4, 칠한 문틀(바랜 회청색) 0.2~0.3, 골판지 0.3~0.4(젖거나 때 묻은 것은 0.15~0.25)
+const ALBEDO = {
+  plaster: 0.44, concrete: 0.27, linoleum: 0.32, plywood: 0.34, plywoodB: 0.34, plywoodC: 0.28,
+  pallet: 0.24, deskTop: 0.26, doorPaint: 0.22, cardboard: 0.32, cardboardB: 0.24, cardboardC: 0.17,
+};
+const SRGB_LIN = Array.from({ length: 256 }, (_, v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+// 반사율 텍스처(캔버스)의 선형 휘도 평균
+function texAlbedo(img) {
+  const d = img.getContext('2d').getImageData(0, 0, img.width, img.height).data;
+  let s = 0, n = 0;
+  for (let i = 0; i < img.width * img.height; i += 7) { s += 0.2126 * SRGB_LIN[d[i * 4]] + 0.7152 * SRGB_LIN[d[i * 4 + 1]] + 0.0722 * SRGB_LIN[d[i * 4 + 2]]; n++; }
+  return s / n;
+}
+
 // 상자 (월드 좌표 UV, tile = 텍스처 1장이 덮는 미터)
 function boxGeometry(min, max, tile, matrix) {
   const pos = [], nor = [], uv = [], idx = [];
@@ -201,7 +220,7 @@ export class Level {
     M('plywood', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodR, roughness: 1 }, { grime: 0.6, weather: 1 });
     M('plywoodB', { map: t.plywoodB, normalMap: t.plywoodBN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodBR, roughness: 1 }, { grime: 0.6, weather: 1 });
     M('plywoodC', { map: t.plywoodC, normalMap: t.plywoodCN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.plywoodCR, roughness: 1 }, { grime: 0.6, weather: 1 });
-    M('pallet', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(1.4, 1.4), roughnessMap: t.plywoodR, color: 0xb59a7a, roughness: 1 }, { grime: 0.8, weather: 1 });
+    M('pallet', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(1.4, 1.4), roughnessMap: t.plywoodR, color: 0xd6e6ff, roughness: 1 }, { grime: 0.8, weather: 1 });
     M('linoleum', { map: t.linoleum, normalMap: t.linoleumN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.linoleumR, roughness: 1 }, { grime: 0.8 });
     M('cardboard', { map: t.cardboard, normalMap: t.cardboardN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.cardboardR, roughness: 1 }, { grime: 0.3 });
     M('cardboardB', { map: t.cardboard, normalMap: t.cardboardN, normalScale: new THREE.Vector2(1, 1), roughnessMap: t.cardboardR, color: 0xc4b8a4, roughness: 1 }, { grime: 0.5 });
@@ -222,7 +241,7 @@ export class Level {
     M('drumRed', { color: 0x7a2c22, roughness: 0.6, metalness: 0.3 }, { grime: 0.8 });
     M('jersey', { map: t.concrete, normalMap: t.concreteN, normalScale: new THREE.Vector2(1.3, 1.3), roughnessMap: t.concreteR, color: 0xc8c4b8, roughness: 1 });
     M('doorPaint', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(0.6, 0.6), color: 0x7a8a8c, roughness: 0.7 }, { grime: 0.7 });
-    M('deskTop', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(0.5, 0.5), color: 0x9c968a, roughness: 0.6 }, { grime: 0.5 });
+    M('deskTop', { map: t.plywood, normalMap: t.plywoodN, normalScale: new THREE.Vector2(0.5, 0.5), color: 0xe8f2ff, roughness: 0.6 }, { grime: 0.5 });
     M('fabricChair', { map: t.fabric, color: 0x6a6e78, roughness: 1 }, { grime: 0.5 });
     M('trash', { color: 0x161616, roughness: 0.35, metalness: 0.0 }, { grime: 0.2 });
     M('paper', { map: t.paper, roughness: 1, side: THREE.DoubleSide }, { grime: 0.3 });
@@ -242,6 +261,13 @@ export class Level {
     this.mats.tubeDead = bcMaterial({ color: 0x9a9a9a, roughness: 0.4 }, { grime: 0 });
     this.mats.puddle = bcMaterial({ color: 0x17191a, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.8 }, { grime: 0 });
     this.mats.stain = bcMaterial({ map: t.stain, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 }, { grime: 0 });
+    // 반사율 표(ALBEDO)에 있는 재질은 텍스처 평균 × 색의 휘도를 재서 색의 세기로 표의 값에 맞춘다(텍스처의 무늬와 대비, 색의 색상은 그대로)
+    for (const [k, a] of Object.entries(ALBEDO)) {
+      const m = this.mats[k]; if (!m) continue;
+      const img = m.map && m.map.image, tex = img && img.getContext ? texAlbedo(img) : 1;
+      const c = m.color, lum = (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) * tex;
+      if (lum > 1e-4) c.multiplyScalar(a / lum);
+    }
   }
 
   // ---- 기본 도형 ----
@@ -1158,7 +1184,8 @@ export class Level {
   setQuality(q) {
     this.fixtures.forEach((f, i) => { f.light.visible = q === 'high' || (q === 'medium' ? i % 3 !== 2 : i % 2 === 0); });
     // 켜진 형광등이 셰이더의 점광원 자리에 놓이는 순서대로 가시도 채널을 연결한다. 품질 '낮음'에서는 가시도 조회를 끈다
-    setLightSlots(this.fixtures.filter(f => f.light.visible).map(f => f.chan));
+    const on = this.fixtures.filter(f => f.light.visible);
+    setLightSlots(on.map(f => f.chan), on.map(f => f.along));
     volUniforms.uLmOn.value = this.lightBaked && q !== 'low' ? 1 : 0;
   }
 

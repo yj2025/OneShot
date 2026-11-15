@@ -12,7 +12,7 @@ import { Post, OVERSCAN } from './post.js';
 import { ScopeView } from './scope.js';
 import { OSD } from './osd.js';
 import { bakeLight, skyGain, volUniforms, probeLight } from './lightbake.js';
-import { bcMaterial } from './materials.js';
+import { bcMaterial, setBodyArms } from './materials.js';
 
 const Q = new URLSearchParams(location.search);
 const TEST = Q.get('test') === '1';
@@ -523,6 +523,8 @@ class Game {
       this.camera.position.set(t.x + Math.sin(yaw) * Math.cos(el) * d, t.y + Math.sin(el) * d, t.z + Math.cos(yaw) * Math.cos(el) * d);
       this.camera.lookAt(t);
     }
+    // 입은 사람의 위팔(뷰모델 빛 가림)을 이번 프레임의 팔꿈치로 옮긴다
+    if (vm.elbowW) setBodyArms(this.camera, vm.elbowW);
     this.scope.update(this.scene, this.camera, vm, [vm.root, vm.foreR, vm.foreL], cull);
     // 조준경 패스가 이번 프레임의 장면 행렬을 이미 갱신했으면 본 화면 패스는 다시 갱신하지 않는다(장면 전체를 한 번 더 훑는 비용)
     const auto = this.scene.matrixWorldAutoUpdate;
@@ -652,6 +654,26 @@ class Game {
       vmLight(o) { return vmLightStats(g, o || {}); },
       // 살펴보기용: 총·손·소매 재질 값을 덮어쓴다({ env, spec, albedo, rough }). null이면 되돌린다
       vmMat(o) { return vmMatOverride(g, o); },
+      // 불러오기 비용: 총의 자기 가림 굽기(ms)
+      loadStats() { return { selfOccMs: g.vm.selfOccMs }; },
+      // 살펴보기와 검사용: 레벨 재질마다 반사율(텍스처의 선형 평균 × 색, 셰이더의 때와 얼룩 전). [R, G, B]
+      levelAlbedo() {
+        const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        const out = {};
+        for (const [k, m] of Object.entries(g.level.mats)) {
+          if (!m || !m.color) continue;
+          let a = [1, 1, 1];
+          const img = m.map && m.map.image;
+          if (img && img.getContext) {
+            const d = img.getContext('2d').getImageData(0, 0, img.width, img.height).data, s = [0, 0, 0];
+            let n = 0;
+            for (let i = 0; i < img.width * img.height; i += 7) { for (let c = 0; c < 3; c++) s[c] += lin(d[i * 4 + c]); n++; }
+            a = s.map((x) => x / n);
+          }
+          out[k] = a.map((x, c) => +(x * [m.color.r, m.color.g, m.color.b][c]).toFixed(3));
+        }
+        return out;
+      },
       place(x, z, yaw, pitch = 0) { g.player.spawn(x, z, yaw, pitch); g.player.crouchToggle = false; return { x: g.player.pos.x, y: g.player.pos.y, z: g.player.pos.z }; },
       scopeDiag() {
         const names = new Map([[g.level.group, 'level'], [g.vm.root, 'viewmodel'], [g.sky, 'sky']]);

@@ -27,23 +27,28 @@ export const volUniforms = {
   uLm1: { value: new Array(MAXL).fill(1) },
   // 광원 반지름(m): 정반사를 이 크기만큼 넓힌다(materials.js bcLightRough). 자리 순서는 장면에 놓인 순서 = 형광등, 총구 화염 둘, 화염의 되비침
   uLmR: { value: new Array(MAXL).fill(0.29) },
+  // 형광등 관의 방향 × 반 길이(월드 좌표, m). 정반사를 관 위의 대표점에서 받아 관 방향으로 늘어난 띠로 맺는다(materials.js bcDirectPoint). 관이 아닌 광원은 0
+  uLmT: { value: Array.from({ length: MAXL }, () => new THREE.Vector3()) },
   uSkyU: { value: new THREE.Vector4(0, 1, 0, 1) },   // 가려지지 않은 하늘의 조도(xyz 기울기, w 평균): 볼륨 밖과 굽기 실패 때 쓴다
   uGndE: { value: 1 },                                // 가려지지 않은 땅이 되돌려 보내는 조도
   uSkyTint: { value: new THREE.Color(1, 1, 1) }, uBncTint: { value: new THREE.Color(1, 1, 1) },
 };
 
-// 광원의 크기(정반사가 퍼지는 정도). 형광등은 1.25 m × 0.22 m 등기구와 넓이가 같은 원판, 총구 화염은 불꽃 덩어리,
-// 되비침은 화염이 비춘 둘레의 벽과 바닥 전체를 대신하므로 넓은 면이다
-const LAMP_R = 0.29, FLASH_R = 0.08, BOUNCE_R = 1.2;
-// 형광등 가시도를 셰이더의 점광원 자리에 연결한다. slots: 점광원이 장면에 놓인 순서대로 가시도 채널 번호(없으면 -1)
-export function setLightSlots(slots) {
+// 광원의 크기(정반사가 퍼지는 정도). 형광등은 길이 1.18 m(관 두 개, 등기구 1.25 m의 94%), 폭 0.22 m의 관이다:
+// 관 방향은 uLmT의 띠로, 폭은 반지름 0.11 m로 넓힌다. 총구 화염은 불꽃 덩어리, 되비침은 화염이 비춘 둘레의 벽과 바닥 전체를 대신하므로 넓은 면이다.
+// 2026-11-15 실내 세션 전에는 형광등을 넓이가 같은 원판(0.29 m)으로 모든 방향에 넓혀, 반사가 띠가 아니라 총 윗면 전체에 깔린 회색 막이 됐다
+const LAMP_W = 0.11, LAMP_HALF = 0.59, FLASH_R = 0.08, BOUNCE_R = 1.2;
+// 형광등 가시도를 셰이더의 점광원 자리에 연결한다. slots: 점광원이 장면에 놓인 순서대로 가시도 채널 번호(없으면 -1),
+// along: 같은 순서로 관의 방향('x' 또는 'z')
+export function setLightSlots(slots, along = []) {
   const U = volUniforms;
   for (let i = 0; i < MAXL; i++) {
     const ch = i < slots.length ? slots[i] : -1;
     U.uLmA.value[i].set(ch === 0 ? 1 : 0, ch === 1 ? 1 : 0, ch === 2 ? 1 : 0, ch === 3 ? 1 : 0);
     U.uLmB.value[i].set(ch === 4 ? 1 : 0, ch === 5 ? 1 : 0, ch === 6 ? 1 : 0, ch === 7 ? 1 : 0);
     U.uLm1.value[i] = ch < 0 ? 1 : 0;
-    U.uLmR.value[i] = i < slots.length ? LAMP_R : i < slots.length + 2 ? FLASH_R : BOUNCE_R;
+    U.uLmR.value[i] = i < slots.length ? LAMP_W : i < slots.length + 2 ? FLASH_R : BOUNCE_R;
+    U.uLmT.value[i].set(i < slots.length && along[i] === 'x' ? LAMP_HALF : 0, 0, i < slots.length && along[i] === 'z' ? LAMP_HALF : 0);
   }
 }
 
