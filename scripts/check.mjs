@@ -243,6 +243,38 @@ async function main() {
     rec('(k) 밝은 곳에서 총과 장갑이 장면의 빛을 받는다', rows.every(okRow) && sky >= 0.1,
       rows.map((o) => (o.r ? `${o.name} ${pct(o.r.refl.all.p50)}·p90 ${pct(o.r.refl.all.p90)}` : `${o.name} 잴 수 없음`)).join(', ') + ` (중앙값 5% 이상·p90 50% 이하), 마당 윗면 p90 ${pct(sky)}(10% 이상, 화소 ${yard ? yard.refl.up.n : 0})`);
   }
+  // (l) 실내에서 총과 소매가 둘레보다 밝게 뜨지 않고 제 색을 지킨다(실내 세션, 2026-11-15. A/B 43과 critic 31의 '형광등 아래 흰 석고 모형', '올리브색을 잃은 소매')
+  //  밝기는 __bc.vmLight()의 선형 HDR 중앙값이고, 둘레는 뷰모델 실루엣 바깥 화면 폭 6% 고리의 장면 화소다. 색은 채널별 실효 반사율(빛의 색이 지워진 재질의 색)의 채도다.
+  //  ① 실내 다섯 곳에서 뷰모델 전체와 총의 밝기가 둘레의 0.5배 이하(레퍼런스 실내 0.1~0.25) ② 소매 채도가 결 반사·정반사를 끈 같은 소매의 0.8배 이상
+  //  ③ 마당에서 총이 둘레의 0.2배 이상(실외 하늘 반사를 지워 ①을 넘지 않게). 고치기 전 빌드(ca642c4)에서 실패하는 것을 먼저 확인했다
+  {
+    const GUN = 'polymer,steel,scopeBody,tan,worn';
+    const sat = (c) => (c && c.every((x) => x > 0) ? 1 - Math.min(...c) / Math.max(...c) : 0);
+    const rows = [];
+    for (const [v, name] of [[2, '복도'], [4, '사무실'], [6, '문간'], [7, '방 안의 봇'], [10, '가까운 바닥'], [0, '마당']]) {
+      const q = await openGame(L.context, `test=1&clock=manual&seed=11&view=${v}`);
+      const Q = q.page; await clickStart(Q);
+      await Q.evaluate(() => window.__bc.step(90));
+      const o = await Q.evaluate((gun) => {
+        const b = window.__bc; if (!b.vmLight) return null;
+        const all = b.vmLight(), g = b.vmLight({ only: gun }), s = b.vmLight({ only: 'sleeve' });
+        b.vmMat({ only: 'sleeve', sheen: 0, spec: 0 }); const s0 = b.vmLight({ only: 'sleeve' }); b.vmMat(null);
+        const rel = (r) => (r.vm.n > 200 && r.ring.n > 200 ? r.vm.p50 / r.ring.p50 : null);
+        return { all: rel(all), gun: rel(g), s: s.vm.n > 200 ? s.rgb : null, s0: s0.vm.n > 200 ? s0.rgb : null };
+      }, GUN);
+      extraErrors.push(...q.errors); extraExternal.push(...q.external);
+      await Q.close();
+      rows.push({ v, name, o });
+    }
+    const f2 = (x) => (x == null ? '-' : x.toFixed(2));
+    const indoor = rows.filter((r) => r.v !== 0), yard = rows.find((r) => r.v === 0);
+    const satOk = (o) => !o.s || !o.s0 || sat(o.s) >= 0.8 * sat(o.s0);   // 소매가 화면에 없으면 색은 보지 않는다
+    const okIn = (r) => r.o && r.o.all != null && r.o.all <= 0.5 && (r.o.gun == null || r.o.gun <= 0.5) && satOk(r.o);
+    const okYard = yard.o && yard.o.gun != null && yard.o.gun >= 0.2;
+    rec('(l) 실내에서 총과 소매가 둘레보다 밝게 뜨지 않고 제 색을 지킨다', indoor.every(okIn) && okYard,
+      indoor.map((r) => (r.o ? `${r.name} 전체 ${f2(r.o.all)}·총 ${f2(r.o.gun)}·소매 채도 ${f2(sat(r.o.s))}/${f2(sat(r.o.s0))}` : `${r.name} 잴 수 없음`)).join(', ') +
+      ` (둘레 대비 0.5 이하, 채도 0.8배 이상), 마당 총 ${f2(yard.o && yard.o.gun)}(0.2 이상)`);
+  }
   if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');

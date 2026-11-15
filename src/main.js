@@ -679,12 +679,16 @@ function vmMaterials(g) {
 // ①을 ④로 나누면 화소마다 '그 자리에 떨어진 빛 가운데 카메라로 돌아온 비율'(실효 반사율)이 나온다. 조명과 노출에 상관없이 재질의 응답만 남는다.
 // 실제 검은 폴리머·아노다이징은 확산 반사율 4~6%에 비스듬한 면의 정반사가 더해지고, 짙은 장갑 천은 5~8%, 올리브색 소매는 8~15%쯤이다.
 // 뷰모델 화소는 면의 방향(위·옆·아래, 월드 기준)으로도 나누고, 같은 화면에서 위를 향한 바닥(뷰모델 밖, 화면 아래쪽 절반)의 밝기도 함께 낸다(노출과 센서 곡선 전의 값)
-// only: 재질 이름 목록('polymer,steel')을 주면 그 재질이 보이는 화소만 센다(다른 뷰모델 부품은 깊이만 써서 가린다)
-function vmLightStats(g, { scale = 0.5, only = null } = {}) {
+// only: 재질 이름 목록('polymer,steel')을 주면 그 재질이 보이는 화소만 센다(다른 뷰모델 부품은 깊이만 쓰고 표시만 남긴다)
+// ring: 뷰모델 실루엣 바깥으로 화면 폭의 ringFrac 안에 드는 장면 화소의 밝기. '총이 둘레보다 밝게 뜨는가'를 잰다
+// rgb: 채널별 실효 반사율(색 ÷ 흰 종이)의 중앙값. 빛의 색이 지워지므로 재질이 제 색을 지키는지 본다
+// ringCard: 장면 전체를 몸 가림 없는 흰 종이로 한 번 더 그려 둘레가 받는 빛(ringCard)과 둘레의 실효 반사율(ringRefl)을 낸다
+// noLamps: 형광등(점광원)을 끄고 잰다. 뷰모델과 둘레가 받는 빛 가운데 형광등 몫을 가린다
+function vmLightStats(g, { scale = 0.5, only = null, ringFrac = 0.06, ringCard = false, noLamps = false } = {}) {
   const R = g.renderer, cam = g.camera, scene = g.scene;
   const w = Math.max(16, Math.floor(innerWidth * scale)), h = Math.max(16, Math.floor(innerHeight * scale));
   const mk = () => new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: true });
-  const rtC = mk(), rtN = mk(), rtM = mk(), rtW = mk();
+  const rtC = mk(), rtN = mk(), rtM = mk(), rtW = mk(), rtA = ringCard ? mk() : null;
   const prevT = R.getRenderTarget(), prevO = scene.overrideMaterial, prevCC = R.getClearColor(new THREE.Color()), prevCA = R.getClearAlpha();
   const nm = new THREE.MeshNormalMaterial();
   // 흰 종이도 뷰모델과 같은 몸 가림(body)을 받는다. 나눈 값에는 빛이 지워지고 재질의 응답만 남는다
@@ -693,17 +697,21 @@ function vmLightStats(g, { scale = 0.5, only = null } = {}) {
   // 뷰모델이 아닌 메시만 숨긴다. 장면의 자식(레벨 묶음)을 통째로 숨기면 그 안의 형광등(점광원)까지 꺼져
   // 흰 종이가 형광등 직접광 없이 그려졌다(2026-11-15, 실내 실효 반사율이 2~3배 부풀었다)
   const inVm = (o) => { for (let a = o; a; a = a.parent) if (parts.has(a)) return true; return false; };
-  const hid = [];
+  const hid = [], lampsOff = [];
+  if (noLamps) scene.traverse((o) => { if (o.isPointLight && o.visible) { lampsOff.push(o); o.visible = false; } });
+  const whiteNB = ringCard ? (g._whiteCardNB || (g._whiteCardNB = bcMaterial({ color: 0xffffff, roughness: 1, metalness: 0, specularIntensity: 0, envMapIntensity: 0 }, { grime: 0, physical: true }))) : null;
   const hideRest = () => scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible && !inVm(o)) { hid.push(o); o.visible = false; } });
   try {
     R.setClearColor(0x000000, 0);
     R.setRenderTarget(rtC); R.clear(); R.render(scene, cam);
     scene.overrideMaterial = nm;
     R.setRenderTarget(rtN); R.clear(); R.render(scene, cam);
+    if (rtA) { scene.overrideMaterial = whiteNB; R.setRenderTarget(rtA); R.clear(); R.render(scene, cam); scene.overrideMaterial = nm; }
     hideRest();
     const swap = [];
     if (only) {
-      const names = only.split(','), hide = new THREE.MeshBasicMaterial({ colorWrite: false });
+      // 고르지 않은 부품은 알파 0.25로 표시만 남긴다(색은 세지 않고, 둘레 고리에서는 뷰모델로 뺀다)
+      const names = only.split(','), hide = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0.25, blending: THREE.NoBlending });   // NoBlending이면 불투명 대기열에 남고 알파가 그대로 써진다
       scene.overrideMaterial = null;
       for (const p of parts) p.traverse((m) => { if (m.isMesh) { swap.push([m, m.material]); m.material = names.includes(m.material.name) ? nm : hide; } });
     }
@@ -713,15 +721,28 @@ function vmLightStats(g, { scale = 0.5, only = null } = {}) {
     R.setRenderTarget(rtW); R.clear(); R.render(scene, cam);
   } finally {
     for (const o of hid) o.visible = true;
+    for (const o of lampsOff) o.visible = true;
     scene.overrideMaterial = prevO; R.setRenderTarget(prevT); R.setClearColor(prevCC, prevCA); nm.dispose();
   }
   const C = new Float32Array(w * h * 4), N = new Float32Array(w * h * 4), M = new Float32Array(w * h * 4), W = new Float32Array(w * h * 4);
   R.readRenderTargetPixels(rtC, 0, 0, w, h, C); R.readRenderTargetPixels(rtN, 0, 0, w, h, N); R.readRenderTargetPixels(rtM, 0, 0, w, h, M); R.readRenderTargetPixels(rtW, 0, 0, w, h, W);
+  const A = rtA ? new Float32Array(w * h * 4) : null;
+  if (rtA) { R.readRenderTargetPixels(rtA, 0, 0, w, h, A); rtA.dispose(); }
   rtC.dispose(); rtN.dispose(); rtM.dispose(); rtW.dispose();
   const q = cam.getWorldQuaternion(new THREE.Quaternion()), n = new THREE.Vector3();
   const acc = () => ({ n: 0, sum: 0, v: [] });
-  const vmAll = acc(), vmUp = acc(), vmSide = acc(), vmDown = acc(), gnd = acc(), rest = acc();
-  const rAll = acc(), rUp = acc(), rSide = acc(), rDown = acc();
+  const vmAll = acc(), vmUp = acc(), vmSide = acc(), vmDown = acc(), gnd = acc(), rest = acc(), ring = acc();
+  const rAll = acc(), rUp = acc(), rSide = acc(), rDown = acc(), rR = acc(), rG = acc(), rB = acc(), vCard = acc(), aCard = acc(), aRefl = acc();
+  // 뷰모델 전체(고른 재질 + 표시만 남긴 부품)의 실루엣을 화면 폭의 ringFrac만큼 넓힌 고리
+  const full = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) full[i] = M[i * 4 + 3] > 0.1 ? 1 : 0;
+  const rad = Math.max(1, Math.round(w * ringFrac)), tmp = new Uint8Array(w * h), dil = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) { let c = 0; const o = y * w;
+    for (let x = 0; x < Math.min(w, rad); x++) c += full[o + x];
+    for (let x = 0; x < w; x++) { if (x + rad < w) c += full[o + x + rad]; if (x - rad - 1 >= 0) c -= full[o + x - rad - 1]; tmp[o + x] = c > 0 ? 1 : 0; } }
+  for (let x = 0; x < w; x++) { let c = 0;
+    for (let y = 0; y < Math.min(h, rad); y++) c += tmp[y * w + x];
+    for (let y = 0; y < h; y++) { if (y + rad < h) c += tmp[(y + rad) * w + x]; if (y - rad - 1 >= 0) c -= tmp[(y - rad - 1) * w + x]; dil[y * w + x] = c > 0 ? 1 : 0; } }
   const add = (a, l) => { a.n++; a.sum += l; a.v.push(l); };
   const Y = (A, k) => 0.2126 * A[k] + 0.7152 * A[k + 1] + 0.0722 * A[k + 2];
   for (let i = 0; i < w * h; i++) {
@@ -732,15 +753,19 @@ function vmLightStats(g, { scale = 0.5, only = null } = {}) {
       const dir = n.y > 0.5 ? 1 : n.y < -0.5 ? -1 : 0;
       add(vmAll, l); add(dir > 0 ? vmUp : dir < 0 ? vmDown : vmSide, l);
       const lw = Y(W, k);
-      if (lw > 1e-5) { const r = l / lw; add(rAll, r); add(dir > 0 ? rUp : dir < 0 ? rDown : rSide, r); }
+      if (lw > 1e-5) { const r = l / lw; add(rAll, r); add(dir > 0 ? rUp : dir < 0 ? rDown : rSide, r); add(vCard, lw); }
+      if (W[k] > 1e-5 && W[k + 1] > 1e-5 && W[k + 2] > 1e-5) { add(rR, C[k] / W[k]); add(rG, C[k + 1] / W[k + 1]); add(rB, C[k + 2] / W[k + 2]); }
+    } else if (full[i]) {
+      continue;
     } else if (N[k + 3] > 0.5) {
       add(rest, l);
+      if (dil[i]) { add(ring, l); if (A) { const la = Y(A, k); add(aCard, la); if (la > 1e-5) add(aRefl, l / la); } }
       const y = Math.floor(i / w);
       if (y < h * 0.5) { n.set(N[k] * 2 - 1, N[k + 1] * 2 - 1, N[k + 2] * 2 - 1).normalize().applyQuaternion(q); if (n.y > 0.8) add(gnd, l); }
     }
   }
   const sum = (a) => { if (!a.n) return { n: 0 }; a.v.sort((x, y) => x - y); const pc = (p) => a.v[Math.min(a.v.length - 1, Math.floor(p * a.v.length))]; return { n: a.n, frac: +(a.n / (w * h)).toFixed(4), mean: a.sum / a.n, p10: pc(0.1), p50: pc(0.5), p90: pc(0.9), p99: pc(0.99) }; };
-  return { w, h, vm: sum(vmAll), up: sum(vmUp), side: sum(vmSide), down: sum(vmDown), ground: sum(gnd), scene: sum(rest), refl: { all: sum(rAll), up: sum(rUp), side: sum(rSide), down: sum(rDown) } };
+  return { w, h, vm: sum(vmAll), up: sum(vmUp), side: sum(vmSide), down: sum(vmDown), ground: sum(gnd), scene: sum(rest), ring: sum(ring), vmCard: sum(vCard), ringCard: A ? sum(aCard) : null, ringRefl: A ? sum(aRefl) : null, refl: { all: sum(rAll), up: sum(rUp), side: sum(rSide), down: sum(rDown) }, rgb: [sum(rR).p50, sum(rG).p50, sum(rB).p50] };
 }
 
 // 살펴보기용: 뷰모델 재질의 반사와 반사율을 바꿔 본다. 원래 값은 처음 바꿀 때 저장하고 null이면 되돌린다.
