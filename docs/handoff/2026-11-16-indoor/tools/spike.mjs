@@ -1,0 +1,14 @@
+import { fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import { launch, clickStart, sleep } from '../../../../scripts/lib.mjs';
+const L = await launch({ width: 1920, height: 1080 });
+const page = await L.context.newPage();
+await page.goto(pathToFileURL(fileURLToPath(new URL('../../../../dist/index.html', import.meta.url))).href + '?test=1&seed=5&tour=1&quality=high');
+await page.waitForFunction(() => window.__bc && window.__bc.ready, null, { timeout: 120000 });
+await clickStart(page); await sleep(1500);
+await page.evaluate(() => window.__bc.perfStart()); await sleep(15000);
+const r = await page.evaluate(() => window.__bc.perfStop());
+const big = r.frames.map((f, i) => [i, f]).filter(([, f]) => f > 25);
+console.log('큰 프레임', JSON.stringify(big.map(([i, f]) => `${i}:${f.toFixed(1)}`)), '전체', r.frames.length);
+console.log(JSON.stringify(await page.evaluate(() => window.__bc.loadStats())));
+await L.browser.close();

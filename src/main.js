@@ -192,6 +192,12 @@ class Game {
       const seen = new Set();
       const up = (tx) => { if (tx && tx.isTexture && !tx.isRenderTargetTexture && !seen.has(tx)) { seen.add(tx); R.initTexture(tx); } };
       this.scene.traverse((o) => { for (const m of o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []) { for (const v of Object.values(m)) up(v); if (m.uniforms) for (const u of Object.values(m.uniforms)) up(u && u.value); } });
+      // 정점 버퍼도 올린다. compile과 initTexture는 지오메트리를 올리지 않아, 주 카메라가 아직 보지 않은 물체(창밖 원경 등)를 반사 프로브가
+      // 처음 그리는 프레임에 그 업로드가 몰렸다(창문을 넘는 자리의 +Z 면 한 장이 45~57 ms). 절두체 컬링을 끄고 장면을 한 번 그린다(로딩 중 한 번)
+      const culled = [];
+      this.scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
+      R.setRenderTarget(this.post.rtScene); R.render(this.scene, this.camera); R.setRenderTarget(prevT);
+      for (const o of culled) o.frustumCulled = true;
     }
     this.setLoad(1, '준비 완료');
     this.bindUI();
@@ -680,6 +686,14 @@ class Game {
       // 뷰모델 반사 프로브를 켜고 끈다(살펴보기와 비교용). 품질 설정을 다시 적용하면 원래대로 돌아간다
       probe(on) { g.probe.attach([g.vm.root, g.vm.foreR, g.vm.foreL], !!on); return { on: g.probe.on, mats: g.probe.mats.length }; },
       loadStats() { return { selfOccMs: g.vm.selfOccMs, probe: g.probe.stats }; },
+      // 검사용: 절두체 컬링을 끄고 장면 전체를 한 번 그려, 그 전후의 GPU 지오메트리 수를 돌려준다. 로딩 예열이 정점 버퍼를 다 올렸으면 같다
+      geoCheck() {
+        const R = g.renderer, before = R.info.memory.geometries, culled = [], prevT = R.getRenderTarget();
+        g.scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
+        R.setRenderTarget(g.post.rtScene); R.render(g.scene, g.camera); R.setRenderTarget(prevT);
+        for (const o of culled) o.frustumCulled = true;
+        return { before, after: R.info.memory.geometries };
+      },
       // 살펴보기와 검사용: 레벨 재질마다 반사율(텍스처의 선형 평균 × 색, 셰이더의 때와 얼룩 전). [R, G, B]
       levelAlbedo() {
         const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
