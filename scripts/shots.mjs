@@ -50,6 +50,15 @@ async function strip(page, name, perFrame) {
   meta.strips.push({ file: `strip-${name}.png`, simMs: Math.round((done - 1) * 1000 / FPS) });
 }
 
+// 방아쇠를 당긴 뒤 첫 발이 실제로 나간 프레임까지 한 프레임씩 진행한다(최대 0.6초).
+// 총을 드는 데 시간이 걸리는 빌드와 바로 쏘는 빌드를 같은 순간(첫 발이 나간 프레임)으로 맞춘다
+async function pullUntilShot(page, mouse) {
+  const before = (await step(page, 0))?.shotsFired ?? 0;
+  await mouse.down('left');
+  for (let i = 0; i < 36; i++) { const s = await step(page, 1); if (s.shotsFired > before) return true; }
+  console.log('  (0.6초 안에 발사되지 않음)');
+  return false;
+}
 const VIEWS = [
   ['01-yard', 0], ['02-entrance', 1], ['03-corridor', 2], ['04-hall-windows', 3],
   ['05-office-fluorescent', 4], ['06-loading-dock-stairs', 5], ['07-doorway-to-yard', 6], ['08-bot-in-room', 7],
@@ -67,8 +76,7 @@ for (const [name, v] of VIEWS) {
   const { page } = await open(7);
   const mouse = makeMouse(page, W, H); await mouse.center();
   await step(page, 1);
-  await mouse.down('left');
-  await step(page, 1);
+  await pullUntilShot(page, mouse);
   await shot(page, '09-firing');
   await mouse.up('left');
   await step(page, 42);
@@ -124,8 +132,7 @@ for (const [name, v] of [['18-fire-corridor', 2], ['19-fire-yard', 0], ['20-fire
   const { page } = await open(v);
   const mouse = makeMouse(page, W, H); await mouse.center();
   await step(page, 1);
-  await mouse.down('left');
-  await step(page, 1);
+  await pullUntilShot(page, mouse);
   await shot(page, name);
   await mouse.up('left');
   await page.close();
@@ -180,6 +187,22 @@ for (const [name, v] of [['18-fire-corridor', 2], ['19-fire-yard', 0], ['20-fire
   await strip(page, 'running-turn', async (f) => { if (f < 48) await mouse.move(6, 0); });
   await page.keyboard.up('ShiftLeft');
   await page.keyboard.up('KeyW');
+  await page.close();
+}
+// 뷰모델 구도 세션(2026-11-15)에 더한 장면. 판정자가 재장전을 본 적이 없었다. A/B에만 쓴다
+// 밝은 홀에서 R을 누르고 1.25초 뒤(빈 탄창이 빠지고 새 탄창을 꺼내 오는 중) 한 장, 다른 자리(사무실)에서 R을 누르고 0.3초 뒤부터 1초 연속 프레임
+{
+  const { page } = await open(3);
+  await page.keyboard.down('KeyR'); await step(page, 2); await page.keyboard.up('KeyR');
+  await step(page, 73);
+  await shot(page, '21-reload');
+  await page.close();
+}
+{
+  const { page } = await open(4);
+  await page.keyboard.down('KeyR'); await step(page, 2); await page.keyboard.up('KeyR');
+  await step(page, 16);
+  await strip(page, 'reload', null);
   await page.close();
 }
 fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
