@@ -141,6 +141,10 @@ uniform highp sampler3D tSky; uniform float uLayerI; uniform float uInv;
 void main(){ float v = texelFetch(tSky, ivec3(gl_FragCoord.xy, int(uLayerI)), 0).w * uInv; gl_FragColor = vec4(clamp(v, 0.0, 1.0)); }`;
 
 // 반사광 모으기: 사방 64방향으로 광선을 보내 처음 닿는 면이 받은 빛을 그 면의 반사율만큼 되돌려 받는다
+// 둘레 면의 평균 반사율(빛 굽기의 반사광, 총구 화염의 되비침이 함께 쓴다). 실내 값은 level.js 반사율 표의 회벽, 바닥, 천장의 넓이 평균이다
+export const SURF_ALBEDO = { inside: 0.42, outside: 0.22 };
+// 건물 안(빛 굽기의 ins와 같은 상자)
+export function insideBuilding(p) { return p.x > -12 && p.x < 12 && p.z > -16 && p.z < 0 && p.y < 5.7; }
 const GATHER_FS = HEAD + `
 uniform highp sampler3D tOcc; uniform highp sampler3D tSky; uniform highp sampler3D tSrc; uniform highp sampler3D tVisA; uniform highp sampler3D tVisB;
 uniform int uMode; uniform vec3 uDirs[64]; uniform vec3 uGMin; uniform vec3 uGInv; uniform vec3 uLMin; uniform vec3 uLInv;
@@ -182,7 +186,7 @@ void main(){
     }
     // 반사율: 때가 낀 실내 면(회벽 위쪽 0.6, 아래 녹색 띠 0.3, 바닥 0.3~0.45, 천장 0.2~0.6)의 평균은 0.42쯤, 바깥(자갈, 아스팔트)은 0.22쯤이다
     bool ins = prev.x > -12.0 && prev.x < 12.0 && prev.z > -16.0 && prev.z < 0.0 && prev.y < 5.7;
-    float L = (ins ? 0.42 : 0.22) * E * 0.3183099;
+    float L = (ins ? ${SURF_ALBEDO.inside.toFixed(3)} : ${SURF_ALBEDO.outside.toFixed(3)}) * E * 0.3183099;
     a0 += L; a1 += L * d;
   }
   float w = 12.566371 / 64.0;
