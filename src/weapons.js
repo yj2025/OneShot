@@ -37,7 +37,7 @@ function sleeveGeo(rElbow, rWrist, seed) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
     let r = rElbow + (rWrist - rElbow) * Math.pow(y, 0.8);
     r *= 1 + 0.07 * Math.exp(-Math.pow((y - 0.22) / 0.18, 2));
-    const wW = sm(0.5, 0.9, y), wE = 1 - sm(0.0, 0.18, y);
+    const wW = sm(0.45, 0.9, y), wE = 1 - sm(0.0, 0.3, y);
     // 손목 쪽 겹친 주름: 고리가 비스듬하고 고르지 않다
     const ph = y * 30 + Math.sin(a * 2 + seed) * 1.3 + Math.sin(a * 3 - seed * 1.7) * 0.7 + seed;
     const fold = Math.pow(Math.abs(Math.sin(ph)), 0.4) - 0.66;
@@ -162,8 +162,9 @@ function buildRifle(M) {
   return { group: g, mag, muzzle, ejection, scope, eyePoint: SCOPE.pupil.clone(),
     // 쥐는 자리(총 기준). 손등 방향, 손가락 방향, 손바닥 가운데가 닿는 점을 정하고 손가락은 닿을 때까지 오므린다(fitGrips)
     //  오른손: 권총손잡이를 오른쪽에서 감싼다. 손등은 바깥(오른쪽 조금 위), 손가락은 손잡이 앞면을 감아 왼쪽으로, 검지는 방아쇠, 엄지는 손잡이 윗부분 왼쪽
-    //  왼손: 핸드가드 왼쪽 아래 모서리를 손바닥으로 감싼다. 손등은 바깥(왼쪽 아래)을 보고, 손가락은 밑면을 지나 오른쪽 옆을 감아 올라가고, 엄지는 왼쪽 옆을 따라 앞으로.
-    //  가슴 카메라에서 손등과 엄지가 보인다(손바닥을 위로 받치면 손이 핸드가드 밑에 숨어 손끝만 보였다)
+    //  왼손: 핸드가드 윗면 왼쪽을 위에서 덮어 쥔다. 손등은 위(조금 왼쪽)를 보고, 손가락은 윗면을 넘어 오른쪽 옆을 감아 내려간다.
+    //  가슴 카메라에서 손등과 손가락 마디가 핸드가드 위에 보인다. 왼쪽 아래 모서리를 감싸 쥐었을 때는 손이 소매 끝과 핸드가드에 가려
+    //  판정자들이 '소매가 둥근 마개로 끝난다'고 봤다(A/B 라운드 38). 탄창을 쥘 때는 손등이 바깥 아래를 보는 방향(reload)으로 돌린다
     grip: (() => {
       const pg = gripBox([0, -0.035, 0.035], [0.032, 0.105, 0.046], [-0.32, 0, 0], 0.007);
       const lower = gripBox([0, 0.034, -0.07], [0.05, 0.06, 0.28], [0, 0, 0], 0.004);
@@ -173,7 +174,7 @@ function buildRifle(M) {
         R: { back: V(1, 0.3, 0.12), dir: V(0, -0.315, -0.949), palm: V(0.0178, -0.0075, 0.026), boxes: [pg],
           start: { f: [[0.1, -0.05, 0.1, 0.05], [0.1, 0, 0.1, 0.05], [0.1, 0.03, 0.1, 0.05], [0.1, 0.08, 0.1, 0.05]], t: [0.0, 0.25, 0.5, 0.1, 0.1] },
           per: { 0: { boxes: [trig], max: [0.95, 1.3, 0.9] }, 4: { boxes: [pg, lower] } } },
-        L: { back: V(-0.85, -0.38, 0.05), dir: V(0.62, -0.32, -0.6), palm: V(-0.037, 0.041, -0.32), boxes: [hg],
+        L: { back: V(-0.5, 0.85, 0.12), dir: V(0.75, -0.25, -0.6), palm: V(-0.012, 0.112, -0.31), boxes: [hg], reload: { back: V(-0.85, -0.38, 0.05), dir: V(0.62, -0.32, -0.6) },
           start: { f: [[0.05, -0.08, 0.05, 0.03], [0.05, -0.02, 0.05, 0.03], [0.05, 0.04, 0.05, 0.03], [0.05, 0.1, 0.05, 0.03]], t: [0.0, 0.55, 0.3, 0.05, 0.05] } },
       };
     })(),
@@ -228,12 +229,15 @@ function fitGrips(mdl) {
     const G = mdl.grip[side];
     const m = wristFrame(G.back, G.dir, G.palm);
     const pose = fitGrasp(makeSkeleton(side === 'R' ? 1 : -1), m, G.boxes, G.start, { fingers: G.per });
-    out[side] = { m, pose, q: new THREE.Quaternion().setFromRotationMatrix(m), p: new THREE.Vector3().setFromMatrixPosition(m), palm: G.palm.clone() };
+    const q = new THREE.Quaternion().setFromRotationMatrix(m);
+    // 탄창을 쥐는 손(재장전)은 손등이 바깥 아래를 보게 따로 정할 수 있다. 위에서 덮어 쥐는 손 그대로 돌리면 탄창을 손등 쪽으로 든다
+    const rq = G.reload ? new THREE.Quaternion().setFromRotationMatrix(wristFrame(G.reload.back, G.reload.dir, G.palm)) : q.clone();
+    rq.premultiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), 0.5));
+    out[side] = { m, pose, q, rq, p: new THREE.Vector3().setFromMatrixPosition(m), palm: G.palm.clone() };
   }
   return out;
 }
 // 짚는 손(파쿠르)과 탄창을 쥐는 손
-const _qTmp = new THREE.Quaternion();
 const PLANT = { f: [[0.1, -0.13, 0.12, 0.06], [0.08, -0.03, 0.12, 0.06], [0.08, 0.05, 0.12, 0.06], [0.12, 0.15, 0.14, 0.08]], t: [0.0, 0.55, 0.25, 0.1, 0.1] };
 const GRAB = { f: [[0.75, -0.04, 1.0, 0.6], [0.8, 0, 1.05, 0.6], [0.8, 0.03, 1.05, 0.6], [0.75, 0.08, 1.0, 0.6]], t: [0.25, 0.35, 0.55, 0.35, 0.35] };
 
@@ -283,8 +287,8 @@ export class Viewmodel {
     this.handR = this.hR.mesh; this.handL = this.hL.mesh;
     this.gunHolder.add(this.handR, this.handL);
     for (const k in this.models) this.models[k].grips = fitGrips(this.models[k]);
-    const sleeveMat = bcMaterial({ map: fabricTexture('#3f413a', 9), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15, side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true });
-    this.foreR = new THREE.Mesh(sleeveGeo(0.056, 0.044, 1.3), sleeveMat); this.foreL = new THREE.Mesh(sleeveGeo(0.056, 0.044, 4.1), sleeveMat);
+    const sleeveMat = bcMaterial({ map: fabricTexture('#33352f', 9), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15, side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true });
+    this.foreR = new THREE.Mesh(sleeveGeo(0.066, 0.05, 1.3), sleeveMat); this.foreL = new THREE.Mesh(sleeveGeo(0.066, 0.05, 4.1), sleeveMat);
     scene.add(this.foreR, this.foreL);
     for (const m of [this.foreR, this.foreL]) m.frustumCulled = false;
     this.plantW = 0; this.planted = false; this.handLWorld = null;
@@ -392,10 +396,12 @@ export class Viewmodel {
       }
       const lh = mdl.grips.L.palm.clone();
       const pouch = V(-0.12, -0.32, 0.1);
-      const magWell = mdl.magPos.clone().add(V(0, -0.1, 0));
+      const magWell = mdl.magPos.clone().add(V(0, -0.1, 0)), seated = magWell.clone().add(V(0, 0.06, 0));
+      const smooth = (x) => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
+      rl.handW = 1;
       if (u > R.out - 0.08 && u < R.reach) {
-        const k = (u - (R.out - 0.08)) / (R.reach - R.out + 0.08);
-        rl.handL = lh.lerp(pouch, Math.sin(k * Math.PI * 0.5));
+        const k = (u - (R.out - 0.08)) / (R.reach - R.out + 0.08), e = Math.sin(k * Math.PI * 0.5);
+        rl.handL = lh.clone().lerp(pouch, e); rl.handW = e;
       } else if (u >= R.reach && u < R.insert) {
         const k = (u - R.reach) / (R.insert - R.reach);
         rl.handL = pouch.clone().lerp(magWell, k * k * (3 - 2 * k));
@@ -407,8 +413,14 @@ export class Viewmodel {
       } else if (u >= R.insert + 0.1 && R.empty && u < 0.93) {
         const k = (u - R.insert - 0.1) / (0.93 - R.insert - 0.1);
         const charge = this.current === 'rifle' ? V(0, 0.11, 0.12) : V(0, 0.06, -0.05);
-        rl.handL = mdl.grips.L.palm.clone().lerp(charge, Math.sin(Math.min(1, k * 2) * Math.PI * 0.5) * (1 - Math.max(0, k - 0.7) / 0.3));
+        // 탄창을 밀어 넣은 자리에서 장전 손잡이로 갔다가 쥔 자리로 돌아온다
+        if (k < 0.5) rl.handL = seated.clone().lerp(charge, Math.sin(k * Math.PI));
+        else if (k < 0.7) rl.handL = charge.clone();
+        else { const e = smooth((k - 0.7) / 0.3); rl.handL = charge.clone().lerp(lh, e); rl.handW = 1 - e; }
         if (!R.charged && k > 0.55) { R.charged = true; this.events.push({ type: 'charge', weapon: this.current }); this.recoilT.kick(V(0, 0, 0.6)); }
+      } else if (u >= R.insert + 0.1 && !R.empty) {
+        const span = Math.min(0.18, 0.98 - R.insert - 0.1), e = smooth((u - R.insert - 0.1) / span);
+        if (e < 1) { rl.handL = seated.clone().lerp(lh, e); rl.handW = 1 - e; }
       }
       if (u >= 1) {
         const st = this.state[this.current];
@@ -487,9 +499,10 @@ export class Viewmodel {
     // 왼손: 쥔 자리 → (재장전) 탄창을 쥔 손바닥이 rl.handL로 간다 → (파쿠르) 장애물 윗면 모서리를 짚는다(월드에 고정)
     let lp = gr.L.p.clone(), lq = gr.L.q.clone(), lpose = gr.L.pose;
     if (rl.handL) {
-      lq.premultiply(_qTmp.setFromAxisAngle(V(1, 0, 0), 0.5));
+      const w = rl.handW ?? 1;
+      lq.slerp(gr.L.rq, w);
       lp = rl.handL.clone().sub(PALM.clone().applyQuaternion(lq));
-      lpose = GRAB;
+      lpose = lerpPose(gr.L.pose, GRAB, w);
     }
     const pk = p.plant;
     this.plantW = pk ? pk.w : Math.max(0, this.plantW - dt * 8);
@@ -511,7 +524,7 @@ export class Viewmodel {
     // 팔꿈치는 화면 밖 왼쪽 아래와 오른쪽 아래에 있다. 왼팔은 화면 왼쪽 아래에서 비스듬히 건너와 핸드가드를 받친다.
     // 짚을 때 왼팔은 곧게 뻗으므로 소매가 어깨(카메라 왼쪽 위 뒤)에서 손목까지 이어진다
     const elbowR = V(0.24, -0.36, 0.14).applyQuaternion(rootQ).add(this.root.position);
-    const elbowL = (this.current === 'rifle' ? V(-0.16, -0.36, -0.3) : V(-0.24, -0.38, 0.06)).applyQuaternion(rootQ).add(this.root.position);
+    const elbowL = (this.current === 'rifle' ? V(-0.18, -0.32, -0.21) : V(-0.24, -0.38, 0.06)).applyQuaternion(rootQ).add(this.root.position);
     if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); elbowL.lerp(V(-0.2, 0.02, 0.1).applyQuaternion(rootQ).add(this.root.position), k); }
     // 소매 끝은 장갑 소맷부리의 뒤쪽 절반을 덮는다
     const wristR = this.handR.localToWorld(V(0, 0, 0.042));
