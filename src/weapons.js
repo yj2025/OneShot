@@ -1,6 +1,6 @@
 // 1인칭 총과 팔: 절차 모델, 반동·흔들림·재장전 애니메이션 (매번 조금씩 다르게)
 import * as THREE from 'three';
-import { bcMaterial } from './materials.js';
+import { bcMaterial, markEdges } from './materials.js';
 import { noise1 } from './rng.js';
 import { buildScope, SCOPE } from './scope.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -11,7 +11,7 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const _rbCache = new Map();
 function rbox(sx, sy, sz) {
   const k = `${sx},${sy},${sz}`;
-  if (!_rbCache.has(k)) { const r = Math.min(sx, sy, sz) * 0.22; _rbCache.set(k, new RoundedBoxGeometry(sx, sy, sz, 2, r)); }
+  if (!_rbCache.has(k)) { const r = Math.min(sx, sy, sz) * 0.22; _rbCache.set(k, markEdges(new RoundedBoxGeometry(sx, sy, sz, 2, r), r)); }
   return _rbCache.get(k);
 }
 function part(group, mat, size, pos, rot = [0, 0, 0]) {
@@ -22,6 +22,7 @@ function part(group, mat, size, pos, rot = [0, 0, 0]) {
 function cylPart(group, mat, r, len, pos, axis = 'z', seg = 12, r2) {
   const g = new THREE.CylinderGeometry(r2 ?? r, r, len, seg);
   if (axis === 'z') g.rotateX(Math.PI / 2); else if (axis === 'x') g.rotateZ(Math.PI / 2);
+  markEdges(g, 0, axis === 'x' ? 0 : axis === 'z' ? 2 : 1);
   const m = new THREE.Mesh(g, mat); m.position.set(...pos); group.add(m); return m;
 }
 
@@ -102,24 +103,43 @@ function fabricTexture(base, seed) {
   return t;
 }
 
+// 뷰모델 재질 표(총과 장갑 표면 세션, 2026-11-15). 실제 재질의 반사율(선형), 거칠기, 정반사를 그대로 쓴다.
+// 이전 값은 지적마다 눈으로 정했다(12라운드 '검은 덩어리', 16라운드 '회색 플라스틱', 형광등에 번들거림, A/B 35 '빛나는 구슬').
+// 그래서 반사율이 숯보다 낮은 1~3%였고, 반사는 실제의 5~30%였다. 밝은 곳에서도 총과 장갑이 실루엣만 남은 까닭이다.
+// 이제 값은 아래 범위 안에서만 고친다. 형광등의 번들거림은 반사를 줄여서가 아니라 광원 크기(materials.js bcLightRough)로 막는다.
+// 반사율은 검은 장비의 실측 범위에서 아래쪽 값이다. 범위 가운데(폴리머 4.5%, 장갑 5%)로 두었을 때 A/B 라운드 42에서 '연회색 플라스틱', '흰 천'으로 읽혔다.
+// 그때의 더 큰 원인은 빛이었다: 입은 사람의 몸이 가리는 빛과 반사가 빠져 있었다(materials.js body).
+//  재질                                       반사율  거칠기  정반사
+//  검은 폴리머(질감 있는 유리섬유 나일론)            3.5%   0.7    F0 0.04
+//  무광 검정 아노다이징(Type III, 리시버·레일·조준경)  3.0%   0.6    F0 0.04
+//  인산염 처리 강철(총열·소염기·슬라이드)             4.5%   0.7    F0 0.04 (피막은 금속이 아니다)
+//  흑착색 강철(볼트·노브 캡·조정간)                  금속    0.45   F0 0.10
+//  어두운 탄색 폴리머(핸드가드·개머리판·탄창)          7.0%   0.7    F0 0.04
+//  검은 합성섬유 장갑 천(손등)                       3%     섬유    결 반사. 합성 가죽 손바닥과 마디 보호대는 0.52, F0 0.04(hands.js aGloss)
+//  면·폴리 립스탑 소매(짙은 올리브)                   4.5%   섬유    결 반사
+// 무광 마감은 광택도가 낮아 거칠기가 0.6~0.7이다. 0.5 안팎으로 두면 렌즈 앞의 총 윗면 전체가 앞쪽 형광등을 비스듬히 비춰 옅은 회색으로 떴다.
+// 면 혼방 소매는 미세면 정반사 없이 섬유의 결 반사(sheen)만 둔다(Filament의 천 모델). 결 반사 색은 그 모델의 기본값인 반사율의 제곱근이다.
+// 천에 거친 정반사(거칠기 0.65~0.8)를 함께 두면 장갑이 옅은 회색 스웨이드처럼, 소매가 옅은 세이지색으로 떴다
+const PHYS = { envMapIntensity: 1, specularIntensity: 1 };
+// 닳는 모서리(materials.js markEdges): 피막이 벗겨져 드러나는 금속의 반사율(강철 0.55, 알루미늄 0.9)과 손에 닳은 자리의 거칠기
+const STEEL = [0.55, 0.55, 0.55], ALU = [0.88, 0.89, 0.9];
+const fiber = (a) => ({ envMapIntensity: 1, specularIntensity: 0, sheen: 1, sheenColor: new THREE.Color().setScalar(Math.sqrt(a)), sheenRoughness: 0.6 });
 export function buildMaterials() {
-  // 금속 부품은 어두운 회색, 핸드가드와 개머리판과 탄창은 탄색이다. 부품마다 색이 달라야 판정 시트 크기에서 총으로 읽힌다(검은 단색으로 바꿨을 때 "형태가 읽히지 않는 덩어리"로 보였다). 회색 금속이 떠 보이던 것은 반사 탓이라 반사만 줄인다
-  const blk = wearTexture('#1e1f1e', 3), tan = wearTexture('#55524a', 7), stl = wearTexture('#2c2e30', 11);
-  return {
-    polymer: bcMaterial({ map: blk, roughness: 0.6, metalness: 0.0, envMapIntensity: 0.15, specularIntensity: 0.45 }, { grime: 0, physical: true }),
-    // 검게 처리한 금속(아노다이징, 파커라이징)은 무광에 가깝다. 금속성을 낮게 두고 정반사 세기도 줄인다
-    steel: bcMaterial({ map: stl, roughness: 0.46, metalness: 0.25, envMapIntensity: 0.25, specularIntensity: 0.5 }, { grime: 0, physical: true }),
-    // 조준경 몸통: 무광 검정 아노다이징 알루미늄. 총의 강철보다 조금 더 검고, 반사는 넓고 흐리다.
-    // 거칠기 0.4에서는 원통 윗면에 총구 화염과 창이 작고 밝은 반사점으로 맺혔고, 렌즈 앞 초점 흐림이
-    // 그것을 둥근 원판으로 퍼뜨려 '빛나는 구슬'로 읽혔다(A/B 라운드 35 사격 쌍). '광택이 강하다'는 지적도 같은 원인이다
-    scopeBody: bcMaterial({ map: wearTexture('#191b1c', 17), roughness: 0.62, metalness: 0.15, envMapIntensity: 0.3, specularIntensity: 0.5 }, { grime: 0, physical: true }),
-    worn: bcMaterial({ color: 0x4c4e50, roughness: 0.32, metalness: 0.65, envMapIntensity: 0.6 }, { grime: 0 }),
-    tan: bcMaterial({ map: tan, roughness: 0.72, metalness: 0.0, envMapIntensity: 0.25, specularIntensity: 0.45 }, { grime: 0, physical: true }),
-    glove: bcMaterial({ map: fabricTexture('#363530', 5), roughness: 0.85, envMapIntensity: 0.2, specularIntensity: 0.3 }, { grime: 0, physical: true }),
-    gloveKnuckle: bcMaterial({ color: 0x1a1a18, roughness: 0.5, envMapIntensity: 0.3 }, { grime: 0 }),
-    sleeve: bcMaterial({ map: fabricTexture('#3f413a', 9), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15 }, { grime: 0, physical: true }),
-    cuff: bcMaterial({ map: fabricTexture('#3a3c31', 13), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15 }, { grime: 0, physical: true }),
+  // 금속 부품은 어두운 회색, 핸드가드와 개머리판과 탄창은 탄색이다. 부품마다 색이 달라야 판정 시트 크기에서 총으로 읽힌다(검은 단색으로 바꿨을 때 "형태가 읽히지 않는 덩어리"로 보였다)
+  const blk = wearTexture('#353533', 3), tan = wearTexture('#4c4942', 7), stl = wearTexture('#3c3d3b', 11);
+  const M = {
+    polymer: bcMaterial({ map: blk, roughness: 0.7, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { polish: 0.48 }, body: true }),
+    steel: bcMaterial({ map: stl, roughness: 0.7, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { bare: STEEL, polish: 0.42 }, body: true }),
+    // 조준경 몸통: 무광 검정 아노다이징 알루미늄. 거칠기 0.4에서는 원통 윗면에 총구 화염과 창이 작고 밝은 반사점으로 맺혔고
+    // 렌즈 앞 초점 흐림이 그것을 둥근 원판으로 퍼뜨려 '빛나는 구슬'로 읽혔다(A/B 라운드 35)
+    scopeBody: bcMaterial({ map: wearTexture('#2f3031', 17), roughness: 0.6, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { bare: ALU, polish: 0.42 }, body: true }),
+    worn: bcMaterial({ color: 0x59595b, roughness: 0.45, metalness: 1.0, envMapIntensity: 1 }, { grime: 0, finish: { bare: STEEL, polish: 0.42 }, body: true }),
+    tan: bcMaterial({ map: tan, roughness: 0.7, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { polish: 0.52 }, body: true }),
+    glove: bcMaterial({ map: fabricTexture('#302f2c', 5), roughness: 0.8, ...fiber(0.03), vertexColors: true }, { grime: 0, physical: true, gloss: true, body: true }),
+    sleeve: bcMaterial({ map: fabricTexture('#3b3d36', 9), roughness: 1.0, ...fiber(0.045), side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true, body: true }),
   };
+  for (const k in M) M[k].name = k;   // 살펴보기(__bc.vmMat)와 검사에서 재질을 이름으로 고른다
+  return M;
 }
 
 function buildRifle(M) {
@@ -323,12 +343,12 @@ export class Viewmodel {
     this.leadPivot.add(this.gunHolder);
     for (const k in this.models) { this.gunHolder.add(this.models[k].group); this.models[k].group.visible = false; }
     // 손: 거리장으로 지은 스키닝 메시(hands.js). 쥔 자세는 무기마다 손잡이에 맞춰 구한다
-    this.gloveMat = bcMaterial({ map: fabricTexture('#3b3a35', 5), roughness: 0.84, envMapIntensity: 0.2, specularIntensity: 0.3, vertexColors: true }, { grime: 0, physical: true });
+    this.gloveMat = this.M.glove;
     this.hR = createHand(this.gloveMat, false); this.hL = createHand(this.gloveMat, true);
     this.handR = this.hR.mesh; this.handL = this.hL.mesh;
     this.gunHolder.add(this.handR, this.handL);
     for (const k in this.models) this.models[k].grips = fitGrips(this.models[k]);
-    const sleeveMat = bcMaterial({ map: fabricTexture('#33352f', 9), roughness: 1.0, envMapIntensity: 0.2, specularIntensity: 0.15, side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true });
+    const sleeveMat = this.M.sleeve;
     this.foreR = new THREE.Mesh(sleeveGeo(0.066, 0.05, 1.3), sleeveMat); this.foreL = new THREE.Mesh(sleeveGeo(0.066, 0.05, 4.1), sleeveMat);
     scene.add(this.foreR, this.foreL);
     for (const m of [this.foreR, this.foreL]) m.frustumCulled = false;

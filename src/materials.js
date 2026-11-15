@@ -15,6 +15,8 @@ const VERT_HEAD = `
 varying vec3 vBcW;
 attribute float aWear;
 varying float vBcWear;
+attribute vec4 aBox; varying vec4 vBcBox; varying vec3 vBcObj;
+attribute float aGloss; varying float vBcGloss;
 `;
 const VERT_BODY = `
   {
@@ -24,12 +26,79 @@ const VERT_BODY = `
     #endif
     vBcW = (modelMatrix * bcw).xyz;
     vBcWear = aWear;
+    vBcBox = aBox; vBcObj = transformed; vBcGloss = aGloss;
   }
 `;
+
+// 모서리 표시(markEdges): 부품 형상의 물체 좌표 크기를 정점마다 붙인다. 셰이더가 화소마다 모서리까지의 거리를 구해
+// 닳은 모서리(드러난 금속, 손에 닳아 반들거리는 자리)를 그린다. 상자는 두 면에 함께 가까운 곳, 원기둥은 끝 테두리가 모서리다.
+// w: 둥근 상자는 모서리 반지름(>0), 각진 상자는 0, 원기둥은 -1 - 축 번호(x 0, y 1, z 2)
+export function markEdges(geo, bevel = 0, cylAxis = -1) {
+  geo.computeBoundingBox();
+  const b = geo.boundingBox, h = [(b.max.x - b.min.x) / 2, (b.max.y - b.min.y) / 2, (b.max.z - b.min.z) / 2];
+  const w = cylAxis >= 0 ? -1 - cylAxis : bevel, n = geo.attributes.position.count, a = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) a.set([h[0], h[1], h[2], w], i * 4);
+  geo.setAttribute('aBox', new THREE.BufferAttribute(a, 4));
+  return geo;
+}
 
 const FRAG_HEAD = `
 varying vec3 vBcW;
 varying float vBcWear;
+varying vec4 vBcBox; varying vec3 vBcObj; varying float vBcGloss;
+uniform float uFinish; uniform vec4 uBare; uniform float uPolish; uniform float uGlossOn;
+uniform float uBody;
+// 입은 사람의 몸: 가슴에 단 카메라 바로 뒤의 가슴, 배, 두 어깨, 머리(카메라 좌표 = 셰이더의 시점 좌표, m. xyz 중심, w 반지름).
+// 카메라가 몸에 묶여 있으므로 시점 좌표에서는 늘 같은 자리다. 뷰모델(총, 장갑, 소매)만 쓴다(uBody)
+const vec4 BC_BODY[5] = vec4[5](
+  vec4(0.0, -0.08, 0.19, 0.17), vec4(0.0, -0.42, 0.17, 0.16),
+  vec4(-0.19, 0.06, 0.17, 0.10), vec4(0.19, 0.06, 0.17, 0.10), vec4(0.0, 0.30, 0.15, 0.11));
+// 구 하나가 점 p(법선 n)의 하늘을 가리는 코사인 가중 입체각(지평선에 걸친 경우까지 맞는 식, Quilez)
+float bcSphOcc(vec3 p, vec3 n, vec4 s) {
+  vec3 di = s.xyz - p; float l = length(di);
+  float h = max(l / s.w, 1.02), h2 = h * h, nl = dot(n, di / l), k2 = 1.0 - h2 * nl * nl;
+  float res = max(0.0, nl) / h2;
+  if (k2 > 0.001) {
+    res = nl * acos(clamp(-nl * sqrt((h2 - 1.0) / (1.0 - nl * nl)), -1.0, 1.0)) - sqrt(k2 * (h2 - 1.0));
+    res = (res / h2 + atan(sqrt(k2 / (h2 - 1.0)))) / 3.141593;
+  }
+  return clamp(res, 0.0, 1.0);
+}
+float bcBodyOcc(vec3 p, vec3 n) { float o = 0.0; for (int i = 0; i < 5; i++) o += bcSphOcc(p, n, BC_BODY[i]); return min(o, 0.9); }
+// 거울 방향 r이 몸에 닿는 정도(0~1). 반사가 퍼지는 만큼(거칠기) 경계가 무르다
+float bcBodyRefl(vec3 p, vec3 r, float rough) {
+  float o = 0.0, w = 0.12 + rough * rough * 1.1;
+  for (int i = 0; i < 5; i++) {
+    vec3 di = BC_BODY[i].xyz - p; float l = length(di);
+    float ang = acos(clamp(dot(r, di / l), -1.0, 1.0)), rad = asin(clamp(BC_BODY[i].w / l, 0.0, 1.0));
+    o = max(o, 1.0 - smoothstep(rad - w, rad + w, ang));
+  }
+  return o;
+}
+// 점광원까지의 선분을 몸이 가리지 않는 비율(형광등 관의 크기만큼 그림자 가장자리가 무르다)
+float bcBodyVis(vec3 p, vec3 lp) {
+  vec3 d = lp - p; float L = length(d), v = 1.0; d /= L;
+  for (int i = 0; i < 5; i++) {
+    vec3 c = BC_BODY[i].xyz - p; float t = clamp(dot(c, d), 0.0, L);
+    v *= smoothstep(BC_BODY[i].w * 0.6, BC_BODY[i].w * 1.5, length(c - d * t));
+  }
+  return v;
+}
+float bcEdge; float bcBare; float bcDust;
+// 모서리까지의 거리(m). 둥근 상자는 모서리 꼭대기(반지름의 0.29만큼 안쪽)부터 잰다
+float bcEdgeDist() {
+  vec3 a = abs(vBcObj), h = vBcBox.xyz;
+  if (vBcBox.w < -0.5) {
+    float ax = -vBcBox.w - 1.0;
+    float along = ax < 0.5 ? a.x : ax < 1.5 ? a.y : a.z, hl = ax < 0.5 ? h.x : ax < 1.5 ? h.y : h.z;
+    vec2 rd = ax < 0.5 ? vBcObj.yz : ax < 1.5 ? vBcObj.xz : vBcObj.xy;
+    float r = ax < 0.5 ? h.y : h.x;
+    return max(r - length(rd), hl - along);
+  }
+  vec3 d = h - a;
+  float s1 = min(d.x, min(d.y, d.z)), s3 = max(d.x, max(d.y, d.z));
+  return max(d.x + d.y + d.z - s1 - s3 - vBcBox.w * 0.29, 0.0);
+}
 uniform vec4 uBldg;
 uniform float uRoofY;
 uniform float uFL;
@@ -41,9 +110,14 @@ uniform float uDamp;
 uniform float uWeather;
 uniform highp sampler3D uAmb; uniform highp sampler3D uSkyV; uniform highp sampler3D uVisA; uniform highp sampler3D uVisB;
 uniform vec3 uVolMin; uniform vec3 uVolInv; uniform float uVolOff; uniform vec3 uVisMin; uniform vec3 uVisInv; uniform float uVisOff;
-uniform float uVolOn; uniform float uLmOn; uniform float uClay; uniform vec4 uLmA[${MAXL}]; uniform vec4 uLmB[${MAXL}]; uniform float uLm1[${MAXL}];
+uniform float uVolOn; uniform float uLmOn; uniform float uClay; uniform vec4 uLmA[${MAXL}]; uniform vec4 uLmB[${MAXL}]; uniform float uLm1[${MAXL}]; uniform float uLmR[${MAXL}];
 uniform vec4 uSkyU; uniform float uGndE; uniform vec3 uSkyTint; uniform vec3 uBncTint;
-vec3 bcWN; vec4 bcVa; vec4 bcVb;
+vec3 bcWN; vec4 bcVa; vec4 bcVb; float bcR0;
+// 광원의 크기: 점광원으로 그리는 형광등(1.25 m 관 두 개가 든 0.22 m 폭 등기구)과 총구 화염은 실제로는 면이다.
+// 면광원의 정반사는 광원이 보이는 각도만큼 퍼진다. 반벡터의 퍼짐(α = 거칠기²)에 광원 반지름 / (2 × 거리)를 더한다.
+// GGX 분포는 정규화되어 있어 넓혀도 반사되는 빛의 총량은 같고 봉우리만 낮아진다. 크기 없는 점으로 두면 렌즈 앞 총과 장갑에
+// 작고 센 반사점이 맺혀, 그것을 막으려고 모든 반사를 실제의 몇 분의 일로 줄여 왔다(총과 장갑 표면 세션의 원인 분석)
+float bcLightRough(float rad, float dist) { return sqrt(min(bcR0 * bcR0 + rad / (2.0 * max(dist, 0.05)), 1.0)); }
 float bcHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float bcNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(bcHash(i), bcHash(i + vec2(1.0, 0.0)), f.x), mix(bcHash(i + vec2(0.0, 1.0)), bcHash(i + vec2(1.0, 1.0)), f.x), f.y); }
@@ -193,12 +267,45 @@ const FRAG_GRIME = `
     vec3 wc = bcWv > 0.0 ? mix(diffuseColor.rgb, vec3(wl) * 1.25 + 0.035, 0.8) : diffuseColor.rgb * vec3(0.4, 0.38, 0.36);
     diffuseColor.rgb = mix(diffuseColor.rgb, wc, w);
   }
+  // 닳은 모서리(총처럼 손에 쥐고 부딪히는 물건, uFinish): 모서리 꼭대기에서 1~2 mm 안쪽까지, 조각조각 끊겨 닳는다.
+  // 검은 피막(아노다이징, 인산염)이 벗겨져 금속이 드러나고(uBare), 폴리머는 긁혀 옅어진다. 둘 다 손에 닳아 반들거린다(uPolish)
+  // 화소 하나보다 좁은 닳음은 그리지 않고 옅게 편다(fwidth로 화소 크기를 잰다). 그대로 두면 레일 이빨과 작은 부품이 화소 단위로 반짝였다
+  // 금속은 가장 많이 닳은 자리에서만 드러난다(bare). 1~2 mm 금속 선이 문밖 하늘을 비추면 HDR 값이 커서 렌즈 흐림과 색수차를 거쳐
+  // 색 점으로 부서졌다. 레일 이빨 같은 작은 부품(모서리 반지름 4 mm 미만)은 닳음 대신 원래 피막을 둔다
+  bcEdge = 0.0; bcBare = 0.0; bcDust = 0.0;
+  if (uFinish > 0.5 && vBcBox.x > 0.0) {
+    float ed = bcEdgeDist(), px = max(fwidth(ed), 1e-6);
+    float patchy = smoothstep(0.35, 0.7, bcFbm(vBcObj.xz * 120.0 + vBcObj.y * 95.0 + 5.3));
+    float wid = 0.0016 * patchy;
+    float big = vBcBox.w < -0.5 || vBcBox.w < 1e-5 ? 1.0 : smoothstep(0.0025, 0.004, vBcBox.w);
+    float wear = (1.0 - smoothstep(wid - px, wid + px, ed)) * smoothstep(1.5, 4.0, wid / px) * big;
+    bcBare = uBare.a * smoothstep(0.75, 0.95, patchy) * wear;              // 금속이 드러난 정도
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.6 + 0.01, wear);   // 닳아 옅어진 피막
+    diffuseColor.rgb = mix(diffuseColor.rgb, uBare.rgb, bcBare);
+    bcEdge = 0.5 * wear + 0.5 * bcBare;                                       // 피막이 남은 닳음은 반만 반들거린다
+    // 먼지: 바깥 훈련장에서 쓰는 총의 위를 향한 면(부품 좌표의 위)에 앉은 마른 흙먼지. 얼룩지게 앉고 모서리의 닳은 자리는 닦여 있다
+    vec3 bcOn = normalize(cross(dFdx(vBcObj), dFdy(vBcObj)));
+    float dust = smoothstep(0.45, 0.9, bcOn.y) * smoothstep(0.38, 0.72, bcFbm(vBcObj.xz * 38.0 + vBcObj.y * 21.0 + 2.1)) * (1.0 - wear);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.27, 0.23), dust * 0.22);
+    bcDust = dust;
+  }
   if (uClay > 0.5) diffuseColor.rgb = vec3(0.45);
 }
 `;
 
 // 점광원 루프 앞: 면의 월드 방향과 형광등 가시도를 한 번 읽어 둔다
 const FRAG_PRE = `
+// 정점에 '매끈한 면'(aGloss)이 표시된 자리: 천 재질 안의 합성 가죽 손바닥과 마디 보호대. 섬유의 결 반사 대신 유전체 정반사를 둔다.
+// 재질 쪽 스위치(uGlossOn)로도 막는다: 속성이 없는 형상은 WebGL의 일반 속성 값을 읽는데, 다른 프로그램이 그 자리에 남긴 값일 수 있다
+if (uGlossOn > 0.5 && vBcGloss > 0.01) {
+  material.roughness = mix(material.roughness, 0.52, vBcGloss);
+  material.specularColor = mix(material.specularColor, vec3(0.04), vBcGloss);
+  material.specularF90 = mix(material.specularF90, 1.0, vBcGloss);
+  #ifdef USE_SHEEN
+    material.sheenColor *= 1.0 - vBcGloss;
+  #endif
+}
+bcR0 = material.roughness;
 {
   bcWN = normalize(inverseTransformDirection(normal, viewMatrix));
   bcVa = vec4(1.0); bcVb = vec4(1.0);
@@ -210,10 +317,12 @@ const FRAG_PRE = `
   }
 }
 `;
+// 점광원마다 가시도(형광등 그림자)를 곱하고 광원 크기만큼 정반사를 넓힌다. 루프가 끝나면 거칠기를 되돌린다(환경 반사와 다른 광원은 원래 거칠기)
 const LIGHTS_BEGIN = THREE.ShaderChunk.lights_fragment_begin.replace(
   'getPointLightInfo( pointLight, geometryPosition, directLight );',
-  'getPointLightInfo( pointLight, geometryPosition, directLight ); directLight.color *= bcPV( uLmA[ i ], uLmB[ i ], uLm1[ i ] );');
-if (LIGHTS_BEGIN === THREE.ShaderChunk.lights_fragment_begin) console.warn('점광원 루프를 찾지 못해 형광등 그림자를 넣지 못했다');
+  'getPointLightInfo( pointLight, geometryPosition, directLight ); directLight.color *= bcPV( uLmA[ i ], uLmB[ i ], uLm1[ i ] ); if ( uBody > 0.5 ) directLight.color *= bcBodyVis( geometryPosition, pointLight.position ); material.roughness = bcLightRough( uLmR[ i ], length( pointLight.position - geometryPosition ) );')
+  .replace('#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )', 'material.roughness = bcR0;\n#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )');
+if (!LIGHTS_BEGIN.includes('bcLightRough') || !LIGHTS_BEGIN.includes('material.roughness = bcR0;')) console.warn('점광원 루프를 찾지 못해 형광등 그림자와 광원 크기를 넣지 못했다');
 
 // 간접광: 조도 볼륨이 반구광과 환경맵 확산광을 대신한다. 볼륨 밖(담장 너머, 지붕 위)은 가려지지 않은 하늘빛으로 잇는다
 const FRAG_LIGHT = `
@@ -228,13 +337,24 @@ const FRAG_LIGHT = `
   // 굽기에 실패한 기기: 볼륨이 없으므로 건물 안만 어림으로 어둡게 한다
   eOpen *= mix(1.0, 0.1, bcInside(vBcW) * (1.0 - uVolOn));
   vec3 bcTint = mix(uBncTint, uSkyTint, clamp(bcSkv * 1.5, 0.0, 1.0));
-  irradiance += mix(eOpen, bcIrr(bcSh, bcWN), inV) * bcTint;
+  vec3 bcE0 = mix(eOpen, bcIrr(bcSh, bcWN), inV) * bcTint;
+  // 입은 사람의 몸이 가린 만큼 빛이 줄고(가슴 카메라가 보는 면은 대부분 몸 쪽을 향한다), 거울 방향이 몸에 닿으면 어두운 옷이 비친다
+  float bcBO = 0.0, bcBR = 0.0;
+  if (uBody > 0.5) { bcBO = bcBodyOcc(geometryPosition, geometryNormal); bcBR = bcBodyRefl(geometryPosition, reflect(-geometryViewDir, geometryNormal), bcR0); }
+  vec3 bcE = bcE0 * (1.0 - bcBO);
+  irradiance += bcE;
+  // 천의 결 반사(sheen): 섬유가 비스듬한 빛을 되돌려 접힌 마루와 가장자리가 회색으로 빛난다. 환경맵 조도(iblIrradiance)는
+  // 볼륨이 대신하므로 0으로 두는데, three.js는 그 값으로 결 반사의 간접광을 셈해 천이 하늘빛과 반사광을 받지 못했다. 볼륨 조도로 셈한다
+  #ifdef USE_SHEEN
+    sheenSpecularIndirect += bcE * material.sheenColor * IBLSheenBRDF( geometryNormal, geometryViewDir, material.sheenRoughness );
+  #endif
   #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
     iblIrradiance = vec3(0.0);
     // 반사: 하늘이 보이는 만큼은 하늘을, 나머지는 그 자리 둘레의 밝기를 비춘다
     vec3 bcRW = inverseTransformDirection(reflect(-geometryViewDir, geometryNormal), viewMatrix);
     float eR = mix(max(uSkyU.w + dot(uSkyU.xyz, bcRW), 0.0) + uGndE * (0.5 - 0.5 * bcRW.y), max(bcSh.w + dot(bcSh.xyz, bcRW), bcSh.w * 0.3), inV);
     radiance = mix(eR * RECIPROCAL_PI * bcTint * envMapIntensity, radiance, bcSkv * bcSkv);
+    radiance = mix(radiance, bcE0 * (0.06 * RECIPROCAL_PI) * envMapIntensity, bcBR);
   #endif
 }
 #endif
@@ -253,9 +373,14 @@ if (uDamp > 0.9) {
 `;
 
 // weather: 1이면 바깥에 놓였을 때 바래는 나무(노출에 따라 은회색과 빗물 얼룩)
-export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0, physical = false, weather = 0 } = {}) {
+// finish: 닳는 모서리 { bare: 드러나는 금속 색(선형, 없으면 null = 폴리머), polish: 닳은 자리의 거칠기 }. 형상에 markEdges가 있어야 보인다
+// gloss: 형상의 aGloss 속성이 표시한 자리를 매끈한 유전체로 그린다(장갑의 합성 가죽과 보호대)
+// body: 입은 사람의 몸(가슴 카메라 뒤의 몸통과 머리)이 빛과 반사를 가린다. 뷰모델(총, 장갑, 소매)만 켠다
+export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0, physical = false, weather = 0, finish = null, gloss = false, body = false } = {}) {
   const m = physical ? new THREE.MeshPhysicalMaterial({ envMapIntensity: 0.5, ...params }) : new THREE.MeshStandardMaterial({ envMapIntensity: 0.5, ...params });
-  const local = { uGrime: { value: grime }, uAO: { value: ao }, uDamp: { value: damp }, uWeather: { value: weather } };
+  const bare = finish && finish.bare ? new THREE.Vector4(finish.bare[0], finish.bare[1], finish.bare[2], 1) : new THREE.Vector4(0, 0, 0, 0);
+  const local = { uGrime: { value: grime }, uAO: { value: ao }, uDamp: { value: damp }, uWeather: { value: weather },
+    uFinish: { value: finish ? 1 : 0 }, uBare: { value: bare }, uPolish: { value: finish ? finish.polish : 0.5 }, uGlossOn: { value: gloss ? 1 : 0 }, uBody: { value: body ? 1 : 0 } };
   m.userData.bc = local;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, envUniforms, volUniforms, local);
@@ -263,7 +388,8 @@ export function bcMaterial(params = {}, { grime = 1, ao = 1, damp = 0, physical 
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + VERT_BODY);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FRAG_HEAD)
       .replace('#include <map_fragment>', FRAG_GRIME)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = clamp(roughnessFactor + (bcFbm(vBcW.xz * 1.3 + vBcW.y * 0.7) - 0.5) * 0.55 * uGrime - smoothstep(0.62, 0.7, bcFbm(vBcW.xz * 0.5 + 9.0)) * 0.35 * uGrime, 0.04, 1.0);\n' + BC_GLOSS)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = clamp(roughnessFactor + (bcFbm(vBcW.xz * 1.3 + vBcW.y * 0.7) - 0.5) * 0.55 * uGrime - smoothstep(0.62, 0.7, bcFbm(vBcW.xz * 0.5 + 9.0)) * 0.35 * uGrime, 0.04, 1.0);\n roughnessFactor = mix(mix(roughnessFactor, uPolish, bcEdge), 0.92, bcDust * 0.5);\n' + BC_GLOSS)
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = mix(metalnessFactor, 1.0, bcBare);')
       // 반들거리는 자리(젖은 바닥, 닳은 길)는 물과 광이 잔결을 메워 평평하다. 노멀 맵을 거칠기에 따라 줄인다.
       // 그대로 두면 먼 바닥의 젖은 자리에서 잔결마다 반사가 흰 점으로 반짝였다(A/B 라운드 15). 거리로 거칠기를 올리면 젖은 반사 자체가 사라져서 이 방법을 쓴다
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n#ifdef USE_NORMALMAP\n normal = normalize(mix(nonPerturbedNormal, normal, smoothstep(0.2, 0.7, roughnessFactor)));\n#endif')

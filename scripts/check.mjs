@@ -28,9 +28,9 @@ async function main() {
   //  (c) 바깥에서 1.6 m 높이 창문(비닐이 찢겨 걸린 창)을 넘어 실내 바닥(0.7 m)에 선다. (d) 방벽 앞에서 Space를 한 번만 누르면(길게 눌러도) 넘지 못한다.
   //  (e) 방범창과 합판으로 막은 창은 Space 두 번으로도 넘지 못한다(창살과 합판은 그림만 있고 충돌 상자가 없어서 처음에는 지나갔다).
   //  끝난 자리에서 몸(반경 0.28 m, 발에서 1.2 m까지)이 막는 상자(발보다 0.42 m 넘게 솟은 것)와 겹치지 않는다
-  //  CHECK_ONLY=move 이면 여기까지만 돈다(파쿠르를 고칠 때 빠르게 돌려 보는 용도)
+  //  CHECK_ONLY=move 이면 여기까지만 돈다(파쿠르를 고칠 때 빠르게 돌려 보는 용도). CHECK_ONLY=surface 이면 (k)만 돈다
   const extraErrors = [], extraExternal = [];
-  {
+  if (process.env.CHECK_ONLY !== 'surface') {
     const g = await openGame(L.context, 'test=1&clock=manual&seed=11&view=13');
     const P = g.page;
     await clickStart(P);
@@ -221,7 +221,29 @@ async function main() {
     extraErrors.push(...g.errors); extraExternal.push(...g.external);
     await P.close();
   }
-  if (process.env.CHECK_ONLY === "move") return;
+  // (k) 밝은 곳에서 총과 장갑이 장면의 빛을 받는다(총과 장갑 표면 세션, 2026-11-15. 12라운드부터 A/B 41까지 되풀이된 '빛 속에서도 새까만 총과 장갑')
+  //  시점 다섯 곳(마당 0, 문간 6, 홀 3, 사무실 4, 복도 2)에서 1.5초 뒤 __bc.vmLight()로 총·손·소매 화소의 실효 반사율을 잰다.
+  //  실효 반사율은 같은 자리를 흰 종이(반사율 1, 정반사 없음)로 그렸을 때 대비 카메라로 돌아온 빛의 비율이라, 조명과 노출이 아니라 재질만 본다.
+  //  ① 모든 시점에서 중앙값 5% 이상(실제 검은 폴리머·아노다이징·짙은 장갑 천의 하한) ② 모든 시점에서 p90 50% 이하(형광등에 번들거려 하얗게 뜨지 않는다)
+  //  ③ 마당에서 위를 향한 면의 p90 10% 이상(흐린 하늘이 윗면에 비친 띠). 고치기 전 빌드(fa7990a의 재질)에서 실패하는 것을 먼저 확인했다
+  {
+    const rows = [];
+    for (const [v, name] of [[0, '마당'], [6, '문간'], [3, '홀'], [4, '사무실'], [2, '복도']]) {
+      const q = await openGame(L.context, `test=1&clock=manual&seed=11&view=${v}`);
+      const Q = q.page; await clickStart(Q);
+      await Q.evaluate(() => window.__bc.step(90));
+      const r = await Q.evaluate(() => (window.__bc.vmLight ? window.__bc.vmLight() : null));
+      extraErrors.push(...q.errors); extraExternal.push(...q.external);
+      await Q.close();
+      rows.push({ name, r });
+    }
+    const pct = (x) => (x * 100).toFixed(1) + '%';
+    const okRow = (o) => o.r && o.r.refl.all.n > 200 && o.r.refl.all.p50 >= 0.05 && o.r.refl.all.p90 <= 0.5;
+    const yard = rows[0].r, sky = yard && yard.refl.up.n > 50 ? yard.refl.up.p90 : 0;
+    rec('(k) 밝은 곳에서 총과 장갑이 장면의 빛을 받는다', rows.every(okRow) && sky >= 0.1,
+      rows.map((o) => (o.r ? `${o.name} ${pct(o.r.refl.all.p50)}·p90 ${pct(o.r.refl.all.p90)}` : `${o.name} 잴 수 없음`)).join(', ') + ` (중앙값 5% 이상·p90 50% 이하), 마당 윗면 p90 ${pct(sky)}(10% 이상, 화소 ${yard ? yard.refl.up.n : 0})`);
+  }
+  if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');
   rec('로딩 완료', true);

@@ -12,7 +12,7 @@
 //    총은 마우스를 먼저 따라가고 카메라(몸)는 뒤따르므로, 카메라가 사출동공에서 어긋나는 만큼 그림자와 밀림이 저절로 생긴다.
 //    카메라 렌즈와 같은 자리에 렌더 타깃을 붙여 고정해 둔 화면 속 화면(PIP)이 '조준이 뻣뻣하다'고 느껴지는 까닭이 이 어긋남이 없어서다.
 import * as THREE from 'three';
-import { bcMaterial } from './materials.js';
+import { bcMaterial, markEdges } from './materials.js';
 
 // 총 좌표(원점 = 권총손잡이 윗부분, -z가 총구 방향, 단위 m)
 export const SCOPE = {
@@ -102,18 +102,23 @@ export function buildScope(M) {
     [0.0150, 0.0], [0.0150, 0.098], [0.0157, 0.105], [0.0198, 0.121], [0.0226, 0.134], [0.0228, 0.165],
     [0.0236, 0.167], [0.0236, 0.181], [0.0229, 0.183], [0.0229, S.eyeZ + 0.004], [S.eyeR + 0.0007, S.eyeZ + 0.004], [S.eyeR + 0.0005, S.eyeZ],
   ];
-  const tube = new THREE.Mesh(lathe(prof.map(([r, z]) => [r, z])), body);
-  tube.position.y = S.axisY; g.add(tube);
+  // 닳은 모서리와 먼지(materials.js markEdges)는 형상이 물체 원점에 가운데가 맞아야 해서, 형상을 가운데로 옮기고 그만큼 메시를 옮긴다
+  const tubeGeo = lathe(prof.map(([r, z]) => [r, z]));
+  tubeGeo.computeBoundingBox(); const tc = tubeGeo.boundingBox.getCenter(new THREE.Vector3());
+  tubeGeo.translate(-tc.x, -tc.y, -tc.z); markEdges(tubeGeo, 0, 2);
+  const tube = new THREE.Mesh(tubeGeo, body);
+  tube.position.set(tc.x, S.axisY + tc.y, tc.z); g.add(tube);
   // 시력 조절 링의 홈
   for (let i = 0; i < 9; i++) {
     const rib = new THREE.Mesh(new THREE.TorusGeometry(0.0237, 0.0007, 4, 32), body);
     rib.position.set(0, S.axisY, 0.1685 + i * 0.0015); g.add(rib);
   }
   // 조정부: 위 고저 다이얼, 오른쪽 좌우 다이얼, 왼쪽 조명 다이얼
-  const box = (sz, p, mat = body) => { const m = new THREE.Mesh(new THREE.BoxGeometry(...sz), mat); m.position.set(...p); g.add(m); return m; };
+  const box = (sz, p, mat = body) => { const m = new THREE.Mesh(markEdges(new THREE.BoxGeometry(...sz)), mat); m.position.set(...p); g.add(m); return m; };
   const cyl = (r, h, p, axis, mat = body, seg = 20) => {
     const geo = new THREE.CylinderGeometry(r, r, h, seg);
     if (axis === 'x') geo.rotateZ(Math.PI / 2); else if (axis === 'z') geo.rotateX(Math.PI / 2);
+    markEdges(geo, 0, axis === 'x' ? 0 : axis === 'z' ? 2 : 1);
     const m = new THREE.Mesh(geo, mat); m.position.set(...p); g.add(m); return m;
   };
   box([0.030, 0.030, 0.046], [0, S.axisY, 0.048]);
@@ -130,8 +135,8 @@ export function buildScope(M) {
   }
   // 렌즈: 어두운 유리(반사만 보인다)와 그 위에 더하는 조준경 상
   // 접안렌즈는 반사 방지 코팅이 되어 있고, 조준할 때 비치는 것은 어두운 얼굴과 카메라뿐이다. 반사를 약하게 둬야 위에 더하는 상이 뿌옇게 뜨지 않는다
-  const glass = bcMaterial({ color: 0x050608, roughness: 0.05, metalness: 0.0, envMapIntensity: 0.5, specularIntensity: 0.3 }, { grime: 0, physical: true });
-  const coat = bcMaterial({ color: 0x07060a, roughness: 0.04, metalness: 0.0, envMapIntensity: 1.2, specularIntensity: 1.0, sheen: 1, sheenColor: new THREE.Color(0x3a2a55), sheenRoughness: 0.3 }, { grime: 0, physical: true });
+  const glass = bcMaterial({ color: 0x050608, roughness: 0.05, metalness: 0.0, envMapIntensity: 0.5, specularIntensity: 0.3 }, { grime: 0, physical: true, body: true });
+  const coat = bcMaterial({ color: 0x07060a, roughness: 0.04, metalness: 0.0, envMapIntensity: 1.2, specularIntensity: 1.0, sheen: 1, sheenColor: new THREE.Color(0x3a2a55), sheenRoughness: 0.3 }, { grime: 0, physical: true, body: true });
   const eyeGlass = new THREE.Mesh(new THREE.CircleGeometry(S.eyeR + 0.0005, 40), glass);
   eyeGlass.position.set(0, S.axisY, S.eyeZ); g.add(eyeGlass);
   const objGlass = new THREE.Mesh(new THREE.CircleGeometry(S.objR + 0.0005, 40), coat);

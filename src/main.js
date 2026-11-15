@@ -12,6 +12,7 @@ import { Post, OVERSCAN } from './post.js';
 import { ScopeView } from './scope.js';
 import { OSD } from './osd.js';
 import { bakeLight, skyGain, volUniforms, probeLight } from './lightbake.js';
+import { bcMaterial } from './materials.js';
 
 const Q = new URLSearchParams(location.search);
 const TEST = Q.get('test') === '1';
@@ -647,6 +648,10 @@ class Game {
       vmView(c) { g.vmView = c || null; },
       // 살펴보기용: 총 자세 값을 덮어쓴다({ low: { p: [x,y,z], r: [숙임,돌림,기울임] }, alert, carry, handle, handleW })
       vmTune(o) { g.vm.tune = o || null; },
+      // 검사용: 지금 시점에서 총·손·소매가 받는 빛을 선형 HDR(노출과 센서 곡선 전)로 잰다. vmLightStats 참고
+      vmLight(o) { return vmLightStats(g, o || {}); },
+      // 살펴보기용: 총·손·소매 재질 값을 덮어쓴다({ env, spec, albedo, rough }). null이면 되돌린다
+      vmMat(o) { return vmMatOverride(g, o); },
       place(x, z, yaw, pitch = 0) { g.player.spawn(x, z, yaw, pitch); g.player.crouchToggle = false; return { x: g.player.pos.x, y: g.player.pos.y, z: g.player.pos.z }; },
       scopeDiag() {
         const names = new Map([[g.level.group, 'level'], [g.vm.root, 'viewmodel'], [g.sky, 'sky']]);
@@ -660,6 +665,103 @@ class Game {
       step(n = 1) { if (!MANUAL) return null; for (let i = 0; i < n; i++) g.tick(1 / 60); return { time: g.time, phase: g.phase, playerHits: g.stats.playerHits, shotsFired: g.stats.shotsFired }; },
     };
   }
+}
+
+// 총·손·소매(뷰모델)를 이루는 객체와 재질
+function vmParts(g) { return [g.vm.root, g.vm.foreR, g.vm.foreL]; }
+function vmMaterials(g) {
+  const s = new Set();
+  for (const o of vmParts(g)) o.traverse((c) => { if (c.isMesh && c.material) (Array.isArray(c.material) ? c.material : [c.material]).forEach((m) => s.add(m)); });
+  return [...s];
+}
+
+// 검사용 측정: 지금 카메라로 장면을 네 번 그린다. ① 선형 HDR 색 ② 모든 면의 법선 ③ 뷰모델만의 법선 ④ 뷰모델만, 흰 종이(반사율 1, 정반사 없음)로.
+// ①을 ④로 나누면 화소마다 '그 자리에 떨어진 빛 가운데 카메라로 돌아온 비율'(실효 반사율)이 나온다. 조명과 노출에 상관없이 재질의 응답만 남는다.
+// 실제 검은 폴리머·아노다이징은 확산 반사율 4~6%에 비스듬한 면의 정반사가 더해지고, 짙은 장갑 천은 5~8%, 올리브색 소매는 8~15%쯤이다.
+// 뷰모델 화소는 면의 방향(위·옆·아래, 월드 기준)으로도 나누고, 같은 화면에서 위를 향한 바닥(뷰모델 밖, 화면 아래쪽 절반)의 밝기도 함께 낸다(노출과 센서 곡선 전의 값)
+// only: 재질 이름 목록('polymer,steel')을 주면 그 재질이 보이는 화소만 센다(다른 뷰모델 부품은 깊이만 써서 가린다)
+function vmLightStats(g, { scale = 0.5, only = null } = {}) {
+  const R = g.renderer, cam = g.camera, scene = g.scene;
+  const w = Math.max(16, Math.floor(innerWidth * scale)), h = Math.max(16, Math.floor(innerHeight * scale));
+  const mk = () => new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: true });
+  const rtC = mk(), rtN = mk(), rtM = mk(), rtW = mk();
+  const prevT = R.getRenderTarget(), prevO = scene.overrideMaterial, prevCC = R.getClearColor(new THREE.Color()), prevCA = R.getClearAlpha();
+  const nm = new THREE.MeshNormalMaterial();
+  // 흰 종이도 뷰모델과 같은 몸 가림(body)을 받는다. 나눈 값에는 빛이 지워지고 재질의 응답만 남는다
+  const white = g._whiteCard || (g._whiteCard = bcMaterial({ color: 0xffffff, roughness: 1, metalness: 0, specularIntensity: 0, envMapIntensity: 0 }, { grime: 0, physical: true, body: true }));
+  const parts = new Set(vmParts(g));
+  // 뷰모델이 아닌 메시만 숨긴다. 장면의 자식(레벨 묶음)을 통째로 숨기면 그 안의 형광등(점광원)까지 꺼져
+  // 흰 종이가 형광등 직접광 없이 그려졌다(2026-11-15, 실내 실효 반사율이 2~3배 부풀었다)
+  const inVm = (o) => { for (let a = o; a; a = a.parent) if (parts.has(a)) return true; return false; };
+  const hid = [];
+  const hideRest = () => scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible && !inVm(o)) { hid.push(o); o.visible = false; } });
+  try {
+    R.setClearColor(0x000000, 0);
+    R.setRenderTarget(rtC); R.clear(); R.render(scene, cam);
+    scene.overrideMaterial = nm;
+    R.setRenderTarget(rtN); R.clear(); R.render(scene, cam);
+    hideRest();
+    const swap = [];
+    if (only) {
+      const names = only.split(','), hide = new THREE.MeshBasicMaterial({ colorWrite: false });
+      scene.overrideMaterial = null;
+      for (const p of parts) p.traverse((m) => { if (m.isMesh) { swap.push([m, m.material]); m.material = names.includes(m.material.name) ? nm : hide; } });
+    }
+    R.setRenderTarget(rtM); R.clear(); R.render(scene, cam);
+    for (const [m, mat] of swap) m.material = mat;
+    scene.overrideMaterial = white;
+    R.setRenderTarget(rtW); R.clear(); R.render(scene, cam);
+  } finally {
+    for (const o of hid) o.visible = true;
+    scene.overrideMaterial = prevO; R.setRenderTarget(prevT); R.setClearColor(prevCC, prevCA); nm.dispose();
+  }
+  const C = new Float32Array(w * h * 4), N = new Float32Array(w * h * 4), M = new Float32Array(w * h * 4), W = new Float32Array(w * h * 4);
+  R.readRenderTargetPixels(rtC, 0, 0, w, h, C); R.readRenderTargetPixels(rtN, 0, 0, w, h, N); R.readRenderTargetPixels(rtM, 0, 0, w, h, M); R.readRenderTargetPixels(rtW, 0, 0, w, h, W);
+  rtC.dispose(); rtN.dispose(); rtM.dispose(); rtW.dispose();
+  const q = cam.getWorldQuaternion(new THREE.Quaternion()), n = new THREE.Vector3();
+  const acc = () => ({ n: 0, sum: 0, v: [] });
+  const vmAll = acc(), vmUp = acc(), vmSide = acc(), vmDown = acc(), gnd = acc(), rest = acc();
+  const rAll = acc(), rUp = acc(), rSide = acc(), rDown = acc();
+  const add = (a, l) => { a.n++; a.sum += l; a.v.push(l); };
+  const Y = (A, k) => 0.2126 * A[k] + 0.7152 * A[k + 1] + 0.0722 * A[k + 2];
+  for (let i = 0; i < w * h; i++) {
+    const k = i * 4, l = Y(C, k);
+    if (!(l >= 0) || !isFinite(l)) continue;
+    if (M[k + 3] > 0.5) {
+      n.set(M[k] * 2 - 1, M[k + 1] * 2 - 1, M[k + 2] * 2 - 1).normalize().applyQuaternion(q);
+      const dir = n.y > 0.5 ? 1 : n.y < -0.5 ? -1 : 0;
+      add(vmAll, l); add(dir > 0 ? vmUp : dir < 0 ? vmDown : vmSide, l);
+      const lw = Y(W, k);
+      if (lw > 1e-5) { const r = l / lw; add(rAll, r); add(dir > 0 ? rUp : dir < 0 ? rDown : rSide, r); }
+    } else if (N[k + 3] > 0.5) {
+      add(rest, l);
+      const y = Math.floor(i / w);
+      if (y < h * 0.5) { n.set(N[k] * 2 - 1, N[k + 1] * 2 - 1, N[k + 2] * 2 - 1).normalize().applyQuaternion(q); if (n.y > 0.8) add(gnd, l); }
+    }
+  }
+  const sum = (a) => { if (!a.n) return { n: 0 }; a.v.sort((x, y) => x - y); const pc = (p) => a.v[Math.min(a.v.length - 1, Math.floor(p * a.v.length))]; return { n: a.n, frac: +(a.n / (w * h)).toFixed(4), mean: a.sum / a.n, p10: pc(0.1), p50: pc(0.5), p90: pc(0.9), p99: pc(0.99) }; };
+  return { w, h, vm: sum(vmAll), up: sum(vmUp), side: sum(vmSide), down: sum(vmDown), ground: sum(gnd), scene: sum(rest), refl: { all: sum(rAll), up: sum(rUp), side: sum(rSide), down: sum(rDown) } };
+}
+
+// 살펴보기용: 뷰모델 재질의 반사와 반사율을 바꿔 본다. 원래 값은 처음 바꿀 때 저장하고 null이면 되돌린다.
+// { only: 'glove,sleeve' }처럼 재질 이름(weapons.js 재질 표의 키)을 주면 그 재질만 바꾼다. sheen은 결 반사 색(회색 값), sheenRough는 그 거칠기, finish는 닳은 모서리 켜기(1)·끄기(0)
+function vmMatOverride(g, o) {
+  const only = o && o.only ? o.only.split(',') : null;
+  const mats = vmMaterials(g).filter((m) => m.isMeshStandardMaterial);
+  for (const m of mats) {
+    const u = m.userData;
+    if (!u.orig) u.orig = { env: m.envMapIntensity, spec: m.specularIntensity, color: m.color.clone(), rough: m.roughness, sheen: m.sheenColor ? m.sheenColor.clone() : null, sheenRough: m.sheenRoughness, map: m.map };
+    const on = o && (!only || only.includes(m.name));
+    m.envMapIntensity = on && o.env != null ? o.env : u.orig.env;
+    if (m.specularIntensity !== undefined) m.specularIntensity = on && o.spec != null ? o.spec : u.orig.spec;
+    m.color.copy(u.orig.color).multiplyScalar(on && o.albedo != null ? o.albedo : 1);
+    m.roughness = on && o.rough != null ? o.rough : u.orig.rough;
+    const map = on && o.map === 0 ? null : u.orig.map;   // map: 0이면 반사율 텍스처를 떼고 색(albedo 값)만 쓴다
+    if (m.map !== map) { m.map = map; m.needsUpdate = true; }
+    if (u.bc && u.bc.uFinish) { if (u.orig.finish === undefined) u.orig.finish = u.bc.uFinish.value; u.bc.uFinish.value = on && o.finish != null ? o.finish : u.orig.finish; }
+    if (u.orig.sheen) { if (on && o.sheen != null) m.sheenColor.setScalar(o.sheen); else m.sheenColor.copy(u.orig.sheen); m.sheenRoughness = on && o.sheenRough != null ? o.sheenRough : u.orig.sheenRough; }
+  }
+  return mats.map((m) => ({ name: m.name, type: m.type, env: m.envMapIntensity, spec: m.specularIntensity, rough: m.roughness, color: m.color.getHexString(), map: !!m.map }));
 }
 
 // 광선-캡슐 교차 (거리 반환, 없으면 null)

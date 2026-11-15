@@ -259,7 +259,7 @@ function buildRightHandData() {
   for (let i = 0; i < 4; i++) for (let k = 0; k < 3; k++) segs.push({ bone: 1 + i * 3 + k, chain: i, a: J.f[i][k], b: J.f[i][k + 1] });
   for (let k = 0; k < 3; k++) segs.push({ bone: 13 + k, chain: 4, a: J.t[k], b: J.t[k + 1] });
   const segDist = (p, s) => { const ab = s.b.clone().sub(s.a), t = Math.max(0, Math.min(1, p.clone().sub(s.a).dot(ab) / ab.lengthSq())); return p.distanceTo(s.a.clone().addScaledVector(ab, t)); };
-  const skinIndex = new Uint16Array(nv * 4), skinWeight = new Float32Array(nv * 4), color = new Float32Array(nv * 3), uv = new Float32Array(nv * 2);
+  const skinIndex = new Uint16Array(nv * 4), skinWeight = new Float32Array(nv * 4), color = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), gloss = new Float32Array(nv);
   const p = V(0, 0, 0), n = V(0, 0, 0);
   for (let v = 0; v < nv; v++) {
     p.set(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]); n.set(nrm[v * 3], nrm[v * 3 + 1], nrm[v * 3 + 2]);
@@ -295,13 +295,15 @@ function buildRightHandData() {
     for (let s = 1; s <= 5; s++) { const dd = 0.0035 * s; occ += Math.max(0, dd - field(p.x + n.x * dd, p.y + n.y * dd, p.z + n.z * dd)) / Math.pow(2, s); }
     const ao = Math.max(0.3, 1 - occ * 95);
     color[v * 3] = color[v * 3 + 1] = color[v * 3 + 2] = c * ao;
+    // 매끈한 면(materials.js aGloss): 합성 가죽 손바닥과 손끝(0.62, 0.66), 손등 보호대와 마디 덧댐(0.45)은 천이 아니라 정반사가 있다
+    gloss[v] = c === 0.62 || c === 0.66 || c === 0.45 ? 1 : 0;
     // 천 무늬 좌표: 바인드 포즈 위치를 가장 큰 노멀 축으로 투영
     const ax = Math.abs(n.x), ay = Math.abs(n.y);
     if (ay >= ax && ay >= Math.abs(n.z)) { uv[v * 2] = p.x * 22; uv[v * 2 + 1] = p.z * 22; }
     else if (ax >= Math.abs(n.z)) { uv[v * 2] = p.z * 22; uv[v * 2 + 1] = p.y * 22; }
     else { uv[v * 2] = p.x * 22; uv[v * 2 + 1] = p.y * 22; }
   }
-  _cache = { pos, nrm, index, skinIndex, skinWeight, color, uv, nv, ms: performance.now() - t0 };
+  _cache = { pos, nrm, index, skinIndex, skinWeight, color, uv, gloss, nv, ms: performance.now() - t0 };
   return _cache;
 }
 
@@ -320,6 +322,7 @@ export function createHand(material, mirror = false) {
   geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(D.color, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(D.uv, 2));
+  geo.setAttribute('aGloss', new THREE.BufferAttribute(D.gloss, 1));
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(D.skinIndex, 4));
   geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(D.skinWeight, 4));
   geo.setIndex(index);
