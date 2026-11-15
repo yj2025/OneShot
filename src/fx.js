@@ -13,6 +13,8 @@ const FLASH = {
   pistol: { star: [0.15, 0.24], plume: [0.12, 0.22], width: 0.12, glow: [12, 20], plumeGlow: 0.6, light: [4.5, 7] },
 };
 const flashEnv = (age, life) => (age < life * 0.6 ? 1 : Math.max(0, 1 - (age - life * 0.6) / (life * 0.4)));
+// 화염이 둘레 벽, 바닥, 천장에서 되비쳐 쏜 사람의 손과 총 뒷면에 닿는 빛의 몫(화염 빛 세기 대비)
+const BOUNCE = 0.1;
 
 const HOLE_UV = { concrete: [0, 0.5], wood: [0.5, 0.5], metal: [0, 0], gravel: [0.5, 0], asphalt: [0, 0.5], rubber: [0, 0], cloth: [0.5, 0], plastic: [0, 0], fence: null, body: null };
 const DUST = {
@@ -60,9 +62,19 @@ export class FX {
       scene.add(l);
       this.flashLights[k] = { light: l, age: 1, life: 0, peak: 0 };
     }
+    // 화염의 되비침: 화염이 가까운 벽, 바닥, 천장을 비추면 그 빛이 카메라 쪽을 향한 손등과 총 뒷면에도 닿는다.
+    // 화염 앞의 점광원 하나로는 총구 앞쪽 면만 밝아, 두 손을 뻗어 쏘는 권총 자세에서 화염 바로 뒤의 손과 총이 검은 덩어리로
+    // 남았다(A/B 라운드 40). 플레이어가 쏠 때만 카메라 위 앞쪽 가까이에 화염 세기의 BOUNCE만큼 짧게 켠다(닿는 거리 2.5 m)
+    this.bounce = new THREE.PointLight(FLASH_LIGHT_COLOR, 0, 2.5, 2);
+    scene.add(this.bounce);
+    this.bounceL = { age: 1, life: 0, peak: 0 };
     this.cameraPos = null;
     this.dummy = new THREE.Object3D();
   }
+
+  // 품질 '낮음'에서는 되비침 광원을 끈다. 켜 두면 세기가 0이어도 모든 재질의 점광원 반복이 한 번 늘어난다.
+  // 형광등처럼 visible로 끄므로 품질을 바꿀 때 셰이더가 한 번 다시 만들어진다(설정 화면에서만 바뀐다)
+  setQuality(q) { this.bounce.visible = q !== 'low'; }
 
   hole(point, normal, mat) {
     const uvo = HOLE_UV[mat] === undefined ? HOLE_UV.concrete : HOLE_UV[mat];
@@ -144,6 +156,11 @@ export class FX {
     L.peak = (F.light[0] + r() * (F.light[1] - F.light[0])) * seen;
     L.age = 0; L.life = life;
     L.light.intensity = L.peak;
+    if (who === 'player' && this.cameraPos) {
+      this.bounce.position.copy(this.cameraPos).addScaledVector(dir, 0.3); this.bounce.position.y += 0.3;
+      this.bounceL = { age: 0, life, peak: L.peak * BOUNCE };
+      this.bounce.intensity = this.bounceL.peak;
+    }
     // 연기: 화염이 꺼진 뒤 총구 앞에 옅은 회색 연기가 잠깐 남아 앞으로 밀려 나가다 퍼진다
     for (let i = 0, n = kind === 'pistol' ? 1 : 2; i < n; i++) {
       const m = this.pool.find(q => !q.visible); if (!m) break;
@@ -218,12 +235,14 @@ export class FX {
       L.age += dt;
       L.light.intensity = L.age > L.life ? 0 : L.peak * flashEnv(L.age, L.life);
     }
+    { const B = this.bounceL; B.age += dt; this.bounce.intensity = B.age > B.life ? 0 : B.peak * flashEnv(B.age, B.life); }
   }
 
   clear() {
     for (const f of this.flashes) { this.scene.remove(f.star, f.plume); f.star.material.dispose(); f.plume.material.dispose(); }
     this.flashes = [];
     for (const L of Object.values(this.flashLights)) { L.age = 1; L.light.intensity = 0; }
+    this.bounceL.age = 1; this.bounce.intensity = 0;
     for (const d of this.decals) { this.scene.remove(d); d.geometry.dispose(); }
     for (const c of this.chips) { this.scene.remove(c.m); c.m.material.dispose(); }
     for (const c of this.casings) this.scene.remove(c.m);

@@ -132,8 +132,13 @@ export function makeAutoPilot(page, mouse) {
       const plan = await page.evaluate(() => window.__bc.autoplan());
       // plan: { mode:'engage'|'travel'|'idle', yaw, pitch, dist }
       const rpp = s.radPerPixel;
-      const dyaw = angDiff(plan.yaw, p.gunYaw);
-      const dpitch = plan.pitch - p.gunPitch;
+      // 사람처럼 겨눈다. 총이 낮을 때는 시선(조준 방향)으로 목표를 보고, 방아쇠를 당겨 총이 올라오면(경계 0.85 이상)
+      // 화면에 보이는 총구가 목표를 향하게 맞춘다. 십자선이 없으니 사람도 그렇게 한다. 올라온 총은 걸음과 고쳐 쥐기로
+      // 시선에서 1~3° 벗어나 흔들리므로, 시선만 맞추면 15 m에서 30~80 cm 빗나간다(2026-11-15 뷰모델 구도 세션, 명중률 82% → 20%).
+      // 경계 값이 없는 빌드는 늘 총구 방향이다
+      const up = p.alert === undefined || p.alert >= 0.85;
+      const dyaw = angDiff(plan.yaw, up ? p.gunYaw : p.aimYaw);
+      const dpitch = plan.pitch - (up ? p.gunPitch : p.aimPitch);
       // 사람처럼: 새 목표를 잡으면 0.45초 뒤부터 쏘고, 마우스는 오차의 일부만 따라간다
       if (plan.mode === 'engage' && plan.bot !== curBot) { curBot = plan.bot; acquiredAt = now; }
       const k = plan.mode === 'engage' ? 0.3 : 0.3;

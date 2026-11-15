@@ -252,6 +252,47 @@ const WEAPONS = {
 // 조준 앞섬과 관성의 축(카메라 기준): 소총은 오른쪽 겨드랑이 밑에 낀 개머리판 끝, 권총은 두 어깨 사이 앞
 const PIVOT = { rifle: V(0.17, -0.2, 0.02), pistol: V(0.06, -0.2, 0.0) };
 
+// 총을 드는 자세(카메라 = 가슴 기준). p는 총 원점(권총손잡이 윗부분)의 자리, r은 총의 회전(숙임 +위, 돌림 +왼쪽, 기울임 +윗면 왼쪽)
+//  low    낮춰 든 자세(걷고 둘러볼 때, 기본): 몸 오른쪽에 붙여 들고 총구를 조금 숙여 몸 방향(앞)을 향한다. 조금 기울인다.
+//         처음에는 총구를 몸 앞을 가로질러 왼쪽 아래로 돌렸다. 가슴 카메라에서는 총의 축이 시선과 겹쳐 조준경 뒤끝이 렌즈를 마주 보고
+//         총이 왼쪽 위로 치켜 보여, A/B 라운드 40에서 판정자들이 '카메라가 총의 축 위에 얹혔다'며 기준선을 골랐다
+//  fire   쏘는 자세: 총을 들어 총구가 조준점을 향한다(이전의 유일한 자세)
+//  sprint 달릴 때: 가슴 앞에 비스듬히 끌어안는다
+//  handle 재장전: 탄창 삽입구가 왼손 쪽을 보게 총을 돌려 몸 앞 가운데로 당긴다
+//  stow   파쿠르: 오른손에 든 채 오른쪽 아래로 처진다(쏘는 자세에서 내린다)
+// 팔꿈치 기준점: 손목에서 이 점 쪽으로 팔뚝(과 팔꿈치, 위팔 일부)을 0.38~0.5 m 그린다. 어떤 자세든 팔이 화면 아래 바깥의 몸 쪽에서 들어온다
+// 소총은 개머리판 끝(b)을 몸에 붙인 채 그 점을 축으로 돈다. 총 원점은 b와 회전에서 구한다(손잡이를 축으로 돌리면 총구를 숙일 때 개머리판이 렌즈 앞으로 솟는다)
+const BUTT = { rifle: V(0, 0.044, 0.36) };
+const POSES = {
+  rifle: {
+    low: { b: V(0.18, -0.15, 0.06), r: V(-0.18, 0.0, 0.18) },
+    fire: { b: V(0.155, -0.12, 0.03), r: V(0.01, 0.015, 0.06) },
+    sprint: { p: V(0.05, -0.235, -0.3), r: V(-0.5, 0.6, 0.5) },
+    handle: { p: V(0.03, -0.12, -0.31), r: V(0.15, 0.45, -1.0) },
+    stow: { p: V(0.252, -0.372, -0.34), r: V(-1.0, -0.5, 0.56) },
+    elbow: { R: V(0.24, -0.36, 0.14), L: V(-0.18, -0.32, -0.21) },
+  },
+  pistol: {
+    // 권총은 쏠 때 두 팔을 뻗어 든다(가슴 카메라에서는 화면 가운데 가까이 올라온다)
+    low: { p: V(0.04, -0.235, -0.31), r: V(-0.42, 0.1, 0.08) },
+    fire: { p: V(0.05, -0.13, -0.44), r: V(0.02, 0.02, 0.04) },
+    sprint: { p: V(0.06, -0.28, -0.2), r: V(-0.55, 0.55, 0.45) },
+    handle: { p: V(0.03, -0.19, -0.28), r: V(0.3, 0.22, -0.6) },
+    stow: { p: V(0.18, -0.35, -0.32), r: V(-1.0, -0.5, 0.56) },
+    elbow: { R: V(0.24, -0.36, 0.14), L: V(-0.24, -0.38, 0.06) },
+  },
+};
+// 개머리판 끝 b를 몸에 둔 채 회전 r로 든 총의 원점
+function fromButt(b, r, butt) {
+  return b.clone().sub(butt.clone().applyEuler(new THREE.Euler(r.x, r.y, r.z, 'YXZ')));
+}
+const smooth01 = (x) => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
+// 손목에서 팔꿈치 기준점 쪽으로 정해진 길이만큼 간 점(카메라 기준)
+function elbowFrom(wrist, anchor, lo = 0.38, hi = 0.5) {
+  const d = anchor.clone().sub(wrist); const L = d.length() || 1;
+  return wrist.clone().addScaledVector(d, Math.min(hi, Math.max(lo, L)) / L);
+}
+
 class Spring {
   constructor(k = 120, d = 14) { this.k = k; this.d = d; this.x = V(0, 0, 0); this.v = V(0, 0, 0); }
   step(dt, target = V(0, 0, 0)) {
@@ -305,6 +346,9 @@ export class Viewmodel {
     this.vSpring = new Spring(70, 9);     // 점프와 착지의 위아래 관성
     this.holdPhase = 0;   // 떠도는 자세의 위상. 생명마다 다르다(Game.reset이 정한다)
     this.ads = 0; this.sprint = 0; this.lower = 0; this.stow = 0; this.switchT = 0; this.switchTo = null;
+    // 경계: 0이면 낮춰 든 자세, 1이면 쏘는 자세. 방아쇠, 조준, 피격이 올리고 마지막 사격 2.5~4초 뒤에 내린다
+    this.alert = 0; this.alertHold = 0; this.holdDur = 3; this.raiseK = 13; this.pendingShot = false; this.pendT = 0; this.lastHits = 0;
+    this.tune = null;   // 살펴보기용(테스트): 자세 값을 덮어쓴다
     this.reload = null; this.cool = 0; this.triggerHeld = false; this.triggerWas = false;
     this.fatigue = 0; this.stress = 0;
     this.muzzleWorld = V(0, 0, 0); this.dirWorld = V(0, 0, -1);
@@ -319,6 +363,7 @@ export class Viewmodel {
     this.state.rifle = { ammo: WEAPONS.rifle.mag, spare: WEAPONS.rifle.spareMags };
     this.state.pistol = { ammo: WEAPONS.pistol.mag, spare: WEAPONS.pistol.spareMags };
     this.reload = null; this.switchTo = null; this.switchT = 0; this.setWeapon('rifle');
+    this.alert = 0; this.alertHold = 0; this.pendingShot = false;
     for (const m of this.droppedMags) m.m.parent?.remove(m.m);
     this.droppedMags = [];
   }
@@ -349,9 +394,15 @@ export class Viewmodel {
   tryFire(dt, canFire) {
     this.cool -= dt;
     const st = this.state[this.current];
-    const pressed = this.triggerHeld && (!this.triggerWas || this.def.auto);
+    const edge = this.triggerHeld && !this.triggerWas;
     this.triggerWas = this.triggerHeld;
+    // 낮춰 든 총은 먼저 들어 올린다. 당긴 방아쇠는 0.6초까지 기억했다가 총이 올라오면 쏜다(짧게 클릭해도 한 발이 나간다)
+    if (edge) { this.pendingShot = true; this.pendT = 0; }
+    if (this.pendingShot) { this.pendT += dt; if (this.pendT > 0.6 || this.reload || this.switchTo || this.sprint > 0.4) this.pendingShot = false; }
+    const pressed = this.pendingShot || (this.triggerHeld && this.def.auto);
     if (!pressed || !canFire || this.reload || this.switchTo || this.cool > 0 || this.sprint > 0.4 || this.stow > 0.3) return false;
+    if (this.alert < 0.85) return false;
+    this.pendingShot = false;
     if (st.ammo <= 0) { if (!this.triggerWasDry) this.events.push({ type: 'dry' }); this.triggerWasDry = true; this.cool = 0.25; return false; }
     this.triggerWasDry = false;
     st.ammo--;
@@ -384,18 +435,19 @@ export class Viewmodel {
     }
 
     // 재장전 진행
-    let rl = { tilt: 0, pitch: 0, drop: 0, handL: null };
+    let rl = { handL: null, w: 0, R: null };
     const mdl = this.model;
     if (this.reload) {
       const R = this.reload; R.t += dt; const u = R.t / R.dur;
       const env = Math.sin(Math.min(1, u * 1.15) * Math.PI) ** 0.6;
-      rl.tilt = R.tilt * env; rl.pitch = R.pitch * env; rl.drop = R.drop * env;
+      rl.w = env; rl.R = R;   // 다루는 자세(handle)로 섞는 정도
       if (!R.outDone && u > R.out) {
         R.outDone = true; mdl.mag.visible = false; this.events.push({ type: 'magOut', weapon: this.current });
         this.dropMag(mdl);
       }
       const lh = mdl.grips.L.palm.clone();
-      const pouch = V(-0.12, -0.32, 0.1);
+      // 탄창 주머니는 몸(가슴 장비) 왼쪽 아래에 붙어 있다. 총을 돌려 들어도 주머니는 몸에 있으므로 몸 기준 자리를 총 기준으로 옮긴다(지난 프레임의 자세로)
+      const pouch = this.gunHolder.worldToLocal(this.root.localToWorld(V(-0.09, -0.34, -0.06)));
       const magWell = mdl.magPos.clone().add(V(0, -0.1, 0)), seated = magWell.clone().add(V(0, 0.06, 0));
       const smooth = (x) => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
       rl.handW = 1;
@@ -442,27 +494,63 @@ export class Viewmodel {
     const lead = this.leadSpring.step(dt, V(p.aimPitchOff || 0, (p.aimYawOff || 0) * ld, 0));
     const breath = (1 - this.ads * 0.6) * (0.003 + p.exertion * 0.006);
     const by = Math.sin(t * (1.6 + p.exertion * 1.8)) * breath, bx = noise1(t * 0.6, 3) * breath * 1.2;
-    const stepAmp = p.moving * (0.036 + this.sprint * 0.03) * (1 - this.ads * 0.5);
+    // 낮춰 든 총은 팔이 느슨해 걸음마다 더 흔들린다
+    const stepAmp = p.moving * (0.036 + this.sprint * 0.03) * (1 - this.ads * 0.5) * (1 + 0.35 * (1 - smooth01(this.alert)));
     // 떠도는 자세: 손은 총을 같은 자리에 붙들고 있지 않다. 몇 초 단위로 높이, 좌우, 기울기가 바뀐다(조준할수록 줄어든다)
     const hp = t + this.holdPhase, hold = 1 - this.ads * 0.8;
     const dX = noise1(hp * 0.21, 31) * 0.035 * hold, dY = noise1(hp * 0.17, 32) * 0.03 * hold, dRoll = noise1(hp * 0.19, 33) * 0.16 * hold, dPitch = noise1(hp * 0.23, 34) * 0.02 * hold;
     const sx = Math.sin(p.stepPhase * Math.PI) * stepAmp * 0.8, sy = -Math.abs(Math.sin(p.stepPhase * Math.PI)) * stepAmp;
 
     const rt = this.recoilT.step(dt), rr = this.recoilR.step(dt);
-    const base = def.hip.clone().lerp(def.ads, this.ads).lerp(def.sprint, this.sprint);
-    const drop = switchDrop, sw = this.stow * this.stow * (3 - 2 * this.stow);
-    const pos = base.add(V(bx + sx + dX + sw * 0.09, by + sy + dY - rl.drop - this.lower * 0.06 - drop * 0.25 - sw * 0.14, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
+    // 경계(총을 든 정도): 방아쇠, 조준, 피격, 앞에 보이는 봇(p.threat, main.js가 반응 시간 뒤에 켠다)이 총을 0.12~0.17초 만에
+    // 올리고(올리는 빠르기는 매번 다르다), 그런 일이 없이 2.5~4초가 지나면 1초 남짓에 걸쳐 낮춰 든 자세로 내린다.
+    // 달리거나 재장전하는 동안은 올리지 않는다
+    const T = this.tune || {};
+    const hits = p.hits || 0, hitNow = hits > this.lastHits; this.lastHits = hits;
+    if (this.triggerHeld || this.pendingShot || p.ads || hitNow || p.threat) {
+      if (this.alertHold <= 0) { this.raiseK = 11 + r() * 5; this.holdDur = 2.5 + r() * 1.5; }
+      this.alertHold = this.holdDur;
+    } else this.alertHold = Math.max(0, this.alertHold - dt);
+    const wantUp = this.alertHold > 0 && p.sprint < 0.5 && !this.reload;
+    this.alert += ((wantUp ? 1 : 0) - this.alert) * (1 - Math.exp(-dt * (wantUp ? this.raiseK : 1.8)));
+    if (T.alert !== undefined) this.alert = T.alert;
+    // 자세 섞기: 낮춰 든 자세 ↔ 쏘는 자세(경계) → 조준 → 달리기 → 다루기(재장전) → 파쿠르
+    const P = POSES[this.current];
+    const BT = BUTT[this.current];
+    const pick = (k) => { const o = T[k] ? { p: T[k].p && V(...T[k].p), b: T[k].b && V(...T[k].b), r: V(...T[k].r) } : P[k]; return o.b && BT ? { ...o, p: fromButt(o.b, o.r, BT) } : o; };
+    const PL = pick('low'), PF = pick('fire'), PH = pick('handle');
+    const a = smooth01(this.alert);
+    // 낮춰 든 동안에도 몇 초마다 고쳐 쥔다: 숙인 정도, 기울기, 높이, 몸에 붙인 정도가 바뀐다(생명마다 위상이 다르다).
+    // 몸을 가로지르는 좌우 회전은 작게 둔다(±0.05 rad). 크게 돌리면 총의 축이 카메라 시선과 겹친다(A/B 라운드 40)
+    const hq = t + this.holdPhase, ck = T.carry ?? 1;
+    const cYaw = noise1(hq * 0.11, 41) * 0.05 * ck, cPitch = noise1(hq * 0.09, 42) * 0.09 * ck, cRoll = noise1(hq * 0.1, 45) * 0.12 * ck;
+    const cX = noise1(hq * 0.13, 43) * 0.02 * ck, cY = noise1(hq * 0.12, 44) * 0.025 * ck, cZ = noise1(hq * 0.08, 46) * 0.02 * ck;
+    const lr = PL.r.clone().add(V(cPitch, cYaw, cRoll));
+    const lowP = (PL.b && BT ? fromButt(PL.b, lr, BT) : PL.p.clone()).add(V(cX, cY, cZ));
+    const bp = lowP.lerp(PF.p, a);
+    const br = lr.lerp(PF.r, a);
+    bp.lerp(def.ads, this.ads); br.multiplyScalar(1 - this.ads);
+    bp.lerp(P.sprint.p, this.sprint); br.lerp(P.sprint.r, this.sprint);
+    const hw = T.handle ? (T.handleW ?? 1) : rl.w;
+    if (hw > 0) {
+      // 재장전마다 숙임, 기울임, 내림이 다르다
+      const R = rl.R || { pitch: 0.35, tilt: 0.5, drop: 0.075 };
+      bp.lerp(PH.p.clone().add(V(0, 0.075 - R.drop, 0)), hw); br.lerp(PH.r.clone().multiply(V(0.6 + R.pitch, 1, 0.75 + R.tilt * 0.5)), hw);
+    }
+    const drop = switchDrop, sw = smooth01(this.stow);
+    bp.lerp(P.stow.p, sw); br.lerp(P.stow.r, sw);
+    const pos = bp.add(V(bx + sx + dX, by + sy + dY - this.lower * 0.06 - drop * 0.25, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
     pos.x += rt.x * 0.02; pos.y += rt.y * 0.02;
     const sh = p.shake || [0, 0, 0], rc = p.camRecoil || [0, 0, 0];
 
     // 총 회전(총 기준): 반동, 달리기 자세, 벽 앞에서 내림, 재장전 기울임
     // 걸음마다 총끝이 흔들린다: 몸은 가슴 카메라와 함께 움직이지만 두 팔에 든 총은 한 박자 늦게 끄덕이고 좌우로 돈다(조준할수록 줄어든다)
-    const walkK = p.moving * (1 - this.ads * 0.7) * (1 + this.sprint * 0.6);
+    const walkK = p.moving * (1 - this.ads * 0.7) * (1 + this.sprint * 0.6) * (1 + (1 - a) * 0.5);
     const wPitch = Math.sin(p.stepPhase * Math.PI * 2 + 0.9) * 0.03 * walkK, wYaw = Math.sin(p.stepPhase * Math.PI + 0.5) * 0.035 * walkK;
-    const rotX = rr.x * 0.05 - this.sprint * 0.55 - this.lower * 0.75 - drop * 0.9 - sw * 1.0 + rl.pitch + dPitch + wPitch - sh[0] * 0.25 - rc[0];
-    const rotY = rr.y * 0.035 + this.sprint * 0.55 + wYaw - sh[1] * 0.25 - rc[1] - sw * 0.5;
+    const rotX = br.x + rr.x * 0.05 - this.lower * 0.75 - drop * 0.9 + dPitch + wPitch - sh[0] * 0.25 - rc[0];
+    const rotY = br.y + rr.y * 0.035 + wYaw - sh[1] * 0.25 - rc[1];
     // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다. 카메라가 걸음에 따라 기울면 총은 그 25%만큼 늦는다
-    const rotZ = rr.z * 0.035 + sx * 4 + this.sprint * 0.45 + rl.tilt - sh[2] * 0.25 - rc[2] + (def.cant || 0) * (1 - this.ads) + dRoll + sw * 0.5;
+    const rotZ = br.z + rr.z * 0.035 + sx * 4 - sh[2] * 0.25 - rc[2] + dRoll;
 
     // 뛰고 내릴 때의 관성: 몸이 위로 가속하면 두 팔에 든 총은 한 박자 늦게 처지고, 공중에서는 살짝 뜨고, 착지하면 다시 처진다
     const vy = p.vy || 0, dvy = vy - (this.lastVy ?? vy); this.lastVy = vy;
@@ -523,12 +611,14 @@ export class Viewmodel {
     const rootQ = this.root.quaternion;
     // 팔꿈치는 화면 밖 왼쪽 아래와 오른쪽 아래에 있다. 왼팔은 화면 왼쪽 아래에서 비스듬히 건너와 핸드가드를 받친다.
     // 짚을 때 왼팔은 곧게 뻗으므로 소매가 어깨(카메라 왼쪽 위 뒤)에서 손목까지 이어진다
-    const elbowR = V(0.24, -0.36, 0.14).applyQuaternion(rootQ).add(this.root.position);
-    const elbowL = (this.current === 'rifle' ? V(-0.18, -0.32, -0.21) : V(-0.24, -0.38, 0.06)).applyQuaternion(rootQ).add(this.root.position);
-    if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); elbowL.lerp(V(-0.2, 0.02, 0.1).applyQuaternion(rootQ).add(this.root.position), k); }
     // 소매 끝은 장갑 소맷부리의 뒤쪽 절반을 덮는다
     const wristR = this.handR.localToWorld(V(0, 0, 0.042));
     const wristL = this.handL.localToWorld(V(0, 0, 0.042));
+    // 팔꿈치: 손목에서 몸 쪽 기준점(화면 아래 바깥)으로 팔뚝을 잇는다. 총을 어떤 자세로 들어도 팔이 몸에서 들어오고 늘어나지 않는다
+    const EB = POSES[this.current].elbow, toW = (v) => v.applyQuaternion(rootQ).add(this.root.position);
+    const elbowR = toW(elbowFrom(this.root.worldToLocal(wristR.clone()), EB.R));
+    const elbowL = toW(elbowFrom(this.root.worldToLocal(wristL.clone()), EB.L));
+    if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); elbowL.lerp(V(-0.2, 0.02, 0.1).applyQuaternion(rootQ).add(this.root.position), k); }
     placeLimb(this.foreR, elbowR, wristR); placeLimb(this.foreL, elbowL, wristL);
 
     mdl.muzzle.getWorldPosition(this.muzzleWorld);

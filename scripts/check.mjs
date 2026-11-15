@@ -173,6 +173,51 @@ async function main() {
       }
       rec('좌우로 돌 때 총이 화면을 크게 미끄러지지 않는다 (1.5 rad/s)', dev <= 0.12 && over <= 0.04, `총구·손잡이 가로 이동 최대 ${(dev * 50).toFixed(1)}% (화면 폭 대비), 멈춘 뒤 넘침 ${(over * 50).toFixed(1)}%`);
     }
+    // (i) 자세에 따라 총이 놓이는 자리가 달라진다(뷰모델 구도 세션, 2026-11-15. 15~29라운드 critic의 '모든 장면에서 같은 자리, 같은 각도')
+    //  그냥 서 있을 때(낮춰 든 자세), 방아쇠를 당겨 첫 발이 나간 순간(쏘는 자세), 재장전 중(다루는 자세)의 손잡이와 총구 화면 위치를 잰다.
+    //  세 자세가 서로 화면 크기의 8%(투영 좌표 0.16) 넘게 다르다(손잡이와 총구 중 큰 쪽. 재장전은 오른손이 손잡이를 쥔 채 총을 돌리므로 총구가 크게 움직인다).
+    //  첫 발은 당긴 뒤 0.1~0.35초에 나간다(낮춰 든 총을 드는 시간). 마지막으로 쏜 뒤 6초가 지나면 다시 낮춰 든다(경계 0.05 이하)
+    //  봇이 보이지 않는 복도(view 2)에서 잰다. 처음에는 홀(view 3)이었는데 멀리 봇이 보여, 봇을 보면 총을 드는 (j)를 넣으면서 옮겼다
+    {
+      const q = await openGame(L.context, 'test=1&clock=manual&seed=11&view=2');
+      const Q = q.page; await clickStart(Q);
+      const mouse = makeMouse(Q, W, H); await mouse.center();
+      const st = () => Q.evaluate(() => window.__bc.state().player);
+      const stepQ = (k) => Q.evaluate((m) => window.__bc.step(m), k);
+      await stepQ(156);
+      const idle = await st();
+      const b0 = (await stepQ(0)).shotsFired;
+      await mouse.down('left');
+      let n = 0; for (; n < 40; n++) { const s2 = await stepQ(1); if (s2.shotsFired > b0) break; }
+      const fire = await st();
+      await mouse.up('left');
+      await stepQ(360);
+      const back = await st();
+      await Q.keyboard.down('KeyR'); await stepQ(2); await Q.keyboard.up('KeyR'); await stepQ(73);
+      const rel = await st();
+      extraErrors.push(...q.errors); extraExternal.push(...q.external);
+      await Q.close();
+      const d = (a, b) => Math.max(Math.hypot(a.gripNdc[0] - b.gripNdc[0], a.gripNdc[1] - b.gripNdc[1]), Math.hypot(a.gunNdc[0] - b.gunNdc[0], a.gunNdc[1] - b.gunNdc[1]));
+      const dIF = d(idle, fire), dIR = d(idle, rel), dFR = d(fire, rel), t = (n + 1) / 60;
+      const ok = dIF > 0.16 && dIR > 0.16 && dFR > 0.16 && t >= 0.1 && t <= 0.35 && back.alert !== undefined && back.alert <= 0.05;
+      rec('(i) 자세에 따라 총이 놓이는 자리가 달라진다', ok, `서 있기↔쏘기 ${(dIF * 50).toFixed(1)}%, 서 있기↔재장전 ${(dIR * 50).toFixed(1)}%, 쏘기↔재장전 ${(dFR * 50).toFixed(1)}% (화면 크기 대비, 기준 8%), 첫 발 ${(t * 1000).toFixed(0)} ms 뒤(100~350), 6초 뒤 경계 ${back.alert === undefined ? '없음' : back.alert.toFixed(2)}`);
+    }
+    // (j) 앞에 봇이 보이면 총을 든다(뷰모델 구도 세션, 2026-11-15). 사람은 위협을 보면 총을 든다.
+    //  방 안 3.7 m 앞에 봇이 서 있는 장면(view 7, 봇은 아직 플레이어를 모른다)에서 아무것도 누르지 않고 2초가 지나면 경계 0.85 이상.
+    //  봇이 보이지 않는 복도(view 2)에서는 같은 시간 뒤 경계 0.05 이하(봇이 없으면 들지 않는다)
+    {
+      const alertAfter = async (view) => {
+        const q = await openGame(L.context, `test=1&clock=manual&seed=11&view=${view}`);
+        const Q = q.page; await clickStart(Q);
+        await Q.evaluate(() => window.__bc.step(120));
+        const a = await Q.evaluate(() => window.__bc.state().player.alert);
+        extraErrors.push(...q.errors); extraExternal.push(...q.external);
+        await Q.close();
+        return a;
+      };
+      const seen = await alertAfter(7), none = await alertAfter(2);
+      rec('(j) 앞에 봇이 보이면 총을 든다', seen !== undefined && seen >= 0.85 && none !== undefined && none <= 0.05, `봇이 보이는 방 경계 ${seen === undefined ? '없음' : seen.toFixed(2)}(0.85 이상), 봇이 없는 복도 ${none === undefined ? '없음' : none.toFixed(2)}(0.05 이하), 2초 뒤`);
+    }
     extraErrors.push(...g.errors); extraExternal.push(...g.external);
     await P.close();
   }

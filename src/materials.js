@@ -1,6 +1,6 @@
 // 공용 재질: 조도 볼륨(하늘빛·반사광·형광등 가시도), 월드 좌표 얼룩, 바닥 접합부 때를 셰이더에 주입한다
 import * as THREE from 'three';
-import { volUniforms } from './lightbake.js';
+import { volUniforms, MAXL } from './lightbake.js';
 
 export const envUniforms = {
   uBldg: { value: new THREE.Vector4(-12, -16, 12, 0) },
@@ -41,7 +41,7 @@ uniform float uDamp;
 uniform float uWeather;
 uniform highp sampler3D uAmb; uniform highp sampler3D uSkyV; uniform highp sampler3D uVisA; uniform highp sampler3D uVisB;
 uniform vec3 uVolMin; uniform vec3 uVolInv; uniform float uVolOff; uniform vec3 uVisMin; uniform vec3 uVisInv; uniform float uVisOff;
-uniform float uVolOn; uniform float uLmOn; uniform float uClay; uniform vec4 uLmA[10]; uniform vec4 uLmB[10]; uniform float uLm1[10];
+uniform float uVolOn; uniform float uLmOn; uniform float uClay; uniform vec4 uLmA[${MAXL}]; uniform vec4 uLmB[${MAXL}]; uniform float uLm1[${MAXL}];
 uniform vec4 uSkyU; uniform float uGndE; uniform vec3 uSkyTint; uniform vec3 uBncTint;
 vec3 bcWN; vec4 bcVa; vec4 bcVb;
 float bcHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }

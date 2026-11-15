@@ -194,6 +194,7 @@ class Game {
   applyQuality() {
     this.level?.setQuality(this.settings.quality);
     this.scope?.setQuality(this.settings.quality);
+    this.fx?.setQuality(this.settings.quality);
     this.resize();
   }
 
@@ -240,6 +241,7 @@ class Game {
     this.events = [];
     for (const b of this.bots) b.reset();
     this.vm.reset();
+    this.threatSince = null; this.threat = false; this.threatT = 0;
     this.playTime = 0; this.stats.kills = 0; this.wonAt = null; this.deadAt = null; this.deadFade = 0;
     const v = VIEW !== null ? VIEWS[VIEW] : VP ? { pos: [VP[0], VP[1]], yaw: VP[2] || 0, pitch: VP[3] || 0 } : null;
     if (v) {
@@ -389,11 +391,33 @@ class Game {
     const wh = this.level.raycast(ct.pos, aimDir, 1.2, true);
     let wallDist = wh ? wh.dist : 2;
     for (const b of this.bots) if (b.alive) { const h = b.hitTest(ct.pos, aimDir, 1.0); if (h) wallDist = Math.min(wallDist, h.dist + 0.2); }
+    // 위협: 앞에 보이는 봇(15 m 안, 시선에서 40° 안, 가리는 것 없음)을 보면 사람처럼 0.3~0.7초 뒤에 총을 든다.
+    // 15 m는 근접전 훈련장의 교전 거리다. 넓은 화각의 가슴 카메라에서 20 m 밖의 사람은 키가 화면의 5% 남짓이라
+    // 든 총에 가려 보이지 않고, 그러면 총을 든 이유가 화면에 없다(마당 장면, 22.7 m의 봇).
+    // 0.1초마다 한 번 본다(시선 검사 비용). 반응 시간은 게임의 난수를 쓰지 않는다(다른 난수의 순서를 바꾸지 않게)
+    this.threatT = (this.threatT ?? 0) - dt;
+    if (this.threatT <= 0) {
+      this.threatT = 0.1;
+      let seen = false;
+      if (p.alive) for (const b of this.bots) {
+        if (!b.alive) continue;
+        const c = b.chest, to = c.clone().sub(ct.pos), d = to.length();
+        if (d > 15 || d < 0.3 || to.dot(aimDir) < d * Math.cos(0.7)) continue;
+        if (this.level.lineClear(ct.pos, c)) { seen = true; break; }
+      }
+      if (!seen) this.threatSince = null;
+      else if (this.threatSince == null) {
+        const h = Math.sin(this.time * 12.9898 + 78.233) * 43758.5453;
+        this.threatSince = this.time; this.threatDelay = 0.3 + 0.4 * (h - Math.floor(h));
+      }
+    }
+    this.threat = this.threatSince != null && this.time - this.threatSince >= this.threatDelay;
     vm.update(dt, this.time, {
+      threat: this.threat,
       // 파쿠르 중에는 두 손으로 짚으니 총을 화면 아래로 내린다(stow). 조준과 사격은 막는다
       anchor: ct.pos, aimQuat: aq, ads: inp.rmb && p.alive && !p.pk, sprint: p.sprinting ? 1 : 0, wallDist, stow: !!p.pk, plant: p.pkHand,
       camQuat: ct.quat, aimYawOff: p.aimYaw - p.bodyYaw, aimPitchOff: p.aimPitch - p.camPitch, shake: ct.shake, camRecoil: ct.recoil,
-      camYawVel: p.yawVel, camPitchVel: p.pitchVel, vy: p.vel.y, exertion: p.exertion, moving: p.moving, stepPhase: p.stepPhaseFrac || 0, roll: ct.roll, level: this.level,
+      camYawVel: p.yawVel, camPitchVel: p.pitchVel, vy: p.vel.y, hits: this.stats.playerHits, exertion: p.exertion, moving: p.moving, stepPhase: p.stepPhaseFrac || 0, roll: ct.roll, level: this.level,
     });
     if (p.alive && vm.tryFire(dt, !p.pk)) this.playerShot();
     if (inp.pressed('KeyR') && vm.ammo === 0 && !vm.reload) vm.startReload();
@@ -567,7 +591,7 @@ class Game {
         const d = vm.dirWorld;
         return {
           phase: g.phase, kills: g.bots.filter(b => !b.alive).length,
-          player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.bodyYaw, pitch: p.camPitch, gunYaw: Math.atan2(-d.x, -d.z), gunPitch: Math.asin(Math.max(-1, Math.min(1, d.y))), hp: p.hp, alive: p.alive, weapon: vm.current, ammo: vm.ammo, reloading: !!vm.reload, crouch: p.crouch,
+          player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.bodyYaw, pitch: p.camPitch, gunYaw: Math.atan2(-d.x, -d.z), gunPitch: Math.asin(Math.max(-1, Math.min(1, d.y))), hp: p.hp, alive: p.alive, weapon: vm.current, ammo: vm.ammo, reloading: !!vm.reload, crouch: p.crouch, aimYaw: p.aimYaw, aimPitch: p.aimPitch, alert: vm.alert, threat: !!g.threat,
             speed: Math.hypot(p.vel.x, p.vel.z), vy: p.vel.y, onGround: p.onGround, sprinting: p.sprinting, ads: vm.ads, parkour: p.pk ? p.pk.plan.kind : null,
             // 검사용: 카메라 높이, 총구와 왼손의 화면 위치(투영 좌표 -1~1, 어안 왜곡 전), 왼손이 짚은 자리
             eye: g.camera.position.y,
@@ -621,6 +645,8 @@ class Game {
       // 충돌 상자 목록과 플레이어 옮기기(검사와 살펴보기용)
       boxes() { return g.level.boxes.map(b => ({ min: b.min, max: b.max, mat: b.mat, thin: !!b.thin, cover: !!b.cover })); },
       vmView(c) { g.vmView = c || null; },
+      // 살펴보기용: 총 자세 값을 덮어쓴다({ low: { p: [x,y,z], r: [숙임,돌림,기울임] }, alert, carry, handle, handleW })
+      vmTune(o) { g.vm.tune = o || null; },
       place(x, z, yaw, pitch = 0) { g.player.spawn(x, z, yaw, pitch); g.player.crouchToggle = false; return { x: g.player.pos.x, y: g.player.pos.y, z: g.player.pos.z }; },
       scopeDiag() {
         const names = new Map([[g.level.group, 'level'], [g.vm.root, 'viewmodel'], [g.sky, 'sky']]);

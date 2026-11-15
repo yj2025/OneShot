@@ -11,7 +11,7 @@ export const GRID = { min: new THREE.Vector3(-25, -0.25, -21), vox: 0.2, nx: 250
 // 형광등 가시도 격자: 건물과 그 둘레 2 m
 export const LGRID = { min: new THREE.Vector3(-14.1, 0.5, -18.1), vox: 0.15, nx: 188, ny: 35, nz: 138 };
 const CO = 2;          // 반사광 격자는 주 격자의 1/2 해상도
-const MAXL = 10;       // 셰이더의 점광원 자리 수(형광등 8 + 총구 화염 2)
+export const MAXL = 11;   // 셰이더의 점광원 자리 수(형광등 8 + 총구 화염 2 + 화염의 되비침 1). materials.js의 배열 크기도 이 값을 쓴다
 const SKY_GAIN = 6.0;  // 하늘 밝기 배율. 형광등 실내보다 흐린 날 바깥이 몇 배 밝은지를 정한다(바닥 조도가 마당 32, 사무실 1.7로 약 18배. main.js 하늘 셰이더도 같은 값을 쓴다).
                        // 2.5(12배)는 문 너머가 하늘일 때만 날아갔다. 반사율이 실제에 가까운 나무가 문을 채우면 화면 중간 회색에 놓인다(A/B 라운드 21)
 export const skyGain = SKY_GAIN;
