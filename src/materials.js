@@ -128,7 +128,7 @@ uniform float uDamp;
 uniform float uWeather;
 uniform highp sampler3D uAmb; uniform highp sampler3D uSkyV; uniform highp sampler3D uVisA; uniform highp sampler3D uVisB;
 uniform vec3 uVolMin; uniform vec3 uVolInv; uniform float uVolOff; uniform vec3 uVisMin; uniform vec3 uVisInv; uniform float uVisOff;
-uniform float uVolOn; uniform float uLmOn; uniform float uClay; uniform vec4 uLmA[${MAXL}]; uniform vec4 uLmB[${MAXL}]; uniform float uLm1[${MAXL}]; uniform float uLmR[${MAXL}]; uniform vec3 uLmT[${MAXL}];
+uniform float uVolOn; uniform float uLmOn; uniform float uClay; uniform vec4 uLmA[${MAXL}]; uniform vec4 uLmB[${MAXL}]; uniform float uLm1[${MAXL}]; uniform float uLmS[${MAXL}]; uniform float uLmR[${MAXL}]; uniform vec3 uLmT[${MAXL}];
 uniform vec4 uSkyU; uniform float uGndE; uniform vec3 uSkyTint; uniform vec3 uBncTint;
 vec3 bcWN; vec4 bcVa; vec4 bcVb; float bcR0;
 // 광원의 크기: 점광원으로 그리는 형광등(1.25 m 관 두 개가 든 0.22 m 폭 등기구)과 총구 화염은 실제로는 면이다.
@@ -340,7 +340,7 @@ bcR0 = material.roughness;
 // 점광원마다 가시도(형광등 그림자)와 몸 가림을 곱하고, 직접광은 광원의 모양과 크기를 넣은 bcDirectPoint로 받는다(아래 TUBE_DIRECT)
 const LIGHTS_BEGIN = THREE.ShaderChunk.lights_fragment_begin.replace(
   'getPointLightInfo( pointLight, geometryPosition, directLight );',
-  'getPointLightInfo( pointLight, geometryPosition, directLight ); directLight.color *= bcPV( uLmA[ i ], uLmB[ i ], uLm1[ i ] ); if ( uBody > 0.5 ) directLight.color *= bcBodyVis( geometryPosition, pointLight.position );')
+  'getPointLightInfo( pointLight, geometryPosition, directLight ); directLight.color *= bcPV( uLmA[ i ], uLmB[ i ], uLm1[ i ] ); if ( uBody < 0.5 ) directLight.color *= uLmS[ i ]; if ( uBody > 0.5 ) directLight.color *= bcBodyVis( geometryPosition, pointLight.position );')
   .replace('#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )', 'material.roughness = bcR0;\n#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )')
   // 점광원 구간(첫 RE_Direct)만 형광등 관과 광원 크기를 넣은 bcDirectPoint로 바꾼다. 표준 재질이 아니면 그대로 둔다
   .replace('RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );',

@@ -14,10 +14,14 @@ const FLASH = {
   pistol: { star: [0.15, 0.24], plume: [0.12, 0.22], width: 0.12, glow: [12, 20], plumeGlow: 0.6, light: [4.5, 7] },
 };
 const flashEnv = (age, life) => (age < life * 0.6 ? 1 : Math.max(0, 1 - (age - life * 0.6) / (life * 0.4)));
-// 화염이 둘레 벽, 바닥, 천장에서 되비쳐 쏜 사람의 손과 총 뒷면에 닿는 빛의 몫(화염 빛 세기 대비) = 기하 몫 × 둘레 면의 반사율.
-// 기하 몫 0.5는 둘레 면의 실효 반사율이 약 0.2이던 때 정한 몫 0.1(A/B 라운드 40)에서 나왔다. 실내 세션에 레벨 반사율을 실측 범위로 올린 뒤에도
-// 상수로 두었더니 밝아진 벽만 화염에 물들고 바로 뒤의 총과 소매는 차가운 회색으로 남았다(A/B 라운드 44)
-const BOUNCE_GEOM = 0.5;
+// 화염이 둘레 벽, 바닥, 천장에서 되비쳐 쏜 사람의 손과 총에 닿는 빛. 뷰모델이 받는 조도 = 둘레 반사율 × 둘레 면이 화염에서 받는 조도(I/R²)
+// × 화염 빛을 받은 면이 둘레에서 차지하는 몫(cover)이다. 되비침 광원은 총과 손에서 약 BOUNCE_D 떨어져 있으므로 세기는
+// I × 반사율 × cover × (BOUNCE_D / R)²이다. 실내 R 1.5 m는 복도 폭과 방 크기, cover 1은 벽, 바닥, 천장이 둘러싼 것이다.
+// 바깥은 땅뿐이라 R 1.4 m(가슴 높이의 총에서 땅까지), cover 0.5다. 이 광원은 뷰모델만 비춘다(lightbake.js uLmS).
+// 이 식 전에는 세기를 몫 상수(0.1, 다음에 0.5 × 반사율)로 정하고 레벨도 비췄다. 실내 되비침이 화염의 0.21배였는데, 총 0.5 m 위에서 이 세기는
+// 둘레 벽이 받는 조도의 수 배다. 그래서 화염 순간 뷰모델이 2.0~3.1배, 장면이 1.6배 밝아졌고, 총 전체가 고른 황갈색으로 물들었다.
+// 문틀과 선반까지 색 필터를 씌운 듯 물들어 화염 장면에서 기준선에 졌다(A/B 라운드 49, 50)
+const BOUNCE_D = 0.5, BOUNCE_ROOM = { inside: { r: 1.5, cover: 1 }, outside: { r: 1.4, cover: 0.5 } };
 
 const HOLE_UV = { concrete: [0, 0.5], wood: [0.5, 0.5], metal: [0, 0], gravel: [0.5, 0], asphalt: [0, 0.5], rubber: [0, 0], cloth: [0.5, 0], plastic: [0, 0], fence: null, body: null };
 const DUST = {
@@ -67,7 +71,7 @@ export class FX {
     }
     // 화염의 되비침: 화염이 가까운 벽, 바닥, 천장을 비추면 그 빛이 카메라 쪽을 향한 손등과 총 뒷면에도 닿는다.
     // 화염 앞의 점광원 하나로는 총구 앞쪽 면만 밝아, 두 손을 뻗어 쏘는 권총 자세에서 화염 바로 뒤의 손과 총이 검은 덩어리로
-    // 남았다(A/B 라운드 40). 플레이어가 쏠 때만 카메라 위 앞쪽 가까이에 화염 세기의 BOUNCE_GEOM × 둘레 반사율만큼 짧게 켠다(닿는 거리 2.5 m)
+    // 남았다(A/B 라운드 40). 플레이어가 쏠 때만 카메라 위 앞쪽 가까이에 짧게 켠다(닿는 거리 2.5 m, 세기는 위 BOUNCE_ROOM의 식, 뷰모델만 비춘다)
     this.bounce = new THREE.PointLight(FLASH_LIGHT_COLOR, 0, 2.5, 2);
     scene.add(this.bounce);
     this.bounceL = { age: 1, life: 0, peak: 0 };
@@ -161,7 +165,8 @@ export class FX {
     L.light.intensity = L.peak;
     if (who === 'player' && this.cameraPos) {
       this.bounce.position.copy(this.cameraPos).addScaledVector(dir, 0.3); this.bounce.position.y += 0.3;
-      this.bounceL = { age: 0, life, peak: L.peak * BOUNCE_GEOM * (insideBuilding(this.cameraPos) ? SURF_ALBEDO.inside : SURF_ALBEDO.outside) };
+      const ins = insideBuilding(this.cameraPos), B = ins ? BOUNCE_ROOM.inside : BOUNCE_ROOM.outside;
+      this.bounceL = { age: 0, life, peak: L.peak * (ins ? SURF_ALBEDO.inside : SURF_ALBEDO.outside) * B.cover * (BOUNCE_D / B.r) ** 2 };
       this.bounce.intensity = this.bounceL.peak;
     }
     // 연기: 화염이 꺼진 뒤 총구 앞에 옅은 회색 연기가 잠깐 남아 앞으로 밀려 나가다 퍼진다

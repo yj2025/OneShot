@@ -131,13 +131,16 @@ export function buildMaterials() {
   // 금속 부품은 어두운 회색, 핸드가드와 개머리판과 탄창은 탄색이다. 부품마다 색이 달라야 판정 시트 크기에서 총으로 읽힌다(검은 단색으로 바꿨을 때 "형태가 읽히지 않는 덩어리"로 보였다)
   const blk = wearTexture('#353533', 3), tan = wearTexture('#4c4942', 7), stl = wearTexture('#3c3d3b', 11);
   const M = {
-    polymer: bcMaterial({ map: blk, roughness: 0.7, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { polish: 0.48 }, body: true }),
-    steel: bcMaterial({ map: stl, roughness: 0.7, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { bare: STEEL, polish: 0.42 }, body: true }),
+    // 거칠기: 검은 폴리머와 인산염 강철은 실측 0.4~0.55다. 0.7로 올려 두었던 것은 형광등 반사를 원판으로 넓혀 윗면에 회색 막이 깔렸기 때문인데,
+    // 그 원인(원판 반사, 실내 반사가 L1 조도뿐인 것)은 실내 세션에 관 모양 반사와 반사 프로브로 고쳤다. 0.7에서는 밝은 방에서도 창과 천장이 윗면에 맺히지 않아
+    // '무광 검은 덩어리'로 읽혔다(A/B 46·48 판정이 광택이 맺힌 쪽을 골랐다). 조준경 몸통은 0.6으로 둔다(0.4에서 '빛나는 구슬', A/B 35)
+    polymer: bcMaterial({ map: blk, roughness: 0.5, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { polish: 0.48 }, body: true }),
+    steel: bcMaterial({ map: stl, roughness: 0.5, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { bare: STEEL, polish: 0.42 }, body: true }),
     // 조준경 몸통: 무광 검정 아노다이징 알루미늄. 거칠기 0.4에서는 원통 윗면에 총구 화염과 창이 작고 밝은 반사점으로 맺혔고
     // 렌즈 앞 초점 흐림이 그것을 둥근 원판으로 퍼뜨려 '빛나는 구슬'로 읽혔다(A/B 라운드 35)
     scopeBody: bcMaterial({ map: wearTexture('#2f3031', 17), roughness: 0.6, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { bare: ALU, polish: 0.42 }, body: true }),
     worn: bcMaterial({ color: 0x59595b, roughness: 0.45, metalness: 1.0, envMapIntensity: 1 }, { grime: 0, finish: { bare: STEEL, polish: 0.42 }, body: true }),
-    tan: bcMaterial({ map: tan, roughness: 0.7, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { polish: 0.52 }, body: true }),
+    tan: bcMaterial({ map: tan, roughness: 0.5, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { polish: 0.52 }, body: true }),
     glove: bcMaterial({ map: fabricTexture('#302f2c', 5), roughness: 0.8, ...fiber('#302f2c'), vertexColors: true }, { grime: 0, physical: true, gloss: true, body: true }),
     sleeve: bcMaterial({ map: fabricTexture('#3b3d36', 9), roughness: 1.0, ...fiber('#3b3d36'), side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true, body: true }),
   };

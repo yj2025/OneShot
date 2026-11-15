@@ -25,6 +25,8 @@ export const volUniforms = {
   uLmA: { value: Array.from({ length: MAXL }, () => new THREE.Vector4()) },
   uLmB: { value: Array.from({ length: MAXL }, () => new THREE.Vector4()) },
   uLm1: { value: new Array(MAXL).fill(1) },
+  // 1이면 레벨과 봇도 비추고, 0이면 뷰모델(uBody)만 비춘다. 화염의 되비침은 둘레 벽이 쏜 사람에게 되돌려 보내는 빛이라 벽 자신을 다시 비추지 않는다
+  uLmS: { value: new Array(MAXL).fill(1) },
   // 광원 반지름(m): 정반사를 이 크기만큼 넓힌다(materials.js bcLightRough). 자리 순서는 장면에 놓인 순서 = 형광등, 총구 화염 둘, 화염의 되비침
   uLmR: { value: new Array(MAXL).fill(0.29) },
   // 형광등 관의 방향 × 반 길이(월드 좌표, m). 정반사를 관 위의 대표점에서 받아 관 방향으로 늘어난 띠로 맺는다(materials.js bcDirectPoint). 관이 아닌 광원은 0
@@ -48,6 +50,7 @@ export function setLightSlots(slots, along = []) {
     U.uLmB.value[i].set(ch === 4 ? 1 : 0, ch === 5 ? 1 : 0, ch === 6 ? 1 : 0, ch === 7 ? 1 : 0);
     U.uLm1.value[i] = ch < 0 ? 1 : 0;
     U.uLmR.value[i] = i < slots.length ? LAMP_W : i < slots.length + 2 ? FLASH_R : BOUNCE_R;
+    U.uLmS.value[i] = i < slots.length + 2 ? 1 : 0;
     U.uLmT.value[i].set(i < slots.length && along[i] === 'x' ? LAMP_HALF : 0, 0, i < slots.length && along[i] === 'z' ? LAMP_HALF : 0);
   }
 }
