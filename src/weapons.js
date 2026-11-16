@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { bcMaterial, markEdges } from './materials.js';
 import { noise1 } from './rng.js';
+import { fabricMaps } from './fabric.js';
 import { buildScope, SCOPE } from './scope.js';
 import { bakeSelfOcclusion } from './selfocc.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -28,31 +29,47 @@ function cylPart(group, mat, r, len, pos, axis = 'z', seg = 12, r2) {
 }
 
 // 소매(팔뚝): 팔꿈치(y 0)에서 손목(y 1)까지. 반지름은 실제 치수(m)이고 길이만 placeLimb가 늘린다.
-// 팔뚝 단면은 납작한 타원(가로가 넓다)이고 팔꿈치 쪽 3분의 1이 근육으로 부푼다. 손목 쪽은 장갑 소맷부리 위로 소매가 밀려 올라가
-// 1~1.5 cm 깊이로 겹겹이 접힌다(골이 날카롭고 마루가 둥글다). 팔 전체에 팔꿈치에서 비틀려 내려오는 큰 주름, 팔꿈치 쪽 끝에도 접힘.
-// 접힌 골은 정점 색으로 어둡게 칠한다(천이 겹친 그늘). 소맷부리는 조금 벌어지고 끝이 고르지 않다
+// 팔뚝 단면은 납작한 타원(가로가 넓다)이고 팔꿈치 쪽 3분의 1이 근육으로 부푼다. 소매는 팔보다 1.5~2 cm 헐겁다.
+// 주름(2026-11-17 다시 씀): 이전 주름은 손목 쪽 고리만 1.3 cm였고 팔 전체의 주름은 4.5 mm라, 렌즈 앞 흐림을 걷어도 화면에서는 매끈한 원통이었다.
+//  ① 손목 쪽 겹친 주름: 장갑 소맷부리가 소매를 밀어 올려 생긴다. 고리가 비스듬하고 둘레를 다 돌지 않고 끊긴다(깊이 최대 1.8 cm, 골이 날카롭고 마루가 둥글다)
+//  ② 비틀린 큰 주름 두 줄: 소총을 받친 팔뚝이 안으로 돌아(회내) 팔꿈치에서 손목으로 감겨 내려온다(깊이 1.5 cm)
+//  ③ 팔꿈치 쪽 접힘(깊이 1 cm) ④ 처짐: 헐거운 천이 한쪽으로 늘어진다 ⑤ 솔기: 팔 바깥쪽을 따라 박음질한 두 겹 솔기(폭 6 mm, 2 mm 솟음)와 양옆 박음질 골
+// 접힌 골과 솔기 옆은 정점 색으로 어둡게 칠한다(천이 겹친 그늘, 화면 공간 차폐는 0.7 m 안을 건너뛴다)
 function sleeveGeo(rElbow, rWrist, seed) {
-  const g = new THREE.CylinderGeometry(1, 1, 1, 40, 72, true); g.translate(0, 0.5, 0);
+  const g = new THREE.CylinderGeometry(1, 1, 1, 120, 110, true); g.translate(0, 0.5, 0);
   const p = g.attributes.position, col = new Float32Array(p.count * 3);
   const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const aSeam = (seed * 1.7) % (Math.PI * 2) - Math.PI, aDown = aSeam + 2.2;
+  const angD = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
-    let r = rElbow + (rWrist - rElbow) * Math.pow(y, 0.8);
+    let r = (rElbow + 0.004) + (rWrist + 0.006 - rElbow - 0.004) * Math.pow(y, 0.8);
     r *= 1 + 0.07 * Math.exp(-Math.pow((y - 0.22) / 0.18, 2));
-    const wW = sm(0.45, 0.9, y), wE = 1 - sm(0.0, 0.3, y);
-    // 손목 쪽 겹친 주름: 고리가 비스듬하고 고르지 않다
-    const ph = y * 30 + Math.sin(a * 2 + seed) * 1.3 + Math.sin(a * 3 - seed * 1.7) * 0.7 + seed;
-    const fold = Math.pow(Math.abs(Math.sin(ph)), 0.4) - 0.66;
-    // 팔꿈치에서 비틀려 내려오는 큰 주름
-    const tw = Math.sin(a * 2 + y * 9 + seed * 2.1), tw2 = Math.sin(a * 5 - y * 17 + seed);
-    const elb = Math.pow(Math.abs(Math.sin(y * 34 + a * 1.5 + seed * 0.3)), 0.5) - 0.62;
-    r += fold * 0.013 * wW + tw * 0.0045 * (0.4 + 0.6 * (1 - wW)) + tw2 * 0.002 + elb * 0.009 * wE;
+    const wW = sm(0.5, 0.92, y), wE = 1 - sm(0.0, 0.3, y), wMid = sm(0.05, 0.3, y) * (1 - sm(0.75, 0.95, y));
+    // ① 손목 쪽 겹친 주름
+    const ph = y * 24 + Math.sin(a * 2 + seed) * 1.5 + Math.sin(a * 3 - seed * 1.7) * 0.8 + noise1(a * 1.9 + y * 4 + seed * 3, 11) * 1.6;
+    const ring = Math.pow(Math.abs(Math.sin(ph)), 0.35) - 0.68;
+    const ringAmp = 0.018 * (0.45 + 0.55 * (0.5 + 0.5 * noise1(a * 2.3 + y * 6 + seed, 23))) * wW;
+    // ② 비틀린 큰 주름: 마루는 넓고 골은 좁다
+    const tw = 0.5 + 0.5 * Math.sin(a * 2 + y * 7.5 + seed * 2.1 + 0.9 * noise1(y * 5 + seed, 37));
+    const twist = Math.pow(tw, 0.55) - 0.62;
+    const tw2 = Math.sin(a * 5 - y * 17 + seed + noise1(a * 3 + y * 9, 41) * 1.2);
+    // ③ 팔꿈치 쪽 접힘
+    const elb = Math.pow(Math.abs(Math.sin(y * 30 + a * 1.5 + seed * 0.3 + noise1(a * 2 + seed, 53))), 0.45) - 0.64;
+    // ④ 처짐
+    const sag = Math.pow(Math.max(0, Math.cos(angD(a, aDown))), 2);
+    // ⑤ 솔기
+    const ds = angD(a, aSeam), seam = Math.exp(-Math.pow(ds / 0.05, 2)), stitch = Math.exp(-Math.pow((Math.abs(ds) - 0.085) / 0.022, 2));
+    r += ring * ringAmp + twist * 0.015 * (0.35 + 0.65 * wMid) + tw2 * 0.0022 + elb * 0.010 * wE + sag * 0.006 * (1 - 0.6 * wW)
+      + seam * 0.002 - stitch * 0.0009;
     r += Math.sin(a * 2 + seed * 0.7) * 0.0025;
     if (y > 0.965) r += (y - 0.965) * 0.22 + Math.sin(a * 4 + seed) * 0.0012;
     p.setXYZ(i, x * r * 1.06, y, z * r * 0.94);
-    // 골의 그늘: 접힘이 깊을수록 어둡다
-    const valley = Math.max(0, -fold) * wW * 1.25 + Math.max(0, -elb) * wE * 1.1 + Math.max(0, -tw) * 0.18;
-    const c = Math.max(0.5, 1 - valley * 0.75);
+    // 골의 그늘: 접힘이 깊을수록 어둡다. 솔기 옆 박음질 골도 어둡다
+    const valley = Math.max(0, -ring) * (ringAmp / 0.018) * 1.4 + Math.max(0, -twist) * 0.9 * (0.35 + 0.65 * wMid) + Math.max(0, -elb) * wE * 1.1 + Math.max(0, -tw2) * 0.12;
+    // 마루는 조금 밝다(바래고 닳은 천). 평균은 1 근처라 재질 표의 반사율은 그대로다
+    const crest = Math.max(0, twist) * (0.35 + 0.65 * wMid) + Math.max(0, ring) * (ringAmp / 0.018) * 0.6;
+    const c = Math.max(0.35, 1 - valley * 0.95) * (1 - stitch * 0.25) * (1 + seam * 0.06) * (1 + crest * 0.18);
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = c;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -94,15 +111,6 @@ function wearTexture(base, seed) {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(3, 3);
   return t;
 }
-function fabricTexture(base, seed) {
-  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
-  const x = c.getContext('2d'); x.fillStyle = base; x.fillRect(0, 0, S, S);
-  let a = seed; const r = () => ((a = (a * 9301 + 49297) % 233280) / 233280);
-  for (let y = 0; y < S; y += 2) { x.fillStyle = `rgba(0,0,0,${0.04 + r() * 0.05})`; x.fillRect(0, y, S, 1); }
-  for (let i = 0; i < 30; i++) { x.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,255,240'},0.06)`; x.fillRect(r() * S, r() * S, 10 + r() * 30, 2 + r() * 8); }
-  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(2, 6);
-  return t;
-}
 
 // 뷰모델 재질 표(총과 장갑 표면 세션, 2026-11-15). 실제 재질의 반사율(선형), 거칠기, 정반사를 그대로 쓴다.
 // 이전 값은 지적마다 눈으로 정했다(12라운드 '검은 덩어리', 16라운드 '회색 플라스틱', 형광등에 번들거림, A/B 35 '빛나는 구슬').
@@ -130,6 +138,9 @@ const fiber = (hex) => ({ envMapIntensity: 1, specularIntensity: 0, sheen: 1, sh
 export function buildMaterials() {
   // 금속 부품은 어두운 회색, 핸드가드와 개머리판과 탄창은 탄색이다. 부품마다 색이 달라야 판정 시트 크기에서 총으로 읽힌다(검은 단색으로 바꿨을 때 "형태가 읽히지 않는 덩어리"로 보였다)
   const blk = wearTexture('#353533', 3), tan = wearTexture('#4c4942', 7), stl = wearTexture('#3c3d3b', 11);
+  // 천 표면(fabric.js): 장갑 UV는 바인드 포즈 위치 × 22(hands.js)라 한 칸이 1/22 m, 소매 UV는 둘레(약 0.36 m) × 팔뚝 길이(약 0.26 m)
+  const gloveF = fabricMaps('#302f2c', { kind: 'knit', seed: 5 }), sleeveF = fabricMaps('#3b3d36', { kind: 'ripstop', seed: 9 });
+  gloveF.repeatFor(1 / 22, 1 / 22); sleeveF.repeatFor(0.36, 0.26);
   const M = {
     // 거칠기: 검은 폴리머와 인산염 강철은 실측 0.4~0.55다. 0.7로 올려 두었던 것은 형광등 반사를 원판으로 넓혀 윗면에 회색 막이 깔렸기 때문인데,
     // 그 원인(원판 반사, 실내 반사가 L1 조도뿐인 것)은 실내 세션에 관 모양 반사와 반사 프로브로 고쳤다. 0.7에서는 밝은 방에서도 창과 천장이 윗면에 맺히지 않아
@@ -141,8 +152,8 @@ export function buildMaterials() {
     scopeBody: bcMaterial({ map: wearTexture('#2f3031', 17), roughness: 0.6, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { bare: ALU, polish: 0.42 }, body: true }),
     worn: bcMaterial({ color: 0x59595b, roughness: 0.45, metalness: 1.0, envMapIntensity: 1 }, { grime: 0, finish: { bare: STEEL, polish: 0.42 }, body: true }),
     tan: bcMaterial({ map: tan, roughness: 0.5, metalness: 0.0, ...PHYS }, { grime: 0, physical: true, finish: { polish: 0.52 }, body: true }),
-    glove: bcMaterial({ map: fabricTexture('#302f2c', 5), roughness: 0.8, ...fiber('#302f2c'), vertexColors: true }, { grime: 0, physical: true, gloss: true, body: true }),
-    sleeve: bcMaterial({ map: fabricTexture('#3b3d36', 9), roughness: 1.0, ...fiber('#3b3d36'), side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true, body: true }),
+    glove: bcMaterial({ map: gloveF.map, normalMap: gloveF.normalMap, roughness: 0.8, ...fiber('#302f2c'), vertexColors: true }, { grime: 0, physical: true, gloss: true, body: true }),
+    sleeve: bcMaterial({ map: sleeveF.map, normalMap: sleeveF.normalMap, roughness: 1.0, ...fiber('#3b3d36'), side: THREE.DoubleSide, vertexColors: true }, { grime: 0, physical: true, body: true }),
   };
   for (const k in M) M[k].name = k;   // 살펴보기(__bc.vmMat)와 검사에서 재질을 이름으로 고른다
   return M;

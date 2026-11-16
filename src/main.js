@@ -682,6 +682,8 @@ class Game {
       vmLight(o) { return vmLightStats(g, o || {}); },
       // 살펴보기용: 총·손·소매 재질 값을 덮어쓴다({ env, spec, albedo, rough }). null이면 되돌린다
       vmMat(o) { return vmMatOverride(g, o); },
+      // 살펴보기용: 렌즈+센서 패스의 유니폼을 바꾼다(예: { uDofK: 0.00028 }으로 실제 렌즈 값의 초점 흐림)
+      postTune(o) { const U = g.post.mCam.uniforms; if (o) for (const k in o) if (U[k]) U[k].value = o[k]; return { uDofK: U.uDofK.value, uFocus: U.uFocus.value, uAOAmt: U.uAOAmt.value }; },
       // 불러오기 비용: 총의 자기 가림 굽기(ms)
       // 뷰모델 반사 프로브를 켜고 끈다(살펴보기와 비교용). 품질 설정을 다시 적용하면 원래대로 돌아간다
       probe(on) { g.probe.attach([g.vm.root, g.vm.foreR, g.vm.foreL], !!on); return { on: g.probe.on, mats: g.probe.mats.length }; },

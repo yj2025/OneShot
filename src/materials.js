@@ -296,10 +296,13 @@ const FRAG_GRIME = `
   if (uFinish > 0.5 && vBcBox.x > 0.0) {
     float ed = bcEdgeDist(), px = max(fwidth(ed), 1e-6);
     float patchy = smoothstep(0.35, 0.7, bcFbm(vBcObj.xz * 120.0 + vBcObj.y * 95.0 + 5.3));
-    float wid = 0.0016 * patchy;
+    // 2026-11-17: 폭 1.6 mm(얼룩 8 mm마다 끊김)는 0.5 m 앞에서 1.4화소, 판정 시트에서 0.7화소라 보이지 않았다. 실제 소총의 닳은 모서리는 손이 닿는 자리에서 3~5 mm다.
+    // 폭을 넓히되 얼룩 주파수 그대로 두면 모서리를 따라 구슬처럼 줄지은 점이 됐다. 폭은 2.5 cm 단위로 천천히 바뀌는 얼룩이 정하고(모서리를 따라 길게 이어진 닳음), 끊김은 고운 얼룩이 정한다
+    float streak = smoothstep(0.3, 0.75, bcFbm(vBcObj.xz * 38.0 + vBcObj.y * 31.0 + 1.7));
+    float wid = (0.0009 + 0.0026 * streak) * mix(0.55, 1.0, patchy);
     float big = vBcBox.w < -0.5 || vBcBox.w < 1e-5 ? 1.0 : smoothstep(0.0025, 0.004, vBcBox.w);
     float wear = (1.0 - smoothstep(wid - px, wid + px, ed)) * smoothstep(1.5, 4.0, wid / px) * big;
-    bcBare = uBare.a * smoothstep(0.75, 0.95, patchy) * wear;              // 금속이 드러난 정도
+    bcBare = uBare.a * smoothstep(0.85, 1.0, patchy) * smoothstep(0.5, 0.9, streak) * wear;   // 금속이 드러난 정도(가장 많이 닳은 자리만)
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.6 + 0.01, wear);   // 닳아 옅어진 피막
     diffuseColor.rgb = mix(diffuseColor.rgb, uBare.rgb, bcBare);
     bcEdge = 0.5 * wear + 0.5 * bcBare;                                       // 피막이 남은 닳음은 반만 반들거린다

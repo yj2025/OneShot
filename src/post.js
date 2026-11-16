@@ -136,6 +136,7 @@ uniform sampler2D tAdapt; uniform sampler2D tPrev; uniform sampler2D tDepth; uni
 uniform float uOver; uniform float uAspect; uniform float uK; uniform float uCA; uniform vec2 uBlur; uniform float uBlurAmt; uniform float uZoomBlur;
 uniform float uTime; uniform float uKey; uniform float uFlash; uniform vec2 uRimShift; uniform float uGhost; uniform float uNoise;
 uniform float uSat; uniform float uHit; uniform float uFrame; uniform float uDead;
+uniform float uDofK; uniform float uFocus;
 varying vec2 vUv;
 float h12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec2 distort(vec2 uv, float k){
@@ -150,8 +151,12 @@ vec3 defocus(vec2 uv, vec3 base){
   // 알파 0 = 조준경 안의 상(무한대에 맺힌 상이라 렌즈 바로 앞이어도 초점이 맞는다. scope.js)
   if (texture2D(tScene, uv).a < 0.2) return base;
   float z = linDepth(uv);
-  // 렌즈 바로 앞(손과 총)은 초점이 나간다. 0.7 m 안에서 흐려지기 시작해 0.2 m에서 가장 흐리다
-  float coc = smoothstep(0.7, 0.2, z) * 0.017;
+  // 렌즈 바로 앞(손과 총)은 초점이 나간다. 흐림 반지름은 얇은 렌즈의 착란원처럼 (1/거리 − 1/초점 거리)에 비례한다(화면 높이 기준).
+  // 실제 바디캠 렌즈(초점 거리 약 2 mm, f/2, 초점 1.2 m)라면 uDofK는 0.00028이다. 레퍼런스에서 0.3~0.4 m의 장갑은 그보다 조금 무르고
+  // 0.2 m 안의 총은 분명히 흐리다. 영상 압축과 확대가 더하는 무름까지 이 흐림 하나로 내므로 그 3.6배인 0.001로 둔다
+  // (720p에서 0.3 m 반지름 1.8화소, 0.2 m 3화소). 2026-11-17 전에는 0.7 m에서 0.2 m까지 smoothstep으로 0.017까지 키워
+  // 0.4 m에서 7.9화소, 0.2 m에서 12화소였다. 손가락, 소매 주름, 레일, 닳은 모서리가 모두 지워져 critic이 16~36라운드 내내 '매끈한 덩어리'로 읽었다
+  float coc = min(0.017, uDofK * max(0.0, 1.0 / z - 1.0 / uFocus));
   if (coc < 0.0006) return base;
   // 모든 화소가 같은 나선 10점을 쓰면 점 사이(5~6화소)로 무늬가 빠져, 흐려지는 대신 어긋난 사본이 겹쳤다
   // (렌즈 앞 조준경 몸통의 물결무늬, A/B 라운드 34 쌍 10). 나선을 화소마다, 프레임마다 돌려
@@ -297,6 +302,7 @@ export class Post {
       uOver: { value: OVERSCAN }, uAspect: { value: 1.78 }, uK: { value: 0.32 }, uCA: { value: 0.035 }, uBlur: { value: new THREE.Vector2() }, uBlurAmt: { value: 1 }, uZoomBlur: { value: 0 },
       uTime: { value: 0 }, uKey: { value: 0.2 }, uFlash: { value: 0 }, uRimShift: { value: new THREE.Vector2() }, uGhost: { value: 0.12 }, uNoise: { value: 1 },
       uSat: { value: 0.62 }, uHit: { value: 0 }, uFrame: { value: 0 }, uDead: { value: 0 }, tDepth: { value: null }, uNear: { value: 0.04 }, uFar: { value: 420 }, tAO: { value: null }, uAOAmt: { value: 0.9 },
+      uDofK: { value: 0.001 }, uFocus: { value: 1.2 },
     });
     this.mAO = pass(AO_FS, { tDepth: { value: null }, uProj: { value: new THREE.Matrix4() }, uInvProj: { value: new THREE.Matrix4() }, uRes: { value: new THREE.Vector2() }, uFrame: { value: 0 } });
     this.rtAO = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];
