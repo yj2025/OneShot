@@ -1,0 +1,315 @@
+{
+ "round": 12,
+ "baseline": "p2-gun",
+ "crossover": false,
+ "zoom": null,
+ "only": null,
+ "judgments": [
+  {
+   "set": null,
+   "text": "1=B, 2=B, 3=A, 4=B, 5=A, 6=T, 7=B, 8=B, 9=A, 10=A, 11=A, 12=B, 13=B, 14=B, 15=B, 16=T, 17=B, 18=A, 19=A"
+  },
+  {
+   "set": null,
+   "text": "1=B, 2=B, 3=T, 4=B, 5=A, 6=T, 7=B, 8=B, 9=A, 10=A, 11=A, 12=B, 13=B, 14=B, 15=B, 16=T, 17=B, 18=A, 19=A"
+  },
+  {
+   "set": null,
+   "text": "1=B, 2=B, 3=T, 4=B, 5=B, 6=T, 7=B, 8=B, 9=A, 10=A, 11=A, 12=B, 13=B, 14=B, 15=B, 16=T, 17=B, 18=A, 19=A"
+  }
+ ],
+ "summary": {
+  "W": 0,
+  "L": 16,
+  "T": 3,
+  "p": 1,
+  "verdict": "미달",
+  "letters": {
+   "A": 18,
+   "B": 31,
+   "p": 0.08543
+  },
+  "position": {
+   "A": {
+    "N": 0,
+    "O": 30,
+    "T": 0
+   },
+   "B": {
+    "N": 1,
+    "O": 18,
+    "T": 8
+   }
+  },
+  "conflicts": 1,
+  "oldRatio": 0.079
+ },
+ "pairs": [
+  {
+   "scene": "10-hit-taken.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 1,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "02-entrance.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 2,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "13-close-floor.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 1,
+   "ties": 2,
+   "sets": [
+    {
+     "tag": null,
+     "n": 3,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "06-loading-dock-stairs.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 4,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "09-firing.png",
+   "result": "L",
+   "newVotes": 1,
+   "baseVotes": 2,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 5,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "15-close-pistol.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 3,
+   "sets": [
+    {
+     "tag": null,
+     "n": 6,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "11-stepped-outside.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 7,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "07-doorway-to-yard.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 8,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "05-office-fluorescent.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 9,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "03-corridor.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 10,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "12-close-doorway.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 11,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "04-hall-windows.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 12,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "08-bot-in-room.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 13,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "14-close-wall.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 14,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "01-yard.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 15,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-running-turn.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 3,
+   "sets": [
+    {
+     "tag": null,
+     "n": 16,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-walking.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 17,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-indoor-to-outdoor.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 18,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-firing-burst.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 19,
+     "newSide": "B"
+    }
+   ]
+  }
+ ]
+}

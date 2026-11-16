@@ -1,0 +1,259 @@
+{
+ "round": 3,
+ "baseline": "p1-shadows",
+ "crossover": false,
+ "zoom": null,
+ "only": null,
+ "judgments": [
+  {
+   "set": null,
+   "text": "1=B, 2=A, 3=A, 4=A, 5=B, 6=A, 7=A, 8=A, 9=B, 10=B, 11=구분 안 됨, 12=A, 13=A, 14=B, 15=구분 안 됨"
+  },
+  {
+   "set": null,
+   "text": "1=B, 2=A, 3=A, 4=A, 5=B, 6=A, 7=A, 8=A, 9=B, 10=B, 11=B, 12=B, 13=A, 14=B, 15=A"
+  },
+  {
+   "set": null,
+   "text": "1=B, 2=A, 3=A, 4=A, 5=B, 6=A, 7=A, 8=A, 9=B, 10=B, 11=B, 12=구분 안 됨, 13=A, 14=B, 15=A"
+  }
+ ],
+ "summary": {
+  "W": 14,
+  "L": 0,
+  "T": 1,
+  "p": 0.0001,
+  "verdict": "통과",
+  "letters": {
+   "A": 24,
+   "B": 18,
+   "p": 0.4408
+  },
+  "position": {
+   "A": {
+    "N": 23,
+    "O": 0,
+    "T": 1
+   },
+   "B": {
+    "N": 18,
+    "O": 1,
+    "T": 2
+   }
+  },
+  "conflicts": 1,
+  "oldRatio": 0.967
+ },
+ "pairs": [
+  {
+   "scene": "05-office-fluorescent.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 1,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "03-corridor.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 2,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "11-stepped-outside.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 3,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "04-hall-windows.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 4,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "01-yard.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 5,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "02-entrance.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 6,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "10-hit-taken.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 7,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "06-loading-dock-stairs.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 8,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "09-firing.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 9,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "07-doorway-to-yard.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 10,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "08-bot-in-room.png",
+   "result": "W",
+   "newVotes": 2,
+   "baseVotes": 0,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": null,
+     "n": 11,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-walking.png",
+   "result": "T",
+   "newVotes": 1,
+   "baseVotes": 1,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": null,
+     "n": 12,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-firing-burst.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 13,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-indoor-to-outdoor.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": null,
+     "n": 14,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-running-turn.png",
+   "result": "W",
+   "newVotes": 2,
+   "baseVotes": 0,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": null,
+     "n": 15,
+     "newSide": "A"
+    }
+   ]
+  }
+ ]
+}
