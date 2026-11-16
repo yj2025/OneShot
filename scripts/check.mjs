@@ -28,7 +28,7 @@ async function main() {
   //  (c) 바깥에서 1.6 m 높이 창문(비닐이 찢겨 걸린 창)을 넘어 실내 바닥(0.7 m)에 선다. (d) 방벽 앞에서 Space를 한 번만 누르면(길게 눌러도) 넘지 못한다.
   //  (e) 방범창과 합판으로 막은 창은 Space 두 번으로도 넘지 못한다(창살과 합판은 그림만 있고 충돌 상자가 없어서 처음에는 지나갔다).
   //  끝난 자리에서 몸(반경 0.28 m, 발에서 1.2 m까지)이 막는 상자(발보다 0.42 m 넘게 솟은 것)와 겹치지 않는다
-  //  CHECK_ONLY=move 이면 여기까지만 돈다(파쿠르를 고칠 때 빠르게 돌려 보는 용도). CHECK_ONLY=surface 이면 (k)만 돈다
+  //  CHECK_ONLY=move 이면 여기까지만 돈다(파쿠르를 고칠 때 빠르게 돌려 보는 용도). CHECK_ONLY=surface 이면 (k)와 (l)만 돈다(BC_DIST로 고치기 전 빌드를 열어 실패를 확인할 때도 쓴다)
   const extraErrors = [], extraExternal = [];
   if (process.env.CHECK_ONLY !== 'surface') {
     const g = await openGame(L.context, 'test=1&clock=manual&seed=11&view=13');
@@ -243,37 +243,78 @@ async function main() {
     rec('(k) 밝은 곳에서 총과 장갑이 장면의 빛을 받는다', rows.every(okRow) && sky >= 0.1,
       rows.map((o) => (o.r ? `${o.name} ${pct(o.r.refl.all.p50)}·p90 ${pct(o.r.refl.all.p90)}` : `${o.name} 잴 수 없음`)).join(', ') + ` (중앙값 5% 이상·p90 50% 이하), 마당 윗면 p90 ${pct(sky)}(10% 이상, 화소 ${yard ? yard.refl.up.n : 0})`);
   }
-  // (l) 실내에서 총과 소매가 둘레보다 밝게 뜨지 않고 제 색을 지킨다(실내 세션, 2026-11-15. A/B 43과 critic 31의 '형광등 아래 흰 석고 모형', '올리브색을 잃은 소매')
-  //  밝기는 __bc.vmLight()의 선형 HDR 중앙값이고, 둘레는 뷰모델 실루엣 바깥 화면 폭 6% 고리의 장면 화소다. 색은 채널별 실효 반사율(빛의 색이 지워진 재질의 색)의 채도다.
-  //  ① 실내 다섯 곳에서 뷰모델 전체와 총의 밝기가 둘레의 0.5배 이하(레퍼런스 실내 0.1~0.25) ② 소매 채도가 결 반사·정반사를 끈 같은 소매의 0.8배 이상
-  //  ③ 마당에서 총이 둘레의 0.2배 이상(실외 하늘 반사를 지워 ①을 넘지 않게). 고치기 전 빌드(ca642c4)에서 실패하는 것을 먼저 확인했다
+  // (l) 실내 면과 뷰모델이 실제 재료의 반사율을 지킨다(실내 세션 2026-11-15에 만들고, 측정 정비 2차 2026-11-17에 실효 반사율로 다시 썼다.
+  //  A/B 43과 critic 31의 '형광등 아래 흰 석고 모형', '올리브색을 잃은 소매'. 원인은 둘레의 벽과 바닥이 실제의 절반쯤으로 어두웠던 것과 천의 거친 정반사였다)
+  //  옛 (l)은 '뷰모델 밝기 ÷ 둘레 밝기'를 봐서 형광등까지의 거리가 다르면 재질이 맞아도 실패했다(가까운 바닥). 이제 빛을 지운 값만 본다.
+  //  ① 레벨 실내 재질의 반사율(__bc.levelAlbedo(): 텍스처 평균 × 색, 선형 휘도)이 아래 실제 재료의 범위 안. level.js의 반사율 표와 따로 적어 둔다
+  //  ② 시점 여섯 곳에서 뷰모델 재질의 확산 실효 반사율(정반사·결 반사·환경 반사·닳은 모서리를 끄고 흰 종이로 나눈 중앙값)이 재질 표(weapons.js)의 ±25% 안.
+  //     장갑은 표의 3%가 손등 천의 값이고 메시에 가죽 손바닥(×0.62)·마디 덧댐(×0.45)·틈 그늘이 정점 색으로 들어가 −13~−20%로 나온다
+  //  ③ 천(장갑, 소매)의 전체 실효 반사율이 표의 1.3배 이하(천에는 정반사가 없고 결 반사만 있다. 총은 정반사에 맺히는 등과 창 때문에 표와 비교하지 않고, 위쪽은 (k)가 본다)
+  //  ④ 소매 채도가 확산만 그린 같은 소매의 0.8배 이상. 고치기 전 빌드(51268bb = ca642c4의 게임 + 측정 API)에서 ①과 ③이 실패하는 것을 먼저 확인했다
   {
-    const GUN = 'polymer,steel,scopeBody,tan,worn';
+    const RANGE = { // 실제 재료의 확산 반사율(선형)
+      plaster: [0.40, 0.55], concrete: [0.25, 0.35], linoleum: [0.30, 0.40],            // 낡은 칠 회벽, 먼지 앉은 실내 콘크리트 바닥, 비닐 바닥
+      plywood: [0.20, 0.45], plywoodB: [0.20, 0.45], plywoodC: [0.20, 0.45],            // 소나무 합판(바랜 것은 더 어둡다)
+      pallet: [0.20, 0.30], deskTop: [0.20, 0.40], doorPaint: [0.20, 0.30],             // 바랜 팔레트 나무, 나무결 상판, 칠한 문틀
+      cardboard: [0.15, 0.40], cardboardB: [0.15, 0.40], cardboardC: [0.15, 0.40],      // 골판지(젖거나 때 묻은 것 0.15~0.25)
+      block: [0.20, 0.40], ceiling: [0.45, 0.85],                                        // 콘크리트 블록, 때 탄 천장 타일
+    };
+    const TABLE = { polymer: 0.035, steel: 0.045, scopeBody: 0.030, tan: 0.070, glove: 0.030, sleeve: 0.045 };   // weapons.js 재질 표
+    const MATS = Object.keys(TABLE), FABRIC = ['glove', 'sleeve'];
     const sat = (c) => (c && c.every((x) => x > 0) ? 1 - Math.min(...c) / Math.max(...c) : 0);
+    let albedo = null;
     const rows = [];
     for (const [v, name] of [[2, '복도'], [4, '사무실'], [6, '문간'], [7, '방 안의 봇'], [10, '가까운 바닥'], [0, '마당']]) {
       const q = await openGame(L.context, `test=1&clock=manual&seed=11&view=${v}`);
       const Q = q.page; await clickStart(Q);
       await Q.evaluate(() => window.__bc.step(90));
-      const o = await Q.evaluate((gun) => {
-        const b = window.__bc; if (!b.vmLight) return null;
-        const all = b.vmLight(), g = b.vmLight({ only: gun }), s = b.vmLight({ only: 'sleeve' });
-        b.vmMat({ only: 'sleeve', sheen: 0, spec: 0 }); const s0 = b.vmLight({ only: 'sleeve' }); b.vmMat(null);
-        const rel = (r) => (r.vm.n > 200 && r.ring.n > 200 ? r.vm.p50 / r.ring.p50 : null);
-        return { all: rel(all), gun: rel(g), s: s.vm.n > 200 ? s.rgb : null, s0: s0.vm.n > 200 ? s0.rgb : null };
-      }, GUN);
+      const o = await Q.evaluate((mats) => {
+        const b = window.__bc; if (!b.vmLight || !b.vmMat) return null;
+        const seen = (r) => r.refl.all.n >= 100;
+        const full = {}, diff = {};
+        for (const m of mats) { const r = b.vmLight({ only: m }); full[m] = seen(r) ? { p50: r.refl.all.p50, rgb: r.rgb } : null; }
+        b.vmMat({ spec: 0, env: 0, sheen: 0, finish: 0 });
+        try { for (const m of mats) { const r = b.vmLight({ only: m }); diff[m] = seen(r) ? { p50: r.refl.all.p50, rgb: r.rgb } : null; } }
+        finally { b.vmMat(null); }
+        return { full, diff, albedo: b.levelAlbedo ? b.levelAlbedo() : null };
+      }, MATS);
       extraErrors.push(...q.errors); extraExternal.push(...q.external);
       await Q.close();
-      rows.push({ v, name, o });
+      if (o && !albedo) albedo = o.albedo;
+      rows.push({ name, o });
     }
-    const f2 = (x) => (x == null ? '-' : x.toFixed(2));
-    const indoor = rows.filter((r) => r.v !== 0), yard = rows.find((r) => r.v === 0);
-    const satOk = (o) => !o.s || !o.s0 || sat(o.s) >= 0.8 * sat(o.s0);   // 소매가 화면에 없으면 색은 보지 않는다
-    const okIn = (r) => r.o && r.o.all != null && r.o.all <= 0.5 && (r.o.gun == null || r.o.gun <= 0.5) && satOk(r.o);
-    const okYard = yard.o && yard.o.gun != null && yard.o.gun >= 0.2;
-    rec('(l) 실내에서 총과 소매가 둘레보다 밝게 뜨지 않고 제 색을 지킨다', indoor.every(okIn) && okYard,
-      indoor.map((r) => (r.o ? `${r.name} 전체 ${f2(r.o.all)}·총 ${f2(r.o.gun)}·소매 채도 ${f2(sat(r.o.s))}/${f2(sat(r.o.s0))}` : `${r.name} 잴 수 없음`)).join(', ') +
-      ` (둘레 대비 0.5 이하, 채도 0.8배 이상), 마당 총 ${f2(yard.o && yard.o.gun)}(0.2 이상)`);
+    const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const f2 = (x) => x.toFixed(2), pc = (x) => (x * 100).toFixed(1);
+    // ① 레벨 반사율
+    const lvBad = [], lvAll = [];
+    for (const [k, [lo, hi]] of Object.entries(RANGE)) {
+      const a = albedo && albedo[k] ? lum(albedo[k]) : null;
+      lvAll.push(`${k} ${a == null ? '없음' : f2(a)}`);
+      if (a == null || a < lo || a > hi) lvBad.push(`${k} ${a == null ? '없음' : f2(a)}(${lo}~${hi})`);
+    }
+    // ②③④ 뷰모델: 재질마다 시점별 비(측정 ÷ 표)의 최소·최대
+    const span = {}, fab = {}, satBad = [];
+    for (const m of MATS) { span[m] = []; fab[m] = []; }
+    for (const r of rows) {
+      if (!r.o) continue;
+      for (const m of MATS) {
+        if (r.o.diff[m]) span[m].push(r.o.diff[m].p50 / TABLE[m]);
+        if (FABRIC.includes(m) && r.o.full[m]) fab[m].push(r.o.full[m].p50 / TABLE[m]);
+      }
+      const s = r.o.full.sleeve, s0 = r.o.diff.sleeve;
+      if (s && s0 && sat(s.rgb) < 0.8 * sat(s0.rgb)) satBad.push(`${r.name} ${f2(sat(s.rgb))}/${f2(sat(s0.rgb))}`);
+    }
+    const diffBad = MATS.filter((m) => !span[m].length || Math.min(...span[m]) < 0.75 || Math.max(...span[m]) > 1.25);
+    const fabBad = FABRIC.filter((m) => !fab[m].length || Math.max(...fab[m]) > 1.3);
+    const unseen = rows.filter((r) => !r.o).map((r) => r.name);
+    const rng = (a) => (a.length ? `${f2(Math.min(...a))}~${f2(Math.max(...a))}` : '잴 수 없음');
+    rec('(l) 실내 면과 뷰모델이 실제 재료의 반사율을 지킨다',
+      !lvBad.length && !diffBad.length && !fabBad.length && !satBad.length && !unseen.length,
+      `① 레벨 반사율 ${lvBad.length ? '범위 밖 ' + lvBad.join(', ') : '모두 범위 안'} [${lvAll.join(', ')}]` +
+      ` / ② 뷰모델 확산 ÷ 재질 표 ${MATS.map((m) => `${m} ${rng(span[m])}`).join(', ')} (0.75~1.25)` +
+      ` / ③ 천 전체 ÷ 재질 표 ${FABRIC.map((m) => `${m} 최대 ${fab[m].length ? f2(Math.max(...fab[m])) : '잴 수 없음'}`).join(', ')} (1.3 이하)` +
+      ` / ④ 소매 채도 ${satBad.length ? '0.8배 미만 ' + satBad.join(', ') : '모든 시점 0.8배 이상'}` +
+      (unseen.length ? ` / 잴 수 없는 시점 ${unseen.join(', ')}` : ''));
   }
   if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
