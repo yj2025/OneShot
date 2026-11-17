@@ -1963,7 +1963,7 @@ check에 넣는다. CHECK_ONLY=motion이면 이 검사만 돈다.
 - 다음 세션: 기준선은 이 촬영 구성으로 새로 찍는다(`npm run shots` 뒤 `npm run ab -- save <이름>`). 이 커밋 앞의 기준선은 'strafe'가 있고 새 일곱 묶음이 없어 짝이 30쌍(연속 9)으로 줄어든다.
 
 ## 사용자 결정 반영 (2026-11-17 밤, 대화)
-- ROADMAP.md 진행 상태 표: 사용자가 승인하고 Claude에게 직접 고치라고 했다. 0 통과, 1 통과(2026-11-17), 2 진행 중. 1·2단계 통과 기준 문구를 부호 검정으로 바꿨다. 숫자 [0.05], [5]는 아직 제안값이다(사용자가 뜻을 다시 물었다).
+- ROADMAP.md 진행 상태 표: 사용자가 승인하고 Claude에게 직접 고치라고 했다. 0 통과, 1 통과(2026-11-17), 2 진행 중. 1·2단계 통과 기준 문구를 부호 검정으로 바꿨다. 숫자는 이어서 사용자가 제안값 그대로 확정했다(p 0.05, 갈린 쌍 5개, 영점 확인 글자 쏠림 p 0.01). ROADMAP, docs/evaluation.md, scripts/ablib.mjs 주석에 반영했다.
 - SPEC.md: 사용자 지시로 범위(4배 조준경 하나, 점프와 파쿠르)와 조작(Space, 1·2)을 적었다.
 - 성능 목표: '중급 노트북 GPU'를 지우고 데스크톱 RTX 5060 Ti로 바꿨다(SPEC.md, ROADMAP 4단계, scripts/perf.mjs의 TARGET). 지금까지의 성능 측정은 모두 이 기기라 추정이 아니게 된다.
 - 권한: 사용자 지시로 .claude/settings.json의 SPEC.md·ROADMAP.md 편집 금지를 풀었다. PLAYTEST.md 금지는 남겼다. CLAUDE.md는 'SPEC.md와 ROADMAP.md는 사용자가 지시하거나 승인한 내용만 고친다'로 맞췄다.

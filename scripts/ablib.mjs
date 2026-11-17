@@ -1,6 +1,6 @@
 // A/B 채점의 통계: 쌍별 결과(좌우 교차 또는 다수결), 부호 검정, 글자·자리 집계 (docs/evaluation.md)
 // scripts/ab.mjs와 scripts/abtest.mjs가 쓴다. 키 파일은 여기서 읽지 않는다
-// 아래 넷 중 뒤의 셋은 제안값이고 사용자가 확정한다. 바꾸면 여기만 고친다
+// 아래 넷 중 뒤의 셋은 2026-11-17에 사용자가 확정했다(ROADMAP.md). 바꾸면 여기만 고친다
 export const MIN_PAIRS = 15;       // 전체 화면 라운드의 최소 쌍 수
 export const MIN_DECIDED = 5;      // 갈린 쌍이 이보다 적으면 판정 불가
 export const ALPHA = 0.05;         // 부호 검정(단측) 통과 기준
