@@ -1,0 +1,647 @@
+{
+ "round": 57,
+ "baseline": "p-hands2",
+ "crossover": true,
+ "zoom": {
+  "x": 0.32,
+  "y": 0.42,
+  "w": 0.66,
+  "h": 0.58
+ },
+ "only": null,
+ "judgments": [
+  {
+   "set": "94d9",
+   "text": "1=B, 2=A, 3=B, 4=B, 5=구분 안 됨, 6=구분 안 됨, 7=A, 8=B, 9=구분 안 됨, 10=구분 안 됨, 11=A, 12=A, 13=B, 14=구분 안 됨, 15=A, 16=B, 17=B, 18=A, 19=B, 20=B, 21=A, 22=B, 23=A, 24=B, 25=A, 26=구분 안 됨, 27=A, 28=B, 29=A, 30=B, 31=B"
+  },
+  {
+   "set": "94d9",
+   "text": "1=B, 2=A, 3=B, 4=B, 5=B, 6=구분 안 됨, 7=A, 8=B, 9=구분 안 됨, 10=구분 안 됨, 11=A, 12=A, 13=B, 14=구분 안 됨, 15=A, 16=B, 17=B, 18=A, 19=B, 20=B, 21=A, 22=B, 23=A, 24=B, 25=A, 26=구분 안 됨, 27=A, 28=B, 29=A, 30=B, 31=B"
+  },
+  {
+   "set": "b033",
+   "text": "1=B, 2=A, 3=B, 4=B, 5=B, 6=구분 안 됨, 7=구분 안 됨, 8=A, 9=A, 10=B, 11=B, 12=구분 안 됨, 13=A, 14=B, 15=구분 안 됨, 16=A, 17=B, 18=B, 19=A, 20=A, 21=A, 22=B, 23=구분 안 됨, 24=구분 안 됨, 25=A, 26=B, 27=B, 28=구분 안 됨, 29=A, 30=A, 31=B"
+  },
+  {
+   "set": "b033",
+   "text": "1=B, 2=A, 3=B, 4=B, 5=B, 6=A, 7=구분 안 됨, 8=A, 9=A, 10=B, 11=구분 안 됨, 12=구분 안 됨, 13=A, 14=B, 15=구분 안 됨, 16=구분 안 됨, 17=B, 18=B, 19=A, 20=A, 21=A, 22=B, 23=구분 안 됨, 24=A, 25=A, 26=B, 27=B, 28=구분 안 됨, 29=A, 30=A, 31=B"
+  }
+ ],
+ "summary": {
+  "W": 23,
+  "L": 0,
+  "T": 8,
+  "p": 0,
+  "verdict": "통과",
+  "letters": {
+   "A": 45,
+   "B": 54,
+   "p": 0.42152
+  },
+  "position": {
+   "A": {
+    "N": 45,
+    "O": 1,
+    "T": 16
+   },
+   "B": {
+    "N": 53,
+    "O": 0,
+    "T": 9
+   }
+  },
+  "conflicts": 1,
+  "oldRatio": 0.871
+ },
+ "pairs": [
+  {
+   "scene": "15-close-pistol.png",
+   "result": "T",
+   "newVotes": 2,
+   "baseVotes": 1,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 1,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 5,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "03-corridor.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 2,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 13,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "18-fire-corridor.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 3,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 21,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "11-stepped-outside.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 4,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 18,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "01-yard.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 5,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 2,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "20-fire-pistol.png",
+   "result": "T",
+   "newVotes": 1,
+   "baseVotes": 0,
+   "ties": 3,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 6,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 6,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "10-hit-taken.png",
+   "result": "T",
+   "newVotes": 2,
+   "baseVotes": 0,
+   "ties": 2,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 7,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 20,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "07-doorway-to-yard.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 8,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 8,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "19-fire-yard.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 9,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 1,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "06-loading-dock-stairs.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 10,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 12,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "14-close-wall.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 11,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 15,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "21-reload.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 12,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 10,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "05-office-fluorescent.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 13,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 17,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "04-hall-windows.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 14,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 11,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "16-aim-hall.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 15,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 14,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "13-close-floor.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 16,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 4,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "02-entrance.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 17,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 7,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "17-aim-yard.png",
+   "result": "T",
+   "newVotes": 2,
+   "baseVotes": 0,
+   "ties": 2,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 18,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 9,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "08-bot-in-room.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 19,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 19,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "09-firing.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 20,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 16,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "12-close-doorway.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 21,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 3,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-vault-barrier.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 22,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 23,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-running-turn.png",
+   "result": "T",
+   "newVotes": 2,
+   "baseVotes": 0,
+   "ties": 2,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 23,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 31,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-vault-barrel.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 24,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 28,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-turn-sway.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 25,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 24,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-firing-burst.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 26,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 25,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-walking.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 27,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 27,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-aim-track.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 28,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 26,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-indoor-to-outdoor.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 29,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 30,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-reload.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 30,
+     "newSide": "A"
+    },
+    {
+     "tag": "94d9",
+     "n": 22,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-strafe.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "b033",
+     "n": 31,
+     "newSide": "B"
+    },
+    {
+     "tag": "94d9",
+     "n": 29,
+     "newSide": "A"
+    }
+   ]
+  }
+ ]
+}

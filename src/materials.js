@@ -6,18 +6,20 @@ import { volUniforms, MAXL } from './lightbake.js';
 // 머리는 가슴 카메라 바로 위(목이 곧다)이고 헬멧까지 반지름 14 cm다. 2026-11-15 실내 세션 전에는 머리를 카메라 15 cm 뒤에 두고 위팔이 없어,
 // 머리 위 형광등이 총과 장갑을 그대로 비추고 옆과 뒤에서 오는 방의 빛이 덜 가려졌다
 const BODY_STATIC = [[0, -0.08, 0.19, 0.17], [0, -0.42, 0.17, 0.16], [-0.2, 0.05, 0.14, 0.11], [0.2, 0.05, 0.14, 0.11], [0, 0.33, 0.04, 0.14]];
-const SHOULDER = [new THREE.Vector3(0.21, 0.0, 0.1), new THREE.Vector3(-0.21, 0.0, 0.1)];
+const SHOULDER = [new THREE.Vector3(0.19, 0.08, 0.1), new THREE.Vector3(-0.19, 0.08, 0.1)];   // weapons.js SHOULDER_J와 같다
 export const bodyUniforms = { uBodyS: { value: [...BODY_STATIC.map((a) => new THREE.Vector4(...a)), ...Array.from({ length: 4 }, () => new THREE.Vector4(0, -0.3, 0.1, 0.065))] },
   // 1이면 뷰모델의 환경맵이 총 자리에서 그린 반사 프로브(localprobe.js)다. 그 반사를 그대로 쓴다
   uLocEnv: { value: 0 } };
 // 위팔: 어깨에서 그 프레임의 팔꿈치(월드 좌표)까지 1/3, 2/3 자리에 반지름 6.5 cm 구
-const _e = new THREE.Vector3();
-export function setBodyArms(camera, elbows) {
+// 어깨는 뷰모델이 팔을 푼 자리(weapons.js SHOULDER_J, 손이 멀면 앞으로 내민다)를 받는다. 받지 못하면 SHOULDER
+const _e = new THREE.Vector3(), _s = new THREE.Vector3();
+export function setBodyArms(camera, elbows, shoulders) {
   camera.updateMatrixWorld();
   const S = bodyUniforms.uBodyS.value;
   elbows.forEach((e, k) => {
     _e.copy(e).applyMatrix4(camera.matrixWorldInverse);
-    for (let j = 0; j < 2; j++) { const f = j ? 0.7 : 0.33; S[5 + k * 2 + j].set(SHOULDER[k].x + (_e.x - SHOULDER[k].x) * f, SHOULDER[k].y + (_e.y - SHOULDER[k].y) * f, SHOULDER[k].z + (_e.z - SHOULDER[k].z) * f, 0.065); }
+    if (shoulders && shoulders[k]) _s.copy(shoulders[k]).applyMatrix4(camera.matrixWorldInverse); else _s.copy(SHOULDER[k]);
+    for (let j = 0; j < 2; j++) { const f = j ? 0.7 : 0.33; S[5 + k * 2 + j].set(_s.x + (_e.x - _s.x) * f, _s.y + (_e.y - _s.y) * f, _s.z + (_e.z - _s.z) * f, 0.065); }
   });
 }
 export const envUniforms = {

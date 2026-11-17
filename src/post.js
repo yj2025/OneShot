@@ -152,10 +152,12 @@ vec3 defocus(vec2 uv, vec3 base){
   if (texture2D(tScene, uv).a < 0.2) return base;
   float z = linDepth(uv);
   // 렌즈 바로 앞(손과 총)은 초점이 나간다. 흐림 반지름은 얇은 렌즈의 착란원처럼 (1/거리 − 1/초점 거리)에 비례한다(화면 높이 기준).
-  // 실제 바디캠 렌즈(초점 거리 약 2 mm, f/2, 초점 1.2 m)라면 uDofK는 0.00028이다. 레퍼런스에서 0.3~0.4 m의 장갑은 그보다 조금 무르고
-  // 0.2 m 안의 총은 분명히 흐리다. 영상 압축과 확대가 더하는 무름까지 이 흐림 하나로 내므로 그 3.6배인 0.001로 둔다
-  // (720p에서 0.3 m 반지름 1.8화소, 0.2 m 3화소). 2026-11-17 전에는 0.7 m에서 0.2 m까지 smoothstep으로 0.017까지 키워
-  // 0.4 m에서 7.9화소, 0.2 m에서 12화소였다. 손가락, 소매 주름, 레일, 닳은 모서리가 모두 지워져 critic이 16~36라운드 내내 '매끈한 덩어리'로 읽었다
+  // 실제 바디캠 렌즈(초점 거리 약 2 mm, f/2, 초점 1.2 m)라면 uDofK는 0.00028이라 팔 길이 안에서도 거의 흐려지지 않는다.
+  // 레퍼런스는 두 가지를 함께 보인다: 렌즈 0.2 m 안의 손과 총 뒤쪽은 분명히 흐리고(03, 09, 10), 팔 길이(0.35~0.6 m)의 장갑과 총은 배경만큼 읽힌다(01, 05, 06).
+  // 그래서 초점을 0.4 m에 두고 흐림 계수를 0.0035로 둔다: 0.15 m 반지름 10화소(720p), 0.2 m 6화소, 0.3 m 2화소, 0.4 m 너머 0.
+  // 초점 너머(배경)는 흐리지 않는다(레퍼런스의 배경은 또렷하다).
+  // 이력: 2026-11-17 전에는 0.7 m에서 0.2 m까지 smoothstep으로 0.017까지 키워 0.4 m에서 7.9화소였다(손가락, 레일, 닳은 모서리가 지워져 critic 16~36 '매끈한 덩어리').
+  // 그 뒤 초점 1.2 m, 0.001로 낮췄더니 A/B 판정자가 둘로 갈렸다: 팔 길이의 총이 또렷한 쪽을 고르는 판정자와, 렌즈 바로 앞의 소매가 또렷해 렌더처럼 보인다는 판정자(A/B 55)
   float coc = min(0.017, uDofK * max(0.0, 1.0 / z - 1.0 / uFocus));
   if (coc < 0.0006) return base;
   // 모든 화소가 같은 나선 10점을 쓰면 점 사이(5~6화소)로 무늬가 빠져, 흐려지는 대신 어긋난 사본이 겹쳤다
@@ -302,7 +304,7 @@ export class Post {
       uOver: { value: OVERSCAN }, uAspect: { value: 1.78 }, uK: { value: 0.32 }, uCA: { value: 0.035 }, uBlur: { value: new THREE.Vector2() }, uBlurAmt: { value: 1 }, uZoomBlur: { value: 0 },
       uTime: { value: 0 }, uKey: { value: 0.2 }, uFlash: { value: 0 }, uRimShift: { value: new THREE.Vector2() }, uGhost: { value: 0.12 }, uNoise: { value: 1 },
       uSat: { value: 0.62 }, uHit: { value: 0 }, uFrame: { value: 0 }, uDead: { value: 0 }, tDepth: { value: null }, uNear: { value: 0.04 }, uFar: { value: 420 }, tAO: { value: null }, uAOAmt: { value: 0.9 },
-      uDofK: { value: 0.001 }, uFocus: { value: 1.2 },
+      uDofK: { value: 0.0035 }, uFocus: { value: 0.4 },
     });
     this.mAO = pass(AO_FS, { tDepth: { value: null }, uProj: { value: new THREE.Matrix4() }, uInvProj: { value: new THREE.Matrix4() }, uRes: { value: new THREE.Vector2() }, uFrame: { value: 0 } });
     this.rtAO = [new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false }), new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false })];

@@ -549,7 +549,7 @@ class Game {
       this.camera.lookAt(t);
     }
     // 입은 사람의 위팔(뷰모델 빛 가림)을 이번 프레임의 팔꿈치로 옮긴다
-    if (vm.elbowW) setBodyArms(this.camera, vm.elbowW);
+    if (vm.elbowW) setBodyArms(this.camera, vm.elbowW, vm.shoulderW);
     this.scope.update(this.scene, this.camera, vm, [vm.root, vm.foreR, vm.foreL], cull);
     // 조준경 패스가 이번 프레임의 장면 행렬을 이미 갱신했으면 본 화면 패스는 다시 갱신하지 않는다(장면 전체를 한 번 더 훑는 비용)
     const auto = this.scene.matrixWorldAutoUpdate;
@@ -678,6 +678,8 @@ class Game {
       vmView(c) { g.vmView = c || null; },
       // 살펴보기용: 총 자세 값을 덮어쓴다({ low: { p: [x,y,z], r: [숙임,돌림,기울임] }, alert, carry, handle, handleW })
       vmTune(o) { g.vm.tune = o || null; },
+      // 살펴보기용: 지금 프레임의 팔(카메라 기준 어깨, 팔꿈치, 손목, m)
+      vmArms() { const a = g.vm.armsCam; if (!a) return null; const r = (v) => [v.x, v.y, v.z].map((x) => +x.toFixed(3)); const f = (k, w) => ({ s: r(a[k].shoulder), e: r(a[k].elbow), w: r(w), ik: +a[k].ik.toFixed(2), reach: +a[k].reach.toFixed(3), near: +a[k].near.toFixed(3) }); return { R: f('R', a.wR), L: f('L', a.wL) }; },
       // 검사용: 지금 시점에서 총·손·소매가 받는 빛을 선형 HDR(노출과 센서 곡선 전)로 잰다. vmLightStats 참고
       vmLight(o) { return vmLightStats(g, o || {}); },
       // 살펴보기용: 총·손·소매 재질 값을 덮어쓴다({ env, spec, albedo, rough }). null이면 되돌린다

@@ -297,7 +297,8 @@ const PIVOT = { rifle: V(0.17, -0.2, 0.02), pistol: V(0.06, -0.2, 0.0) };
 //  sprint 달릴 때: 가슴 앞에 비스듬히 끌어안는다
 //  handle 재장전: 탄창 삽입구가 왼손 쪽을 보게 총을 돌려 몸 앞 가운데로 당긴다
 //  stow   파쿠르: 오른손에 든 채 오른쪽 아래로 처진다(쏘는 자세에서 내린다)
-// 팔꿈치 기준점: 손목에서 이 점 쪽으로 팔뚝(과 팔꿈치, 위팔 일부)을 0.38~0.5 m 그린다. 어떤 자세든 팔이 화면 아래 바깥의 몸 쪽에서 들어온다
+// 팔꿈치 기준점(elbow): 두 마디 팔(solveArm)의 팔꿈치가 굽는 쪽이다. 손이 팔 길이 밖이거나 조준 중이면 이전 방식대로
+// 손목에서 이 점 쪽으로 팔뚝(과 팔꿈치, 위팔 일부)을 0.38~0.5 m 그린다. 어떤 자세든 팔이 화면 아래 바깥의 몸 쪽에서 들어온다
 // 소총은 개머리판 끝(b)을 몸에 붙인 채 그 점을 축으로 돈다. 총 원점은 b와 회전에서 구한다(손잡이를 축으로 돌리면 총구를 숙일 때 개머리판이 렌즈 앞으로 솟는다)
 const BUTT = { rifle: V(0, 0.044, 0.36) };
 const POSES = {
@@ -324,7 +325,39 @@ function fromButt(b, r, butt) {
   return b.clone().sub(butt.clone().applyEuler(new THREE.Euler(r.x, r.y, r.z, 'YXZ')));
 }
 const smooth01 = (x) => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
-// 손목에서 팔꿈치 기준점 쪽으로 정해진 길이만큼 간 점(카메라 기준)
+// 팔: 어깨 관절에서 위팔과 팔뚝 두 마디로 손목까지 푼다(카메라 기준, 2026-11-17 2단계 ③ 재개).
+// 이전에는 손이 어디 있든 팔꿈치를 화면 아래 바깥의 고정점(허리 높이)에 두고 거기서 손목까지 0.38~0.5 m 원통을 그었다.
+// 권총을 앞으로 뻗으면 그 원통이 렌즈 바로 아래를 가로질러 화면 아래 절반을 덮고 손을 가렸다(A/B 54 판정자 4명 모두 '조준 자세에서 두 팔이
+// 화면 아래 절반을 덮는 형체 없는 덩어리', '어깨로 이어지지 않는 원통 끝의 작은 덩어리 손'). 이제 팔꿈치는 두 마디 길이가 정한다.
+// 가슴 카메라는 어깨 관절보다 8 cm 아래, 10 cm 앞이다(materials.js 몸 모형의 어깨 구와 같은 자리). 위팔 0.31 m, 팔뚝 0.27 m(재킷 포함)
+export const SHOULDER_J = { R: V(0.19, 0.08, 0.10), L: V(-0.19, 0.08, 0.10) };
+const UPPER = 0.31, FORE = 0.27, REACH = (UPPER + FORE) * 0.985;
+// 손이 팔 길이보다 멀면 어깨를 손 쪽으로 내민다(어깨를 앞으로 빼고 몸을 튼다, 최대 12 cm). 그래도 멀면 팔을 곧게 편다.
+// pole: 팔꿈치가 굽는 쪽(자세마다, 화면 아래 바깥의 몸 쪽)
+// 닿지 않는 자세: 소총 받침손(핸드가드)은 왼쪽 어깨에서 0.69~0.74 m라 사람 팔(0.58 m + 어깨 12 cm)로 닿지 않는다. 그대로 펴면 위팔이
+// 렌즈 바로 앞을 가로지른다(out/dev/ik). 이 자리는 총을 드는 자세 자체의 문제라 2단계 ④(몸에 들린 질량으로 총을 움직이는 모형)에서 다시 짓는다.
+// 그때까지 닿지 않는 손과 조준(눈이 카메라가 되어 어깨 기준이 바뀐다) 동안은 이전 방식(팔꿈치 기준점 쪽 0.38~0.5 m 팔뚝)으로 부드럽게 넘어간다.
+// 반환값 ik: 두 마디 팔의 무게(1 = 해부 치수 팔), reach: 어깨를 내밀기 전 어깨~손목 거리
+function solveArm(shoulder, wrist, pole) {
+  const s = shoulder.clone(), d = wrist.clone().sub(s);
+  let L = d.length() || 1e-6;
+  const reach = L;
+  if (L > REACH) { const mv = Math.min(0.12, L - REACH); s.addScaledVector(d, mv / L); d.subVectors(wrist, s); L = d.length(); }
+  const dir = d.divideScalar(L), Lc = Math.min(L, REACH);
+  const x = (UPPER * UPPER - FORE * FORE + Lc * Lc) / (2 * Lc), h = Math.sqrt(Math.max(0, UPPER * UPPER - x * x));
+  const pv = pole.clone().sub(s); pv.addScaledVector(dir, -pv.dot(dir));
+  if (pv.lengthSq() < 1e-8) pv.set(0, -1, 0).addScaledVector(dir, dir.y);
+  pv.normalize();
+  const elbow = s.clone().addScaledVector(dir, x).addScaledVector(pv, h);
+  // 렌즈(카메라 원점)에서 팔뚝 축까지 가장 가까운 거리. 소매 반지름이 6~7 cm라 축이 0.25 m 안에 들면 소매 겉면이 렌즈 0.18 m 앞에 온다
+  const fd = wrist.clone().sub(elbow), ft = Math.min(1, Math.max(0, -elbow.dot(fd) / Math.max(fd.lengthSq(), 1e-8)));
+  const near = elbow.clone().addScaledVector(fd, ft).length();
+  // 두 마디 팔은 팔뚝이 렌즈에서 0.26 m 넘게 떨어질 때만 쓴다(0.235 m 안에서는 이전 방식). 권총을 두 손으로 앞에 들면 두 팔뚝 축이 렌즈에서 0.21~0.23 m를 지나
+  // 화면 아래를 소매 덩어리로 채웠다(A/B 55: 권총 사격 장면에서 판정 4명 모두 기준선, '노란 고무 풍선 같은 팔'). 소총 오른팔은 0.27~0.30 m다
+  const ik = smooth01((REACH + 0.13 - reach) / 0.05) * smooth01((near - 0.235) / 0.025);
+  return { shoulder: s, elbow, ik, reach, near };
+}
+// 이전 방식: 손목에서 팔꿈치 기준점 쪽으로 정해진 길이만큼 간 점(카메라 기준)
 function elbowFrom(wrist, anchor, lo = 0.38, hi = 0.5) {
   const d = anchor.clone().sub(wrist); const L = d.length() || 1;
   return wrist.clone().addScaledVector(d, Math.min(hi, Math.max(lo, L)) / L);
@@ -371,8 +404,14 @@ export class Viewmodel {
     for (const k in this.models) this.models[k].grips = fitGrips(this.models[k]);
     const sleeveMat = this.M.sleeve;
     this.foreR = new THREE.Mesh(sleeveGeo(0.066, 0.05, 1.3), sleeveMat); this.foreL = new THREE.Mesh(sleeveGeo(0.066, 0.05, 4.1), sleeveMat);
-    scene.add(this.foreR, this.foreL);
-    for (const m of [this.foreR, this.foreL]) m.frustumCulled = false;
+    // 위팔(어깨 → 팔꿈치)과 팔꿈치. 위팔 소매의 손목 쪽 겹친 주름은 팔꿈치 안쪽에 몰리는 접힘이 된다
+    this.upR = new THREE.Mesh(sleeveGeo(0.074, 0.066, 2.7), sleeveMat); this.upL = new THREE.Mesh(sleeveGeo(0.074, 0.066, 5.9), sleeveMat);
+    const eg = new THREE.SphereGeometry(0.072, 48, 32); eg.scale(1.06, 1, 0.94);
+    eg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(eg.attributes.position.count * 3).fill(0.9), 3));
+    this.elR = new THREE.Mesh(eg, sleeveMat); this.elL = new THREE.Mesh(eg, sleeveMat);
+    this.arms = [this.foreR, this.foreL, this.upR, this.upL, this.elR, this.elL];
+    scene.add(...this.arms);
+    for (const m of this.arms) m.frustumCulled = false;
     this.plantW = 0; this.planted = false; this.handLWorld = null;
     this.heldMag = null;
     this.state = {
@@ -655,13 +694,25 @@ export class Viewmodel {
     // 소매 끝은 장갑 소맷부리의 뒤쪽 절반을 덮는다
     const wristR = this.handR.localToWorld(V(0, 0, 0.042));
     const wristL = this.handL.localToWorld(V(0, 0, 0.042));
-    // 팔꿈치: 손목에서 몸 쪽 기준점(화면 아래 바깥)으로 팔뚝을 잇는다. 총을 어떤 자세로 들어도 팔이 몸에서 들어오고 늘어나지 않는다
+    // 팔꿈치: 어깨에서 두 마디로 푼다. 굽는 쪽은 자세의 기준점(EB). 짚을 때 왼팔은 바깥 아래로 굽는다
     const EB = POSES[this.current].elbow, toW = (v) => v.applyQuaternion(rootQ).add(this.root.position);
-    const elbowR = toW(elbowFrom(this.root.worldToLocal(wristR.clone()), EB.R));
-    const elbowL = toW(elbowFrom(this.root.worldToLocal(wristL.clone()), EB.L));
-    if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); elbowL.lerp(V(-0.2, 0.02, 0.1).applyQuaternion(rootQ).add(this.root.position), k); }
+    const poleL = this.plantW > 0 ? EB.L.clone().lerp(V(-0.45, -0.2, 0.1), this.plantW) : EB.L;
+    const wcR = this.root.worldToLocal(wristR.clone()), wcL = this.root.worldToLocal(wristL.clone());
+    const aR = solveArm(SHOULDER_J.R, wcR, EB.R), aL = solveArm(SHOULDER_J.L, wcL, poleL);
+    const oldR = elbowFrom(wcR, EB.R), oldL = elbowFrom(wcL, EB.L);
+    if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); oldL.lerp(V(-0.2, 0.02, 0.1), k); }
+    const noAds = 1 - smooth01(this.ads * 1.5);
+    aR.ik *= noAds; aL.ik *= noAds;
+    const elbowR = toW(oldR.lerp(aR.elbow, aR.ik)), elbowL = toW(oldL.lerp(aL.elbow, aL.ik));
+    const shR = toW(aR.shoulder.clone()), shL = toW(aL.shoulder.clone());
     placeLimb(this.foreR, elbowR, wristR); placeLimb(this.foreL, elbowL, wristL);
+    placeLimb(this.upR, shR, elbowR); placeLimb(this.upL, shL, elbowL);
+    this.elR.position.copy(elbowR); this.elL.position.copy(elbowL);
+    this.elR.quaternion.copy(this.foreR.quaternion); this.elL.quaternion.copy(this.foreL.quaternion);
+    this.upR.visible = this.elR.visible = aR.ik > 0.5; this.upL.visible = this.elL.visible = aL.ik > 0.5;
+    this.armsCam = { R: aR, L: aL, wR: wcR, wL: wcL };
     this.elbowW = [elbowR, elbowL];   // 입은 사람의 위팔이 뷰모델의 빛을 가리는 자리(materials.js setBodyArms)
+    this.shoulderW = [aR.ik > 0.5 ? shR : null, aL.ik > 0.5 ? shL : null];
 
     mdl.muzzle.getWorldPosition(this.muzzleWorld);
     this.dirWorld.set(0, 0, -1).applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(mdl.muzzle.matrixWorld)).normalize();
