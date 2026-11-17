@@ -23,6 +23,8 @@ export class Player {
     this.crouch = 0; this.sprinting = false;
     this.hp = 100; this.alive = true;
     this.stepPhase = 0; this.stepDist = 0; this.nextStepLen = 0.72;
+    // 걸음마다 다른 몸통 움직임의 크기(위아래 출렁임, 옆 흔들림, 몸통 돌림, 끄덕임). 발을 디딜 때 새로 정한다(2단계 ④)
+    this.gait = { v: 1, l: 1, yaw: 1, nod: 1 };
     this.camShake = new Spring3(90, 9);    // 회전 흔들림 (pitch, yaw, roll)
     this.camOffset = new Spring3(80, 10);  // 위치 흔들림
     this.camRecoil = new Spring3(140, 13);  // 사격 반동 (라디안)
@@ -63,11 +65,17 @@ export class Player {
     this.lastHitDir.copy(fromDir);
     this.exertion = Math.min(1, this.exertion + 0.4);
   }
+  // 사격: 몸이 받는 흔들림과 밀림. 카메라의 반동 회전(camRecoil)은 여기서 넣지 않는다. 개머리판과 손이 총에서 받은 힘의 반작용으로
+  // 발마다 다르게 들어온다(carry.js takeReaction → recoilReaction). 이전에는 여기서 발마다 같은 쪽으로 넣어 배경이 발마다 같은 궤적으로 튀었다
   shotKick(scale) {
     const r = this.rng;
     this.camShake.v.add(V((2.6 + r() * 2.2) * scale, (r() - 0.5) * 3.4 * scale, (r() - 0.5) * 4.4 * scale));
-    this.camRecoil.v.add(V((1.1 + r() * 0.9) * scale, (r() - 0.5) * 1.2 * scale, (r() - 0.5) * 1.6 * scale));
     this.camOffset.v.add(V((r() - 0.5) * 0.3 * scale, 0.15 * scale, 0.5 * scale));
+  }
+  // 총을 받친 어깨와 손이 받은 반작용(carry.js). rot: 회전 충격(rad/s), pos: 병진 충격(m/s), 둘 다 카메라 기준
+  recoilReaction(rot, pos, scale) {
+    this.camRecoil.v.addScaledVector(rot, 0.5 * scale);
+    this.camOffset.v.addScaledVector(pos, 0.6 * scale);
   }
 
   update(dt, t, input, settings, weapon) {
@@ -174,6 +182,7 @@ export class Player {
         this.stepDist -= this.nextStepLen;
         this.footIndex = (this.footIndex || 0) + 1;
         const base = this.sprinting ? 0.95 : 0.66 - this.crouch * 0.12;
+        { const r = this.rng; this.gait = { v: 0.75 + r() * 0.5, l: 0.7 + r() * 0.6, yaw: 0.65 + r() * 0.7, nod: 0.6 + r() * 0.8 }; }
         this.nextStepLen = base * (0.9 + this.rng() * 0.2);
         const mat = L.floorMaterial(this.pos.x, this.pos.y, this.pos.z);
         this.events.push({ type: 'step', mat, speed: hs, sprint: this.sprinting, crouch: this.crouch });
@@ -183,6 +192,7 @@ export class Player {
       }
     } else { this.stepPhase = this.stepPhase * 0.9; }
     this.stepPhaseFrac = (this.stepDist / this.nextStepLen) + ((this.footIndex || 0) % 2);
+    this.runMix = (this.runMix || 0) + ((this.sprinting ? 1 : 0) - (this.runMix || 0)) * (1 - Math.exp(-dt * 5));
     this.exertion += ((this.sprinting ? 1 : hs > 0.5 ? 0.3 : 0.1) - this.exertion) * (1 - Math.exp(-dt * (this.sprinting ? 0.35 : 0.12)));
   }
 
@@ -273,8 +283,19 @@ export class Player {
   // 카메라 변환 계산. 반환: {pos, quat, roll}
   cameraTransform(t, settings) {
     const sh = settings.shake;
-    const bobV = -Math.abs(Math.sin((this.stepPhaseFrac || 0) * Math.PI)) * (this.sprinting ? 0.05 : 0.024) * this.moving;
-    const bobL = Math.sin((this.stepPhaseFrac || 0) * Math.PI) * (this.sprinting ? 0.03 : 0.014) * this.moving;
+    // 걸음: 위아래 출렁임과 옆 흔들림, 그리고 가슴(카메라)이 걸음마다 돌고 끄덕인다. 크기는 발을 디딜 때마다 새로 정한다(this.gait).
+    // 이전에는 크기가 늘 같은 |sin| 곡선이고 몸통이 돌지 않아, 걸음 두 번마다 같은 화면이 되풀이되고 소실점이 1초 동안 2 px 안에 머물렀다(2단계 ④)
+    // 위아래: 걸을 때는 발을 디딜 때 가장 낮고(다리가 몸의 속도를 아래에서 위로 꺾는 꺾임점), 디딘 발 위를 넘어갈 때 가장 높다(역진자의 호).
+    // 달릴 때는 디딘 직후(디딤의 가운데) 가장 낮고 공중에서 가장 높다. 이전 곡선(-|sin|)은 디딜 때 가장 높아 가슴의 가속도가 반대였고,
+    // 그 가속도를 받는 총(carry.js)이 발마다 위로 튀어 발 디딤 충격과 서로 지웠다(A/B 59에서 걷는 장면 3쌍을 기준선이 이겼다)
+    const sp = this.stepPhaseFrac || 0, G = this.gait, run = this.sprinting ? 1.6 : 1, rm = this.runMix || 0;
+    const s1 = sp - Math.floor(sp);
+    const walkV = -(1 - Math.abs(Math.sin(sp * Math.PI))) * 0.024, runV = -(0.5 + 0.5 * Math.cos((s1 - 0.2) * Math.PI * 2)) * 0.05;
+    const bobV = (walkV + (runV - walkV) * rm) * this.moving * G.v;
+    const bobL = Math.sin(sp * Math.PI) * (this.sprinting ? 0.03 : 0.014) * this.moving * G.l;
+    // 몸통 돌림: 디딘 발 쪽 어깨가 뒤로 간다(오른발과 왼발이 반대). 끄덕임: 발을 디딜 때 가슴이 조금 숙여진다
+    const gaitYaw = Math.cos(sp * Math.PI) * 0.02 * run * this.moving * G.yaw;
+    const gaitPitch = -(0.5 + 0.5 * Math.cos(sp * Math.PI * 2)) * 0.008 * run * this.moving * G.nod;
     const idleN = (noise1(t * 0.35, 11) * 0.006 + noise1(t * 1.3, 12) * 0.002) * (1 + this.exertion * 2);
     const roll = (bobL * 1.6 + noise1(t * 0.5, 13) * 0.008) * sh + this.camShake.x.z * 0.02;
     let eye = this.eyeHeight;
@@ -283,8 +304,8 @@ export class Player {
     pos.set(this.pos.x - sy * 0.1, this.eyeSmooth + eye + bobV * sh, this.pos.z - cy * 0.1);
     pos.x += cy * bobL * sh; pos.z -= sy * bobL * sh;
     pos.addScaledVector(this.camOffset.x, 0.02 * sh);
-    let pitch = this.camPitch + this.pkPitch + (this.camShake.x.x * 0.02 + idleN + this.camRecoil.x.x) * sh;
-    let yaw = this.bodyYaw + this.pkYaw + (this.camShake.x.y * 0.02 + this.camRecoil.x.y + noise1(t * 0.4, 14) * 0.004 * (1 + this.exertion)) * sh;
+    let pitch = this.camPitch + this.pkPitch + (this.camShake.x.x * 0.02 + idleN + this.camRecoil.x.x + gaitPitch) * sh;
+    let yaw = this.bodyYaw + this.pkYaw + (this.camShake.x.y * 0.02 + this.camRecoil.x.y + gaitYaw + noise1(t * 0.4, 14) * 0.004 * (1 + this.exertion)) * sh;
     let rollF = roll + this.pkRoll + this.camRecoil.x.z * sh;
     if (!this.alive) {
       // 쓰러짐: 무릎이 꺾이고 옆으로 넘어간다

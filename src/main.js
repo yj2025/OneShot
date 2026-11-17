@@ -444,8 +444,11 @@ class Game {
       anchor: ct.pos, aimQuat: aq, ads: inp.rmb && p.alive && !p.pk, sprint: p.sprinting ? 1 : 0, wallDist, stow: !!p.pk, plant: p.pkHand,
       camQuat: ct.quat, aimYawOff: p.aimYaw - p.bodyYaw, aimPitchOff: p.aimPitch - p.camPitch, shake: ct.shake, camRecoil: ct.recoil,
       camYawVel: p.yawVel, camPitchVel: p.pitchVel, vy: p.vel.y, hits: this.stats.playerHits, exertion: p.exertion, moving: p.moving, stepPhase: p.stepPhaseFrac || 0, roll: ct.roll, level: this.level,
+      foot: p.footIndex || 0, speed: Math.hypot(p.vel.x, p.vel.z), crouch: p.crouch,
     });
     if (p.alive && vm.tryFire(dt, !p.pk)) this.playerShot();
+    // 개머리판과 손이 총에서 받은 힘의 반작용이 가슴(카메라)을 민다(carry.js). 카메라 사격 반동의 출처다
+    { const re = vm.carry.takeReaction(); if (p.alive) p.recoilReaction(re.rot, re.pos, this.settings.shake); }
     if (inp.pressed('KeyR') && vm.ammo === 0 && !vm.reload) vm.startReload();
     // 봇
     for (const b of this.bots) b.update(dt, this.time);
@@ -680,6 +683,14 @@ class Game {
       vmTune(o) { g.vm.tune = o || null; },
       // 살펴보기용: 지금 프레임의 팔(카메라 기준 어깨, 팔꿈치, 손목, m)
       vmArms() { const a = g.vm.armsCam; if (!a) return null; const r = (v) => [v.x, v.y, v.z].map((x) => +x.toFixed(3)); const f = (k, w) => ({ s: r(a[k].shoulder), e: r(a[k].elbow), w: r(w), ik: +a[k].ik.toFixed(2), reach: +a[k].reach.toFixed(3), near: +a[k].near.toFixed(3) }); return { R: f('R', a.wR), L: f('L', a.wL) }; },
+      // 검사용: 총의 화면 위치(총구, 총 원점, 두 손목)와 월드에 고정한 점(배경)의 화면 위치. 투영 좌표(-1~1, 어안 왜곡 전).
+      //  set이 참이면 지금 카메라 앞 8 m의 점을 배경 점으로 기억한다(그 뒤로는 카메라가 돈 만큼 그 점이 화면에서 움직인다)
+      vmScreen(set) {
+        const cam = g.camera, vm = g.vm, pr = (v) => { const q = v.clone().project(cam); return [+q.x.toFixed(5), +q.y.toFixed(5)]; };
+        if (set) g.refPt = cam.position.clone().add(new THREE.Vector3(0, 0, -8).applyQuaternion(cam.quaternion));
+        const grip = new THREE.Vector3(); vm.gunHolder.getWorldPosition(grip);
+        return { muzzle: pr(vm.muzzleWorld), grip: pr(grip), wristR: pr(vm.handR.localToWorld(new THREE.Vector3(0, 0, 0.042))), wristL: pr(vm.handL.localToWorld(new THREE.Vector3(0, 0, 0.042))), bg: g.refPt ? pr(g.refPt) : null, shots: g.stats.shotsFired, time: g.time };
+      },
       // 검사용: 지금 시점에서 총·손·소매가 받는 빛을 선형 HDR(노출과 센서 곡선 전)로 잰다. vmLightStats 참고
       vmLight(o) { return vmLightStats(g, o || {}); },
       // 살펴보기용: 총·손·소매 재질 값을 덮어쓴다({ env, spec, albedo, rough }). null이면 되돌린다

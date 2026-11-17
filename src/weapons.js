@@ -5,6 +5,7 @@ import { noise1 } from './rng.js';
 import { fabricMaps } from './fabric.js';
 import { buildScope, SCOPE } from './scope.js';
 import { bakeSelfOcclusion } from './selfocc.js';
+import { Carry } from './carry.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { createHand, makeSkeleton, fitGrasp, rbox as gripBox, setPose, lerpPose } from './hands.js';
 
@@ -290,7 +291,10 @@ const WEAPONS = {
 const PIVOT = { rifle: V(0.17, -0.2, 0.02), pistol: V(0.06, -0.2, 0.0) };
 
 // 총을 드는 자세(카메라 = 가슴 기준). p는 총 원점(권총손잡이 윗부분)의 자리, r은 총의 회전(숙임 +위, 돌림 +왼쪽, 기울임 +윗면 왼쪽)
-//  low    낮춰 든 자세(걷고 둘러볼 때, 기본): 몸 오른쪽에 붙여 들고 총구를 조금 숙여 몸 방향(앞)을 향한다. 조금 기울인다.
+//  low    낮춰 든 자세(걷고 둘러볼 때, 기본): 몸 오른쪽에 붙여 들고 총구를 조금(10°) 숙여 몸 방향(앞)을 향한다. 조금 기울인다.
+//         실제 낮춤 자세는 25~45°이고, critic 41과 A/B 63 판정자 둘이 10°를 '총구를 수평으로 둔 게임의 1인칭 무기 배치'라 했다.
+//         2026-11-17 2단계 ④에서 17~22° 숙이거나 총 전체를 6 cm 내려 봤다. 마당에서는 조준경과 손만 화면 아래 끝에 걸렸지만, 받침팔 소매를
+//         스치는 각으로 보게 돼 검사 (l) ③(천 전체 ÷ 재질 표 1.3 이하)이 소매 1.33~1.37로 넘었다. 결 반사 모형과 함께 다시 본다(BACKLOG '총과 손')
 //         처음에는 총구를 몸 앞을 가로질러 왼쪽 아래로 돌렸다. 가슴 카메라에서는 총의 축이 시선과 겹쳐 조준경 뒤끝이 렌즈를 마주 보고
 //         총이 왼쪽 위로 치켜 보여, A/B 라운드 40에서 판정자들이 '카메라가 총의 축 위에 얹혔다'며 기준선을 골랐다
 //  fire   쏘는 자세: 총을 들어 총구가 조준점을 향한다(이전의 유일한 자세)
@@ -420,10 +424,10 @@ export class Viewmodel {
     };
     this.current = 'rifle';
     this.models.rifle.group.visible = true;
-    this.recoilT = new Spring(150, 13);   // 위치 반동
-    this.recoilR = new Spring(110, 11);   // 회전 반동
+    // 몸에 들린 질량(carry.js): 걸음, 점프와 착지, 반동, 숨, 손떨림이 총을 움직인다. 예전의 반동 스프링 둘(recoilT, recoilR),
+    // 위아래 관성 스프링(vSpring), 걸음 위상의 사인을 대신한다(2단계 ④)
+    this.carry = new Carry(rng);
     this.leadSpring = new Spring(330, 31); // 조준 앞섬과 관성(고유 진동수 18 rad/s, 감쇠비 0.85)
-    this.vSpring = new Spring(70, 9);     // 점프와 착지의 위아래 관성
     this.holdPhase = 0;   // 떠도는 자세의 위상. 생명마다 다르다(Game.reset이 정한다)
     this.ads = 0; this.sprint = 0; this.lower = 0; this.stow = 0; this.switchT = 0; this.switchTo = null;
     // 경계: 0이면 낮춰 든 자세, 1이면 쏘는 자세. 방아쇠, 조준, 피격이 올리고 마지막 사격 2.5~4초 뒤에 내린다
@@ -444,6 +448,7 @@ export class Viewmodel {
     this.state.pistol = { ammo: WEAPONS.pistol.mag, spare: WEAPONS.pistol.spareMags };
     this.reload = null; this.switchTo = null; this.switchT = 0; this.setWeapon('rifle');
     this.alert = 0; this.alertHold = 0; this.pendingShot = false;
+    this.carry.reset();
     for (const m of this.droppedMags) m.m.parent?.remove(m.m);
     this.droppedMags = [];
   }
@@ -486,10 +491,11 @@ export class Viewmodel {
     if (st.ammo <= 0) { if (!this.triggerWasDry) this.events.push({ type: 'dry' }); this.triggerWasDry = true; this.cool = 0.25; return false; }
     this.triggerWasDry = false;
     st.ammo--;
-    this.cool = this.def.interval * (0.96 + this.rng() * 0.08);
-    const r = this.rng, rc = this.def.recoil * (1 - this.ads * 0.35);
-    this.recoilT.kick(V((r() - 0.5) * 0.25 * rc, (0.15 + r() * 0.2) * rc, (1.6 + r() * 0.9) * rc));
-    this.recoilR.kick(V((2.2 + r() * 2.2) * rc, (r() - 0.5) * 2.6 * rc, (r() - 0.5) * 3.2 * rc));
+    // 남은 냉각 시간(한 프레임 안쪽)을 이어 받는다. 예전에는 버리고 다시 잡아 0.088초 간격이 60 Hz에서 6프레임(0.1초)으로 올림됐다.
+    // 발사 속도가 680발/분에서 600발/분으로 떨어지고 발사 순간이 프레임 격자에 맞물려, 0.5초 떨어진 프레임이 발사 위상까지 같았다
+    this.cool = Math.max(this.cool, -dt) + this.def.interval * (0.96 + this.rng() * 0.08);
+    const rc = this.def.recoil * (1 - this.ads * 0.35);
+    this.carry.shot(this.current === 'rifle' ? 'rifle' : 'pistol', rc, this.time || 0);
     if (this.current === 'pistol') this.slideBack = 1;
     return true;
   }
@@ -541,7 +547,7 @@ export class Viewmodel {
         this.showHeldMag(mdl, true);
       } else if (u >= R.insert && u < R.insert + 0.1) {
         rl.handL = magWell.clone().add(V(0, 0.06 * Math.min(1, (u - R.insert) / 0.04), 0));
-        if (!R.slapped) { R.slapped = true; mdl.mag.visible = true; this.showHeldMag(mdl, false); this.events.push({ type: 'magIn', weapon: this.current }); this.recoilT.kick(V(0, 0.5, 0)); this.recoilR.kick(V(-0.8, 0, 1.2)); }
+        if (!R.slapped) { R.slapped = true; mdl.mag.visible = true; this.showHeldMag(mdl, false); this.events.push({ type: 'magIn', weapon: this.current }); this.carry.impulse(V(0, 0.08, -0.02), V(0.45, 0.05, 0.35)); }
       } else if (u >= R.insert + 0.1 && R.empty && u < 0.93) {
         const k = (u - R.insert - 0.1) / (0.93 - R.insert - 0.1);
         const charge = this.current === 'rifle' ? V(0, 0.11, 0.12) : V(0, 0.06, -0.05);
@@ -549,7 +555,7 @@ export class Viewmodel {
         if (k < 0.5) rl.handL = seated.clone().lerp(charge, Math.sin(k * Math.PI));
         else if (k < 0.7) rl.handL = charge.clone();
         else { const e = smooth((k - 0.7) / 0.3); rl.handL = charge.clone().lerp(lh, e); rl.handW = 1 - e; }
-        if (!R.charged && k > 0.55) { R.charged = true; this.events.push({ type: 'charge', weapon: this.current }); this.recoilT.kick(V(0, 0, 0.6)); }
+        if (!R.charged && k > 0.55) { R.charged = true; this.events.push({ type: 'charge', weapon: this.current }); this.carry.impulse(V(0, -0.02, 0.12), V(-0.2, 0.05, 0)); }
       } else if (u >= R.insert + 0.1 && !R.empty) {
         const span = Math.min(0.18, 0.98 - R.insert - 0.1), e = smooth((u - R.insert - 0.1) / span);
         if (e < 1) { rl.handL = seated.clone().lerp(lh, e); rl.handW = 1 - e; }
@@ -572,16 +578,10 @@ export class Viewmodel {
     this.lastYawVel = p.camYawVel || 0; this.lastPitchVel = p.camPitchVel || 0;
     if (Math.abs(dYv) < 20 && Math.abs(dPv) < 20) this.leadSpring.kick(V(-dPv * 0.3 * ld, -dYv * 0.3 * ld, 0));
     const lead = this.leadSpring.step(dt, V(p.aimPitchOff || 0, (p.aimYawOff || 0) * ld, 0));
-    const breath = (1 - this.ads * 0.6) * (0.003 + p.exertion * 0.006);
-    const by = Math.sin(t * (1.6 + p.exertion * 1.8)) * breath, bx = noise1(t * 0.6, 3) * breath * 1.2;
-    // 낮춰 든 총은 팔이 느슨해 걸음마다 더 흔들린다
-    const stepAmp = p.moving * (0.036 + this.sprint * 0.03) * (1 - this.ads * 0.5) * (1 + 0.35 * (1 - smooth01(this.alert)));
     // 떠도는 자세: 손은 총을 같은 자리에 붙들고 있지 않다. 몇 초 단위로 높이, 좌우, 기울기가 바뀐다(조준할수록 줄어든다)
     const hp = t + this.holdPhase, hold = 1 - this.ads * 0.8;
     const dX = noise1(hp * 0.21, 31) * 0.035 * hold, dY = noise1(hp * 0.17, 32) * 0.03 * hold, dRoll = noise1(hp * 0.19, 33) * 0.16 * hold, dPitch = noise1(hp * 0.23, 34) * 0.02 * hold;
-    const sx = Math.sin(p.stepPhase * Math.PI) * stepAmp * 0.8, sy = -Math.abs(Math.sin(p.stepPhase * Math.PI)) * stepAmp;
-
-    const rt = this.recoilT.step(dt), rr = this.recoilR.step(dt);
+    this.time = t;
     // 경계(총을 든 정도): 방아쇠, 조준, 피격, 앞에 보이는 봇(p.threat, main.js가 반응 시간 뒤에 켠다)이 총을 0.12~0.17초 만에
     // 올리고(올리는 빠르기는 매번 다르다), 그런 일이 없이 2.5~4초가 지나면 1초 남짓에 걸쳐 낮춰 든 자세로 내린다.
     // 달리거나 재장전하는 동안은 올리지 않는다
@@ -600,6 +600,11 @@ export class Viewmodel {
     const pick = (k) => { const o = T[k] ? { p: T[k].p && V(...T[k].p), b: T[k].b && V(...T[k].b), r: V(...T[k].r) } : P[k]; return o.b && BT ? { ...o, p: fromButt(o.b, o.r, BT) } : o; };
     const PL = pick('low'), PF = pick('fire'), PH = pick('handle');
     const a = smooth01(this.alert);
+    // 몸에 들린 질량(carry.js): 가슴의 가속도, 걸음, 반동, 숨, 손떨림. u는 카메라 기준 병진, th는 지지점(PIVOT)을 축으로 한 회전이다
+    const cr = this.carry.update(dt, t, {
+      anchor: p.anchor, camQuat: p.camQuat || p.aimQuat, kind: this.current, ads: this.ads, alert: a, sprint: this.sprint, sprintIntent: p.sprint || 0,
+      exertion: p.exertion || 0, stress: this.stress, foot: p.foot, moving: p.moving || 0, crouch: p.crouch || 0, speed: p.speed || 0, phase: this.holdPhase,
+    });
     // 낮춰 든 동안에도 몇 초마다 고쳐 쥔다: 숙인 정도, 기울기, 높이, 몸에 붙인 정도가 바뀐다(생명마다 위상이 다르다).
     // 몸을 가로지르는 좌우 회전은 작게 둔다(±0.05 rad). 크게 돌리면 총의 축이 카메라 시선과 겹친다(A/B 라운드 40)
     const hq = t + this.holdPhase, ck = T.carry ?? 1;
@@ -619,27 +624,20 @@ export class Viewmodel {
     }
     const drop = switchDrop, sw = smooth01(this.stow);
     bp.lerp(P.stow.p, sw); br.lerp(P.stow.r, sw);
-    const pos = bp.add(V(bx + sx + dX, by + sy + dY - this.lower * 0.06 - drop * 0.25, rt.z * 0.045 + this.lower * 0.06 + Math.abs(sy) * 0.4));
-    pos.x += rt.x * 0.02; pos.y += rt.y * 0.02;
+    const pos = bp.add(V(dX, dY - this.lower * 0.06 - drop * 0.25, this.lower * 0.06)).add(cr.u);
     const sh = p.shake || [0, 0, 0], rc = p.camRecoil || [0, 0, 0];
 
     // 총 회전(총 기준): 반동, 달리기 자세, 벽 앞에서 내림, 재장전 기울임
-    // 걸음마다 총끝이 흔들린다: 몸은 가슴 카메라와 함께 움직이지만 두 팔에 든 총은 한 박자 늦게 끄덕이고 좌우로 돈다(조준할수록 줄어든다)
-    const walkK = p.moving * (1 - this.ads * 0.7) * (1 + this.sprint * 0.6) * (1 + (1 - a) * 0.5);
-    const wPitch = Math.sin(p.stepPhase * Math.PI * 2 + 0.9) * 0.03 * walkK, wYaw = Math.sin(p.stepPhase * Math.PI + 0.5) * 0.035 * walkK;
-    const rotX = br.x + rr.x * 0.05 - this.lower * 0.75 - drop * 0.9 + dPitch + wPitch - sh[0] * 0.25 - rc[0];
-    const rotY = br.y + rr.y * 0.035 + wYaw - sh[1] * 0.25 - rc[1];
+    // 걸음, 반동, 점프와 착지로 총이 늦게 끄덕이고 도는 것은 몸에 들린 질량(cr.th, 지지점 축)이 맡는다
+    const rotX = br.x - this.lower * 0.75 - drop * 0.9 + dPitch - sh[0] * 0.25 - rc[0];
+    const rotY = br.y - sh[1] * 0.25 - rc[1];
     // 비스듬히 기울여 든다(cant). 조준하면 바로 세운다. 카메라가 걸음에 따라 기울면 총은 그 25%만큼 늦는다
-    const rotZ = br.z + rr.z * 0.035 + sx * 4 - sh[2] * 0.25 - rc[2] + dRoll;
-
-    // 뛰고 내릴 때의 관성: 몸이 위로 가속하면 두 팔에 든 총은 한 박자 늦게 처지고, 공중에서는 살짝 뜨고, 착지하면 다시 처진다
-    const vy = p.vy || 0, dvy = vy - (this.lastVy ?? vy); this.lastVy = vy;
-    this.vSpring.kick(V(0, -dvy * 0.03, 0));
-    pos.y += this.vSpring.step(dt).y;
+    const rotZ = br.z - sh[2] * 0.25 - rc[2] + dRoll;
     // 볼 받침: 조준경을 들여다보면 뺨이 개머리판에 붙어 눈(카메라)이 사출동공 가까이 머문다.
     // 흔들림, 걸음, 반동이 총을 밀어도 눈과 사출동공의 어긋남은 일부(조준 끝에서 12%)만 남는다. 남은 만큼 조준경 그림자가 생긴다
     const piv = this.current === 'rifle' ? PIVOT.rifle : PIVOT.pistol;
-    const qLead = new THREE.Quaternion().setFromEuler(new THREE.Euler(lead.x, lead.y, 0, 'YXZ'));
+    const qLead = new THREE.Quaternion().setFromEuler(new THREE.Euler(lead.x, lead.y, 0, 'YXZ'))
+      .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(cr.th.x, cr.th.y, cr.th.z, 'YXZ')));
     if (mdl.eyePoint && this.ads > 0.001) {
       // 눈점을 카메라(root) 기준으로 구해(어깨 축의 회전까지) 그만큼 총을 되민다
       const e = mdl.eyePoint.clone().applyEuler(new THREE.Euler(rotX, rotY, rotZ, 'YXZ')).add(pos).sub(piv).applyQuaternion(qLead).add(piv);

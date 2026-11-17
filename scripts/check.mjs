@@ -30,6 +30,95 @@ async function main() {
   //  끝난 자리에서 몸(반경 0.28 m, 발에서 1.2 m까지)이 막는 상자(발보다 0.42 m 넘게 솟은 것)와 겹치지 않는다
   //  CHECK_ONLY=move 이면 여기까지만 돈다(파쿠르를 고칠 때 빠르게 돌려 보는 용도). CHECK_ONLY=surface 이면 (k)와 (l)만 돈다(BC_DIST로 고치기 전 빌드를 열어 실패를 확인할 때도 쓴다)
   const extraErrors = [], extraExternal = [];
+
+  // (n) 연사 때 총의 화면 움직임이 되풀이되지 않는다, (o) 걷고 뛸 때 총과 몸이 움직인다(2단계 ④, 2026-11-17).
+  //  18라운드부터 판정자들이 '연사 묶음의 1과 5, 2와 6 … 프레임이 거의 똑같다', '걷거나 넘어질 때 총이 화면 같은 자리에 붙어 있다'고 적었다.
+  //  __bc.vmScreen()이 총구, 받침손 손목, 월드에 고정한 배경 점의 화면 위치(투영 좌표)를 준다. 1280×720 화소로 바꿔 잰다.
+  //  '총의 화면 위치 차'는 총구와 받침손 손목 가운데 많이 움직인 쪽이다. 고치기 전 빌드에서 실패하는 것을 먼저 확인했다(PROGRESS.md 2단계 ④)
+  //  (n) 시점 7에서 첫 발을 쏘고 0.7초 쉰 뒤 방아쇠를 1초(60프레임) 누른다(연속 프레임 'firing-burst'와 같은 절차)
+  //   ① 0.5초(30프레임) 떨어진 두 프레임의 총 화면 위치 차의 중앙값 27 px 이상(판정자가 보는 띠 한 칸 480 px에서 10 px)
+  //   ② 이웃한 두 발의 화면 궤적(발사 뒤 5프레임 동안 총구·받침손·배경의 변위, 발사 직전 프레임 기준) 상관의 중앙값 0.6 이하
+  //  (o) ① 복도(시점 2)를 0.5초 걸은 뒤 1초 동안 0.5초 떨어진 두 프레임의 총 화면 위치 차 중앙값 8 px 이상(띠 한 칸에서 3 px, 판정자가 '고정'이라 쓴 크기)
+  //   ② 같은 1초 동안 배경 점이 움직인 범위 12 px 이상(몸통이 걸음마다 ±0.8° 돌고 기우는 크기)
+  //   ③ 마당에서 Space를 0.25초 누른 점프부터 착지 뒤 0.5초까지 총의 화면 위치가 서 있을 때보다 27 px 넘게 움직인다
+  //  CHECK_ONLY=motion 이면 이 검사만 돈다
+  async function motionChecks() {
+    const pxOf = (n) => [n[0] * W / 2, n[1] * H / 2];
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
+    const gunMove = (a, b) => Math.max(dist(pxOf(a.muzzle), pxOf(b.muzzle)), dist(pxOf(a.wristL), pxOf(b.wristL)));
+    const corr = (a, b) => {
+      const n = a.length, ma = a.reduce((s, x) => s + x, 0) / n, mb = b.reduce((s, x) => s + x, 0) / n;
+      let sab = 0, saa = 0, sbb = 0;
+      for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+      return sab / Math.sqrt(saa * sbb + 1e-12);
+    };
+    const open = async (view) => { const g = await openGame(L.context, `test=1&clock=manual&seed=11&view=${view}`); await clickStart(g.page); return g; };
+    const close = async (g) => { extraErrors.push(...g.errors); extraExternal.push(...g.external); await g.page.close(); };
+    const stepQ = (Q, n) => Q.evaluate((k) => window.__bc.step(k), n);
+    const record = async (Q, n, per) => {
+      const out = [];
+      for (let f = 0; f < n; f++) { if (per) await per(f); await stepQ(Q, 1); out.push(await Q.evaluate(() => window.__bc.vmScreen())); }
+      return out;
+    };
+    {
+      const g = await open(7), Q = g.page;
+      await stepQ(Q, 156);
+      const mouse = makeMouse(Q, W, H); await mouse.center();
+      await stepQ(Q, 1);
+      const b0 = (await stepQ(Q, 0)).shotsFired;
+      await mouse.down('left');
+      for (let i = 0; i < 36; i++) { const s = await stepQ(Q, 1); if (s.shotsFired > b0) break; }
+      await mouse.up('left'); await stepQ(Q, 42);
+      await Q.evaluate(() => window.__bc.vmScreen(true));
+      await mouse.down('left');
+      const fr = await record(Q, 60);
+      await mouse.up('left');
+      await close(g);
+      const apart = [];
+      for (let f = 0; f + 30 < fr.length; f++) apart.push(gunMove(fr[f], fr[f + 30]));
+      const shotF = [];
+      for (let f = 1; f < fr.length; f++) if (fr[f].shots > fr[f - 1].shots) shotF.push(f);
+      const traj = shotF.filter((f) => f + 4 < fr.length).map((f) => {
+        const v = [];
+        for (let j = 0; j < 5; j++) for (const k of ['muzzle', 'wristL', 'bg']) { const a = pxOf(fr[f + j][k]), b = pxOf(fr[f - 1][k]); v.push(a[0] - b[0], a[1] - b[1]); }
+        return v;
+      });
+      const cs = [];
+      for (let i = 0; i + 1 < traj.length; i++) cs.push(corr(traj[i], traj[i + 1]));
+      const A = med(apart), C = med(cs);
+      rec('(n) 연사 때 총의 화면 움직임이 되풀이되지 않는다', A >= 27 && C <= 0.6 && shotF.length >= 8,
+        `① 0.5초 떨어진 프레임의 총 위치 차 중앙값 ${A.toFixed(1)} px(27 이상) ② 이웃한 두 발의 궤적 상관 중앙값 ${C.toFixed(2)}(0.6 이하, ${cs.length}쌍), 1초 동안 ${shotF.length}발`);
+    }
+    let walkApart = NaN, bgRange = NaN, jumpMove = NaN;
+    {
+      const g = await open(2), Q = g.page;
+      await stepQ(Q, 156);
+      await Q.keyboard.down('KeyW'); await stepQ(Q, 30);
+      await Q.evaluate(() => window.__bc.vmScreen(true));
+      const fr = await record(Q, 60);
+      await Q.keyboard.up('KeyW');
+      await close(g);
+      const apart = [];
+      for (let f = 0; f + 30 < fr.length; f++) apart.push(gunMove(fr[f], fr[f + 30]));
+      walkApart = med(apart);
+      const bg = fr.map((r) => pxOf(r.bg));
+      bgRange = Math.max(...[0, 1].map((k) => Math.max(...bg.map((v) => v[k])) - Math.min(...bg.map((v) => v[k]))));
+    }
+    {
+      const g = await open(13), Q = g.page;
+      await Q.evaluate(() => { window.__bc.place(0, 21, 0); window.__bc.step(90); });
+      const s0 = await Q.evaluate(() => window.__bc.vmScreen(true));
+      await Q.keyboard.down('Space');
+      const fr = await record(Q, 70, async (f) => { if (f === 15) await Q.keyboard.up('Space'); });
+      await close(g);
+      jumpMove = Math.max(...fr.map((r) => gunMove(s0, r)));
+    }
+    rec('(o) 걷고 뛸 때 총과 몸이 움직인다', walkApart >= 8 && bgRange >= 12 && jumpMove > 27,
+      `① 걷는 1초 동안 0.5초 떨어진 프레임의 총 위치 차 중앙값 ${walkApart.toFixed(1)} px(8 이상) ② 배경 점의 움직임 범위 ${bgRange.toFixed(1)} px(12 이상) ③ 점프와 착지 동안 총이 서 있을 때보다 움직인 최대 ${jumpMove.toFixed(1)} px(27 초과)`);
+  }
+  if (process.env.CHECK_ONLY === 'motion') { await motionChecks(); return; }
+
   if (process.env.CHECK_ONLY !== 'surface') {
     const g = await openGame(L.context, 'test=1&clock=manual&seed=11&view=13');
     const P = g.page;
@@ -316,6 +405,7 @@ async function main() {
       ` / ④ 소매 채도 ${satBad.length ? '0.8배 미만 ' + satBad.join(', ') : '모든 시점 0.8배 이상'}` +
       (unseen.length ? ` / 잴 수 없는 시점 ${unseen.join(', ')}` : ''));
   }
+  if (!process.env.CHECK_ONLY) await motionChecks();
   if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');

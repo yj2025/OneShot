@@ -1,0 +1,642 @@
+{
+ "round": 63,
+ "baseline": "p-recoil",
+ "crossover": true,
+ "zoom": null,
+ "only": null,
+ "judgments": [
+  {
+   "set": "2ce9",
+   "text": "1=구분 안 됨, 2=구분 안 됨, 3=구분 안 됨, 4=구분 안 됨, 5=A, 6=구분 안 됨, 7=구분 안 됨, 8=구분 안 됨, 9=구분 안 됨, 10=구분 안 됨, 11=구분 안 됨, 12=B, 13=구분 안 됨, 14=구분 안 됨, 15=구분 안 됨, 16=구분 안 됨, 17=구분 안 됨, 18=구분 안 됨, 19=구분 안 됨, 20=구분 안 됨, 21=구분 안 됨, 22=구분 안 됨, 23=구분 안 됨, 24=구분 안 됨, 25=구분 안 됨, 26=B, 27=구분 안 됨, 28=구분 안 됨, 29=구분 안 됨, 30=구분 안 됨, 31=A"
+  },
+  {
+   "set": "2ce9",
+   "text": "1=구분 안 됨, 2=구분 안 됨, 3=구분 안 됨, 4=구분 안 됨, 5=A, 6=구분 안 됨, 7=구분 안 됨, 8=구분 안 됨, 9=구분 안 됨, 10=구분 안 됨, 11=구분 안 됨, 12=B, 13=구분 안 됨, 14=구분 안 됨, 15=구분 안 됨, 16=구분 안 됨, 17=구분 안 됨, 18=구분 안 됨, 19=구분 안 됨, 20=구분 안 됨, 21=구분 안 됨, 22=구분 안 됨, 23=구분 안 됨, 24=구분 안 됨, 25=구분 안 됨, 26=구분 안 됨, 27=A, 28=구분 안 됨, 29=구분 안 됨, 30=구분 안 됨, 31=A"
+  },
+  {
+   "set": "bb2d",
+   "text": "1=구분 안 됨, 2=구분 안 됨, 3=구분 안 됨, 4=구분 안 됨, 5=구분 안 됨, 6=구분 안 됨, 7=구분 안 됨, 8=구분 안 됨, 9=구분 안 됨, 10=구분 안 됨, 11=구분 안 됨, 12=구분 안 됨, 13=구분 안 됨, 14=구분 안 됨, 15=구분 안 됨, 16=구분 안 됨, 17=B, 18=구분 안 됨, 19=구분 안 됨, 20=구분 안 됨, 21=구분 안 됨, 22=B, 23=구분 안 됨, 24=구분 안 됨, 25=B, 26=구분 안 됨, 27=구분 안 됨, 28=B, 29=구분 안 됨, 30=B, 31=구분 안 됨"
+  },
+  {
+   "set": "bb2d",
+   "text": "1=구분 안 됨, 2=구분 안 됨, 3=구분 안 됨, 4=구분 안 됨, 5=구분 안 됨, 6=구분 안 됨, 7=구분 안 됨, 8=구분 안 됨, 9=구분 안 됨, 10=구분 안 됨, 11=구분 안 됨, 12=A, 13=구분 안 됨, 14=구분 안 됨, 15=구분 안 됨, 16=구분 안 됨, 17=B, 18=구분 안 됨, 19=구분 안 됨, 20=구분 안 됨, 21=구분 안 됨, 22=B, 23=구분 안 됨, 24=구분 안 됨, 25=구분 안 됨, 26=구분 안 됨, 27=A, 28=구분 안 됨, 29=구분 안 됨, 30=구분 안 됨, 31=구분 안 됨"
+  }
+ ],
+ "summary": {
+  "W": 4,
+  "L": 0,
+  "T": 27,
+  "p": 0.0625,
+  "verdict": "판정 불가",
+  "letters": {
+   "A": 7,
+   "B": 10,
+   "p": 0.62906
+  },
+  "position": {
+   "A": {
+    "N": 7,
+    "O": 2,
+    "T": 53
+   },
+   "B": {
+    "N": 8,
+    "O": 0,
+    "T": 54
+   }
+  },
+  "conflicts": 0,
+  "oldRatio": 0.565
+ },
+ "pairs": [
+  {
+   "scene": "06-loading-dock-stairs.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 1,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 15,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "19-fire-yard.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 2,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 10,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "04-hall-windows.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 3,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 6,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "12-close-doorway.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 4,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 2,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "11-stepped-outside.png",
+   "result": "W",
+   "newVotes": 4,
+   "baseVotes": 0,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 5,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 17,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "09-firing.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 6,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 9,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "13-close-floor.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 7,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 20,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "05-office-fluorescent.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 8,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 1,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "21-reload.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 9,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 16,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "08-bot-in-room.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 10,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 21,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "01-yard.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 11,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 18,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "20-fire-pistol.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 12,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 12,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "18-fire-corridor.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 13,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 5,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "10-hit-taken.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 14,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 11,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "07-doorway-to-yard.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 15,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 8,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "15-close-pistol.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 16,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 19,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "02-entrance.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 17,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 4,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "17-aim-yard.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 18,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 13,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "14-close-wall.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 19,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 3,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "16-aim-hall.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 20,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 7,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "03-corridor.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 21,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 14,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-vault-barrier.png",
+   "result": "T",
+   "newVotes": 1,
+   "baseVotes": 0,
+   "ties": 3,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 22,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 30,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-turn-sway.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 23,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 24,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-walking.png",
+   "result": "T",
+   "newVotes": 1,
+   "baseVotes": 0,
+   "ties": 3,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 24,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 27,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-vault-barrel.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 25,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 31,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-running-turn.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 1,
+   "ties": 3,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 26,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 23,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-firing-burst.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 27,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 22,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-reload.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 28,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 29,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-indoor-to-outdoor.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 1,
+   "ties": 3,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 29,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 28,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-aim-track.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 30,
+     "newSide": "B"
+    },
+    {
+     "tag": "bb2d",
+     "n": 26,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-strafe.png",
+   "result": "W",
+   "newVotes": 3,
+   "baseVotes": 0,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": "2ce9",
+     "n": 31,
+     "newSide": "A"
+    },
+    {
+     "tag": "bb2d",
+     "n": 25,
+     "newSide": "B"
+    }
+   ]
+  }
+ ]
+}

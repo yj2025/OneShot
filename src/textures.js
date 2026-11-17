@@ -456,25 +456,38 @@ export function makeFlashTextures(seed = 1) {
   return { stars, plumes };
 }
 // 소염기 틈으로 뿜어 나온 가스가 3~5갈래로 탄다. 불꽃 덩어리를 겹쳐 그려 가장자리가 고르지 않게 한다
+// 정면(카메라 쪽)에서 본 화염: 총구 앞에서 부풀어 터지는 뜨거운 가스 덩어리다. 가운데가 가장 뜨겁고, 가장자리는 난류로 울퉁불퉁한 혹이 여럿 튀어나온다.
+// 이전에는 가는 빛줄기 3~5개의 별꼴이었다. HDR 세기(16~26배)에서 줄기까지 포화돼 윤곽이 또렷한 별로 찍혔고, 판정자 셋이 따로 '게임 스프라이트',
+// '화면 위에 붙인 그림'으로 읽었다(A/B 59·60, 2단계 ④). 날카로운 별은 조리개 날의 회절인데, 작은 광각 렌즈와 센서 번짐에서는 덩어리로 뭉개진다
 function flashStar(rng, S) {
   const c = canvas(S), x = c.getContext('2d');
   x.translate(S / 2, S / 2);
   x.globalCompositeOperation = 'lighter';
-  const n = 3 + Math.floor(rng() * 3), a0 = rng() * Math.PI * 2;
-  for (let i = 0; i < n; i++) {
-    const a = a0 + i * Math.PI * 2 / n + (rng() - 0.5) * 0.6, len = S * (0.26 + rng() * 0.21);
-    for (let k = 0; k < 16; k++) {
-      const t = k / 15, r = len * t, w = S * (0.075 * (1 - t) + 0.022) * (0.7 + rng() * 0.6);
-      const px = Math.cos(a) * r + (rng() - 0.5) * w * 0.7, py = Math.sin(a) * r + (rng() - 0.5) * w * 0.7;
-      const hot = 1 - t, g = x.createRadialGradient(px, py, 0, px, py, w);
-      g.addColorStop(0, `rgba(255,${Math.round(140 + 105 * hot)},${Math.round(50 + 160 * hot * hot)},${(0.34 * (1 - t * 0.75)).toFixed(3)})`);
-      g.addColorStop(1, 'rgba(255,100,25,0)');
-      x.fillStyle = g; x.beginPath(); x.arc(px, py, w, 0, Math.PI * 2); x.fill();
+  const blob = (px, py, w, hot, a) => {
+    const g = x.createRadialGradient(px, py, 0, px, py, w);
+    g.addColorStop(0, `rgba(255,${Math.round(150 + 100 * hot)},${Math.round(60 + 170 * hot * hot)},${a.toFixed(3)})`);
+    g.addColorStop(0.55, `rgba(255,${Math.round(120 + 80 * hot)},${Math.round(40 + 60 * hot)},${(a * 0.45).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(240,95,25,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(px, py, w, 0, Math.PI * 2); x.fill();
+  };
+  // 혹: 2~4개의 방향으로 짧고 굵게 부푼다(길이가 폭의 1.5~2.5배를 넘지 않는다). 방향은 고르게 나뉘지 않는다
+  const lobes = 2 + Math.floor(rng() * 3);
+  for (let i = 0; i < lobes; i++) {
+    const a = rng() * Math.PI * 2, len = S * (0.12 + rng() * 0.16);
+    for (let k = 0; k < 7; k++) {
+      const t = k / 6, r = len * t, w = S * (0.11 * (1 - t * 0.55)) * (0.75 + rng() * 0.5);
+      blob(Math.cos(a + (rng() - 0.5) * 0.5) * r, Math.sin(a + (rng() - 0.5) * 0.5) * r, w, 1 - t * 0.8, 0.22 * (1 - t * 0.6));
     }
   }
-  const g = x.createRadialGradient(0, 0, 0, 0, 0, S * 0.2);
-  g.addColorStop(0, 'rgba(255,253,244,1)'); g.addColorStop(0.35, 'rgba(255,228,165,0.85)'); g.addColorStop(0.7, 'rgba(255,165,70,0.3)'); g.addColorStop(1, 'rgba(255,120,40,0)');
-  x.fillStyle = g; x.beginPath(); x.arc(0, 0, S * 0.2, 0, Math.PI * 2); x.fill();
+  // 몸통: 가운데 둘레에 겹친 작은 덩어리들이 가장자리를 울퉁불퉁하게 만든다
+  const n = 10 + Math.floor(rng() * 6);
+  for (let i = 0; i < n; i++) {
+    const a = rng() * Math.PI * 2, d = S * 0.17 * Math.pow(rng(), 0.7), w = S * (0.06 + rng() * 0.07);
+    blob(Math.cos(a) * d, Math.sin(a) * d, w, 1 - d / (S * 0.25), 0.28);
+  }
+  const g = x.createRadialGradient(0, 0, 0, 0, 0, S * 0.19);
+  g.addColorStop(0, 'rgba(255,253,244,1)'); g.addColorStop(0.4, 'rgba(255,230,170,0.8)'); g.addColorStop(0.75, 'rgba(255,170,75,0.3)'); g.addColorStop(1, 'rgba(255,120,40,0)');
+  x.fillStyle = g; x.beginPath(); x.arc(0, 0, S * 0.19, 0, Math.PI * 2); x.fill();
   return c;
 }
 // 옆에서 본 불꽃: 아래 끝이 총구다(텍스처 v=0). 총구 바로 앞이 가장 뜨겁고, 부풀었다가 끝으로 가며 식고 가늘어진다
