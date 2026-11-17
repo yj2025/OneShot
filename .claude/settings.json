@@ -1,5 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(npm install)",
@@ -25,8 +28,6 @@
       "Bash(sudo *)",
       "Read(./out/keys/**)",
       "Read(/out/keys/**)",
-      "Edit(/SPEC.md)",
-      "Edit(/ROADMAP.md)",
       "Edit(/PLAYTEST.md)"
     ]
   }

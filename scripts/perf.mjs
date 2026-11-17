@@ -6,7 +6,7 @@ import path from 'node:path';
 import { OUT, ensureDir, build, launch, openGame, clickStart, sleep } from './lib.mjs';
 
 const W = 1920, H = 1080;
-const TARGET = { gpu: '중급 노트북 GPU', resolution: '1920x1080', fps: 60, frameMs: 16.7 };
+const TARGET = { gpu: '데스크톱 RTX 5060 Ti', resolution: '1920x1080', fps: 60, frameMs: 16.7 };
 if (!process.argv.includes('--nobuild')) build();
 const L = await launch({ width: W, height: H });
 console.log(`렌더러: ${L.renderer} (${L.mode})`);
@@ -48,7 +48,7 @@ for (const quality of ['high', 'medium', 'low']) {
 }
 const res = {
   renderer: L.renderer, browserMode: L.mode, software: L.software,
-  note: L.software ? '소프트웨어 렌더러에서 잰 값 — 참고용' : '실제 GPU에서 잰 값(vsync 해제). 측정 기기는 데스크톱 GPU이므로 중급 노트북 GPU 목표에 대해서는 추정치다.',
+  note: L.software ? '소프트웨어 렌더러에서 잰 값 — 참고용' : '실제 GPU에서 잰 값(vsync 해제). 목표 기기(데스크톱 RTX 5060 Ti)가 아닌 GPU에서 쟀다면 추정치다.',
   resolution: `${W}x${H}`, target: TARGET, runs,
   meetsTarget: runs[0].p95Ms <= TARGET.frameMs && runs[0].scope.onP95Ms <= TARGET.frameMs,
   measuredAt: new Date().toISOString(),

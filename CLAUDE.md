@@ -2,7 +2,7 @@
 
 만들 것과 완료 기준은 SPEC.md에, 단계와 통과 기준은 ROADMAP.md에 있고, 세션을 시작할 때마다 함께 읽힌다: @SPEC.md @ROADMAP.md
 
-이 프로젝트의 주인은 너다. 엔진 구조부터 파일 배치까지 직접 결정하고, 마음에 들지 않는 부분은 허락을 구하지 말고 고쳐 쓴다. SPEC.md, ROADMAP.md, PLAYTEST.md만은 내가 관리한다. 바꿔야 할 이유가 생기면 고치지 말고 PROGRESS.md에 제안으로 적는다.
+이 프로젝트의 주인은 너다. 엔진 구조부터 파일 배치까지 직접 결정하고, 마음에 들지 않는 부분은 허락을 구하지 말고 고쳐 쓴다. SPEC.md, ROADMAP.md, PLAYTEST.md는 내가 관리한다. SPEC.md와 ROADMAP.md는 내가 대화로 지시하거나 승인한 내용만 고칠 수 있다(2026-11-17부터). 스스로 바꿔야 할 이유가 생기면 고치지 말고 PROGRESS.md에 제안으로 적는다. PLAYTEST.md는 고치지 않는다.
 
 # 일하는 순서
 첫 빌드는 끝났다. 지금은 ROADMAP.md의 단계를 세션 단위로 진행한다.
@@ -46,7 +46,7 @@
 
 # 하지 않는 것
 - 프로젝트 폴더 밖의 파일을 건드리지 않는다. 원격 저장소로 push하지 않는다.
-- .claude/ 아래 파일과 SPEC.md, ROADMAP.md, PLAYTEST.md를 수정하지 않는다. 수정하려 하면 권한 규칙에 막힌다.
+- .claude/ 아래 파일과 PLAYTEST.md를 수정하지 않는다. PLAYTEST.md는 권한 규칙에 막힌다. SPEC.md와 ROADMAP.md는 내가 지시하거나 승인한 내용만 고친다.
 - refs/의 이미지는 비교용이다. 게임에 넣거나 텍스처로 쓰거나 커밋하지 않는다.
 - out/keys/를 직접 열지 않는다. 정답 대조는 `npm run score`와 `npm run ab`가 한다.
 
