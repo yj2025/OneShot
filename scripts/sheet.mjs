@@ -63,8 +63,10 @@ for (let s = 0; s < items.length; s += PER) {
 }
 
 // 연속 프레임 묶음: 판정자가 읽기 좋은 크기로 다시 놓는다 (이름은 중립 번호)
-// 제자리 회전(strip-turn-)과 옆걸음(strip-strafe)은 2026-11-15에 더했다. A/B에만 쓴다
-const stripFiles = fs.readdirSync(shotsDir).filter(f => /^strip-.*\.png$/.test(f) && !/^strip-(aim|vault|turn)-|^strip-strafe|^strip-reload/.test(f)).sort();
+// 레퍼런스 비교에는 처음부터 있던 네 묶음만 쓴다. 그 뒤에 더한 묶음(조준, 파쿠르, 회전, 옆걸음, 재장전, 2026-11-17의 움직임 일곱 묶음)은 A/B에만 쓴다.
+// 비교 시트의 구성을 지난 라운드와 같게 두어 식별 정답률과 점수를 이어 보려는 것이다. 빼는 목록 대신 쓰는 목록을 둔다(새 묶음이 저절로 섞이지 않게)
+const CRITIC_STRIPS = ['firing-burst', 'indoor-to-outdoor', 'running-turn', 'walking'];
+const stripFiles = fs.readdirSync(shotsDir).filter(f => CRITIC_STRIPS.some(n => f === `strip-${n}.png`)).sort();
 const strips = [];
 for (const f of stripFiles) {
   const b = await stripBlock(path.join(shotsDir, f), 380, 214);

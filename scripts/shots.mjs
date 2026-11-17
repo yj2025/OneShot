@@ -25,6 +25,18 @@ async function open(view, settleFrames = 156) {
   if (settleFrames) await step(g.page, settleFrames); // 2.6초: 자동 노출과 자세가 자리를 잡을 시간
   return g;
 }
+// 임의 시점(?vp=x,z,yaw,pitch)으로 연다
+async function openVp(vp, settleFrames = 156) {
+  const g = await openGame(L.context, `test=1&clock=manual&seed=11&vp=${vp}`);
+  await clickStart(g.page);
+  if (settleFrames) await step(g.page, settleFrames);
+  return g;
+}
+// 권총으로 바꾸고 다 꺼낼 때까지(1.5초) 기다린다
+async function toPistol(page) {
+  await page.keyboard.down('Digit2'); await step(page, 2); await page.keyboard.up('Digit2');
+  await step(page, 90);
+}
 async function shot(page, name) {
   const file = path.join(dir, `${name}.png`);
   await settle(page);
@@ -167,9 +179,11 @@ for (const [name, v] of [['18-fire-corridor', 2], ['19-fire-yard', 0], ['20-fire
   await strip(page, 'turn-sway', async (f) => { if (f < 20) await mouse.move(12, 0); else if (f < 40) await mouse.move(-12, 0); });
   await page.close();
 }
+// 옆걸음: 트인 마당에서 D 0.5초, A 0.5초. 옛 'strafe'(시점 0)는 출발 자리 오른쪽이 막혀 D 동안 움직이지 않았다.
+// 이름을 바꿔 옛 기준선의 'strafe'와 짝지어지지 않게 했다(2026-11-17)
 {
-  const { page } = await open(0);
-  await strip(page, 'strafe', async (f) => {
+  const { page } = await openVp('3,18,0.22,0.02');
+  await strip(page, 'strafe-yard', async (f) => {
     if (f === 0) await page.keyboard.down('KeyD');
     if (f === 30) { await page.keyboard.up('KeyD'); await page.keyboard.down('KeyA'); }
   });
@@ -203,6 +217,78 @@ for (const [name, v] of [['18-fire-corridor', 2], ['19-fire-yard', 0], ['20-fire
   await page.keyboard.down('KeyR'); await step(page, 2); await page.keyboard.up('KeyR');
   await step(page, 16);
   await strip(page, 'reload', null);
+  await page.close();
+}
+// 움직임 묶음용 연속 프레임(2026-11-17 측정 정비 3차). 움직임만 바꾸는 묶음은 정지 화면이 두 빌드에서 같아 갈린 쌍이 모자랐다
+// (2단계 ④, A/B 63~65가 모두 갈린 쌍 4). 연속 프레임만으로 15쌍 넘게 판정할 수 있도록(`--only strip`) 여기서 일곱 묶음을 더한다. 모두 A/B에만 쓴다
+// 걷다 멈추기: 복도를 0.5초 걷고, 연속 프레임 16번째 프레임에서 W를 뗀다(총이 멈추며 흔들리는 것)
+{
+  const { page } = await open(2);
+  await page.keyboard.down('KeyW');
+  await step(page, 30);
+  await strip(page, 'walk-stop', async (f) => { if (f === 16) await page.keyboard.up('KeyW'); });
+  await page.close();
+}
+// 달리다 멈추기: 홀을 달리다가 16번째 프레임에서 W와 Shift를 뗀다
+{
+  const { page } = await open(3);
+  await page.keyboard.down('KeyW'); await page.keyboard.down('ShiftLeft');
+  await step(page, 40);
+  await strip(page, 'sprint-stop', async (f) => { if (f === 16) { await page.keyboard.up('KeyW'); await page.keyboard.up('ShiftLeft'); } });
+  await page.close();
+}
+// 권총을 겨눈 채(우클릭) 복도를 걷는다. 낮춘 자세의 권총은 걷는 동안 화면 밖에 있어 총의 움직임이 보이지 않는다
+{
+  const { page } = await open(2);
+  await toPistol(page);
+  const mouse = makeMouse(page, W, H); await mouse.center();
+  await mouse.down('right');
+  await step(page, 20);
+  await page.keyboard.down('KeyW');
+  await step(page, 30);
+  await strip(page, 'pistol-aim-walk', null);
+  await page.keyboard.up('KeyW');
+  await mouse.up('right');
+  await page.close();
+}
+// 권총 연발: 방 안에서 0.15초마다 방아쇠를 당긴다
+{
+  const { page } = await open(7);
+  await toPistol(page);
+  const mouse = makeMouse(page, W, H); await mouse.center();
+  await strip(page, 'pistol-fire', async (f) => {
+    if (f % 9 === 0) await mouse.down('left');
+    if (f % 9 === 4) await mouse.up('left');
+  });
+  await mouse.up('left');
+  await page.close();
+}
+// 앉아 걷기: 홀에서 C로 앉고 0.7초 뒤 W
+{
+  const { page } = await open(3);
+  await page.keyboard.down('KeyC'); await step(page, 2); await page.keyboard.up('KeyC');
+  await step(page, 40);
+  await page.keyboard.down('KeyW');
+  await strip(page, 'crouch-walk', null);
+  await page.keyboard.up('KeyW');
+  await page.close();
+}
+// 계단 오르기: 정문 계단 앞에서 걸어 올라간다(20~50번째 프레임에 계단 세 단)
+{
+  const { page } = await openVp('-7.5,3.5,0,0');
+  await page.keyboard.down('KeyW');
+  await step(page, 10);
+  await strip(page, 'stairs', null);
+  await page.keyboard.up('KeyW');
+  await page.close();
+}
+// 뒷걸음: 마당에서 S
+{
+  const { page } = await open(0);
+  await page.keyboard.down('KeyS');
+  await step(page, 20);
+  await strip(page, 'backpedal', null);
+  await page.keyboard.up('KeyS');
   await page.close();
 }
 fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
