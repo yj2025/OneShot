@@ -382,3 +382,5 @@ export function fitGrasp(sk, wrist, boxes, start, opts = {}) {
   return pose;
 }
 export { FINGERS, THUMB };
+// 거리장 도구: 봇의 몸(body.js)도 같이 쓴다
+export { surfaceNets, sdRoundCone, sdEllipsoid, smin };

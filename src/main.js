@@ -275,6 +275,15 @@ class Game {
       for (const b of this.bots) b.dormant = 'idle';
       if (v.bot) { const b = this.bots[v.bot.i]; b.pos.set(v.bot.pos[0], b.pos.y, v.bot.pos[1]); b.pos.y = this.level.insideBuilding(b.pos.x, b.pos.z) ? FL : 0; b.yaw = b.aimYaw = b.lookYaw = v.bot.yaw; b.dormant = v.bot.active ? null : 'idle'; if (v.bot.active) { b.alerted = true; } }
       if (v.weapon) this.vm.setWeapon(v.weapon);
+      // 살펴보기용(테스트 진입 경로 전용): ?novm=1이면 총과 팔을 그리지 않는다
+      if (TEST && Q.get('novm')) for (const o of [this.vm.root, this.vm.foreR, this.vm.foreL]) if (o) o.visible = false;
+      // 살펴보기와 촬영용 봇 배치(테스트 진입 경로 전용): ?bots=i,x,z,yaw,mode;... mode는 idle, aim(플레이어를 겨눔, 쏘지 않음), march(1.3 m/s로 곧게 걷기), run(3.3 m/s), dead(첫 프레임에 쓰러짐)
+      if (TEST && Q.get('bots')) for (const s of Q.get('bots').split(';')) {
+        const [i, x, z, yaw, mode = 'idle'] = s.split(','); const b = this.bots[+i]; if (!b) continue;
+        b.pos.set(+x, 0, +z); b.pos.y = this.level.insideBuilding(b.pos.x, b.pos.z) ? FL : this.level.groundHeight(b.pos.x, b.pos.z, 1.0, 0.1, 0.3);
+        b.yaw = b.aimYaw = b.lookYaw = +yaw; b.dormant = mode === 'dead' || mode === 'bind' ? 'idle' : mode; b.testKill = mode === 'dead'; b.testBind = mode === 'bind';
+        b.pose(0, 0); for (let k = 0; k < 15; k++) b.prevJ[k].copy(b.J[k]); b.render(); for (const gr of b.gear || []) gr.reset();
+      }
     } else {
       this.player.spawn(0, 24.5, 0, -0.05);
       if (TOUR) for (const b of this.bots) b.dormant = 'walk';

@@ -3,17 +3,21 @@ import * as THREE from 'three';
 import { shadowMaterial, bcMaterial } from './materials.js';
 import { noise1 } from './rng.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { createBody, Gear, BIND_J } from './body.js';
+import { fabricMaps } from './fabric.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const UP = V(0, 1, 0);
 // 관절 번호
 const J = { pelvis: 0, chest: 1, head: 2, shL: 3, elL: 4, haL: 5, shR: 6, elR: 7, haR: 8, hipL: 9, knL: 10, ftL: 11, hipR: 12, knR: 13, ftR: 14 };
 const EDGES = [[0, 1], [1, 2], [1, 3], [1, 6], [3, 6], [3, 4], [4, 5], [6, 7], [7, 8], [0, 9], [0, 12], [9, 12], [9, 10], [10, 11], [12, 13], [13, 14], [3, 9], [6, 12], [3, 12], [6, 9], [2, 3], [2, 6]];
+// 옷 색(sRGB). 천 맵(fabric.js)은 선형 평균을 이 색에 맞춘다. 선형 반사율로 셔츠 10~15%, 바지 9~12%, 조끼 6~9%다.
+// 이전에는 평균 반사율 0.1짜리 천 텍스처에 색을 곱해 셔츠가 2~3%였다. 그늘과 역광에서 사람만 검은 판이 된 까닭이다(15라운드)
 const OUTFITS = [
-  { cloth: 0x6e7258, vest: 0x454b3c, helmet: 0x7d7660, pants: 0x5a5c4c },
-  { cloth: 0x59607a, vest: 0x3a3f4a, helmet: 0x55595f, pants: 0x3f4350 },
-  { cloth: 0x8a8470, vest: 0x5a584a, helmet: 0x8b8268, pants: 0x6f6a58 },
-  { cloth: 0x4e524c, vest: 0x34372f, helmet: 0x60625a, pants: 0x46483f },
+  { shirt: '#57594c', pants: '#4e5045', vest: '#47493a', helmet: 0x504c3e },
+  { shirt: '#535861', pants: '#474c53', vest: '#3b3f45', helmet: 0x3e4146 },
+  { shirt: '#665f4e', pants: '#5b5545', vest: '#524b3e', helmet: 0x575042 },
+  { shirt: '#51554b', pants: '#474a42', vest: '#3f423b', helmet: 0x44463f },
 ];
 
 function limbMesh(mat, r0, r1, seg = 10) {
@@ -44,58 +48,59 @@ export class Bot {
     this.rng = rng;
     const o = OUTFITS[idx % OUTFITS.length];
     this.height = 0.97 + rng() * 0.06; // 키 비율
+    // 몸: 거리장으로 지은 옷 입은 사람 하나를 뼈 11개에 스키닝한다(body.js). 재질은 영역마다 하나(셔츠, 바지, 조끼, 장갑, 부츠, 얼굴 가리개, 띠, 보호대).
+    // 장갑, 부츠, 띠는 반사율 4~8%(이전 1~2%)로 올렸다. 그늘과 역광에서 몸 전체가 한 덩어리의 검은 판이 되지 않게 하려는 것이다
+    // 몸 메시의 UV는 0.25 m가 1이다. 천 맵 한 장(4 cm)이 실제 치수가 되게 반복한다
+    const fab = (c, rough, grime, seed) => { const F = fabricMaps(c, { kind: 'ripstop', seed }); for (const tx of [F.map, F.normalMap]) tx.repeat.set(6.25, 6.25); return bcMaterial({ map: F.map, normalMap: F.normalMap, roughness: rough, envMapIntensity: 0.5, vertexColors: true }, { grime }); };
+    const plain = (c, rough, grime) => bcMaterial({ color: c, roughness: rough, vertexColors: true }, { grime });
     const M = {
-      cloth: bcMaterial({ map: game.tex.fabric, color: new THREE.Color(o.cloth).multiplyScalar(1.35), roughness: 0.92, envMapIntensity: 0.7 }, { grime: 0.3 }),
-      vest: bcMaterial({ map: game.tex.fabric, color: new THREE.Color(o.vest).multiplyScalar(1.3), roughness: 0.85, envMapIntensity: 0.6 }, { grime: 0.3 }),
-      helmet: bcMaterial({ map: game.tex.fabric, color: new THREE.Color(o.helmet).multiplyScalar(1.1), roughness: 0.95, metalness: 0.0, envMapIntensity: 0.15 }, { grime: 0.2 }),
+      shirt: fab(o.shirt, 0.95, 0.3, idx * 4 + 1), pants: fab(o.pants, 1, 0.5, idx * 4 + 2),
+      vest: fab(o.vest, 0.88, 0.3, idx * 4 + 3), glove: plain(0x45433d, 0.85, 0), boot: plain(0x332e28, 0.75, 0.4),
+      face: fab('#34332f', 1, 0, idx * 4 + 4), strap: plain(0x3a3b36, 0.9, 0.2), pad: plain(0x3e3e38, 0.65, 0.3),
+      helmet: (() => { const F = fabricMaps('#' + new THREE.Color(o.helmet).getHexString(), { kind: 'ripstop', seed: idx * 4 + 9 }); for (const tx of [F.map, F.normalMap]) tx.repeat.set(5, 5); return bcMaterial({ map: F.map, normalMap: F.normalMap, roughness: 0.92, envMapIntensity: 0.2 }, { grime: 0.2 }); })(),
       lens: bcMaterial({ color: 0x0b0c0d, roughness: 0.12, metalness: 0.4 }, { grime: 0 }),
-      face: bcMaterial({ map: game.tex.fabric, color: 0x262624, roughness: 1 }, { grime: 0 }),
-      glove: bcMaterial({ color: 0x1e1e1c, roughness: 0.9 }, { grime: 0 }),
-      boot: bcMaterial({ color: 0x241f1a, roughness: 0.8 }, { grime: 0.4 }),
+      dark: bcMaterial({ color: 0x2a2a27, roughness: 0.9 }, { grime: 0 }),
       gun: bcMaterial({ color: 0x1f2020, roughness: 0.5, metalness: 0.5 }, { grime: 0 }),
-      pouch: bcMaterial({ map: game.tex.fabric, color: o.vest, roughness: 1 }, { grime: 0.3 }),
-      pants: bcMaterial({ map: game.tex.fabric, color: o.pants, roughness: 1 }, { grime: 0.5 }),
-      pad: bcMaterial({ color: 0x2a2a28, roughness: 0.7 }, { grime: 0.3 }),
-      strap: bcMaterial({ color: 0x1c1d1b, roughness: 0.9 }, { grime: 0 }),
+      pouch: bcMaterial({ color: new THREE.Color(o.vest), roughness: 1 }, { grime: 0.3 }),
+      strapS: bcMaterial({ color: 0x2c2d29, roughness: 0.9 }, { grime: 0 }),
     };
     this.M = M;
     const grp = new THREE.Group();
     this.group = grp;
     const box = (mat, sx, sy, sz) => new THREE.Mesh(new RoundedBoxGeometry(sx, sy, sz, 3, Math.min(sx, sy, sz) * 0.32), mat);
-    this.parts = {
-      torsoLow: new THREE.Mesh(new RoundedBoxGeometry(0.36, 1, 0.24, 4, 0.1), M.cloth),
-      torsoUp: new THREE.Mesh(new RoundedBoxGeometry(0.42, 1, 0.26, 4, 0.11), M.cloth),
-      vest: box(M.vest, 0.46, 0.4, 0.34),
-      pouch: box(M.pouch, 0.36, 0.13, 0.09),
-      pack: box(M.pouch, 0.3, 0.38, 0.12),
-      neck: limbMesh(M.face, 0.055, 0.05),
-      head: new THREE.Group(),
-      uArmL: limbMesh(M.cloth, 0.078, 0.066), fArmL: limbMesh(M.cloth, 0.062, 0.05),
-      uArmR: limbMesh(M.cloth, 0.078, 0.066), fArmR: limbMesh(M.cloth, 0.062, 0.05),
-      thighL: limbMesh(M.pants, 0.11, 0.085), shinL: limbMesh(M.pants, 0.08, 0.062),
-      thighR: limbMesh(M.pants, 0.11, 0.085), shinR: limbMesh(M.pants, 0.08, 0.062),
-      plate: box(M.vest, 0.3, 0.32, 0.05),
-      mag1: box(M.pouch, 0.075, 0.13, 0.06), mag2: box(M.pouch, 0.075, 0.13, 0.06), mag3: box(M.pouch, 0.075, 0.13, 0.06),
-      radio: box(M.pad, 0.07, 0.16, 0.05), cumL: box(M.vest, 0.05, 0.18, 0.2), cumR: box(M.vest, 0.05, 0.18, 0.2),
-      strapL: box(M.strap, 0.06, 0.03, 0.3), strapR: box(M.strap, 0.06, 0.03, 0.3),
-      kneeL: box(M.pad, 0.12, 0.13, 0.06), kneeR: box(M.pad, 0.12, 0.13, 0.06),
-      elbL: box(M.pad, 0.09, 0.09, 0.05), elbR: box(M.pad, 0.09, 0.09, 0.05),
-      holster: box(M.pad, 0.06, 0.18, 0.1), sling: limbMesh(M.strap, 0.012, 0.012, 4),
-      handL: box(M.glove, 0.08, 0.1, 0.035), handR: box(M.glove, 0.08, 0.1, 0.035),
-      bootL: box(M.boot, 0.11, 0.1, 0.28), bootR: box(M.boot, 0.11, 0.1, 0.28),
-      pelvisBox: box(M.cloth, 0.36, 0.2, 0.22),
-    };
-    // 머리: 발라클라바 + 헬멧 + 고글
+    this.body = createBody(M);
+    grp.add(this.body.mesh);
+    this.parts = { head: new THREE.Group(), sling: limbMesh(M.strapS, 0.012, 0.012, 4) };
+    // 머리: 헬멧 + 고글(얼굴 가리개와 목은 몸 메시에 있다)
     const h = this.parts.head;
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 10), M.face); skull.scale.set(0.92, 1.12, 1.0); h.add(skull);
     const helm = new THREE.Mesh(new THREE.SphereGeometry(0.135, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.55), M.helmet); helm.position.y = 0.03; helm.scale.set(1.0, 0.95, 1.08); h.add(helm);
     const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.138, 0.14, 0.03, 14), M.helmet); rim.position.y = 0.03; h.add(rim);
     const gog = box(M.lens, 0.17, 0.05, 0.03); gog.position.set(0, 0.0, -0.105); h.add(gog);
-    const mount = box(M.glove, 0.05, 0.04, 0.03); mount.position.set(0, 0.11, -0.12); h.add(mount);
-    for (const sx of [-1, 1]) { const rail = box(M.glove, 0.02, 0.025, 0.14); rail.position.set(sx * 0.13, 0.05, 0.0); h.add(rail); }
+    const mount = box(M.dark, 0.05, 0.04, 0.03); mount.position.set(0, 0.11, -0.12); h.add(mount);
+    for (const sx of [-1, 1]) { const rail = box(M.dark, 0.02, 0.025, 0.14); rail.position.set(sx * 0.13, 0.05, 0.0); h.add(rail); }
     const cover = box(M.helmet, 0.06, 0.03, 0.07); cover.position.set(0.0, 0.135, 0.07); h.add(cover);
-    const strap = box(M.glove, 0.23, 0.025, 0.2); strap.position.set(0, 0.0, 0.0); h.add(strap);
+    for (const sx of [-1, 1]) { const cs = box(M.dark, 0.012, 0.11, 0.02); cs.position.set(sx * 0.085, -0.04, -0.01); cs.rotation.x = 0.25; h.add(cs); }
+    // 헤드셋: 헬멧 레일 아래 귀를 덮는 귀덮개와 목 뒤로 도는 띠. 둥근 공 같던 머리 실루엣의 옆을 깬다
+    const cupG = new THREE.CylinderGeometry(0.048, 0.052, 0.045, 12); cupG.rotateZ(Math.PI / 2);
+    for (const sx of [-1, 1]) {
+      const cup = new THREE.Mesh(cupG, M.dark); cup.position.set(sx * 0.112, -0.015, 0.008); cup.rotation.y = sx * 0.12; h.add(cup);
+      const arm = box(M.dark, 0.014, 0.05, 0.016); arm.position.set(sx * 0.122, 0.025, 0.008); h.add(arm);
+    }
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.008, 4, 14, Math.PI), M.dark); band.position.set(0, -0.03, 0.03); band.rotation.set(Math.PI / 2 + 0.5, 0, 0); h.add(band);
+    // 헬멧 덮개의 번지 줄
+    const bung = new THREE.Mesh(new THREE.TorusGeometry(0.128, 0.005, 4, 20), M.dark); bung.position.y = 0.075; bung.scale.set(1, 1.08, 1); bung.rotation.x = Math.PI / 2; h.add(bung);
     for (const k in this.parts) grp.add(this.parts[k]);
+    // 흔들리는 장비: 등의 물주머니 배낭, 허리 뒤 왼쪽 덤프 주머니, 무전기 안테나(위로 선 채찍). 몸을 늦게 따라온다(body.js Gear)
+    const hang = (g, x, y, z) => { g.translate(x, y, z); return g; };
+    const pack = new THREE.Mesh(hang(new RoundedBoxGeometry(0.24, 0.34, 0.075, 3, 0.03), 0, -0.17, 0.035), M.pouch);
+    const dump = new THREE.Mesh(hang(new RoundedBoxGeometry(0.12, 0.16, 0.085, 3, 0.03), 0, -0.085, 0.03), M.pouch);
+    const ant = new THREE.Mesh(hang(new THREE.CylinderGeometry(0.0035, 0.007, 0.34, 5), 0, 0.17, 0), M.dark);
+    this.gear = [
+      new Gear(pack, 'chest', V(0, -0.055, 0.175), { k: 55, c: 6, gain: 0.05, bounce: 0.012, maxTilt: 0.25 }),
+      new Gear(dump, 'pelvis', V(-0.12, -0.02, 0.125), { k: 30, c: 3.2, gain: 0.09, bounce: 0.02, maxTilt: 0.6 }),
+      new Gear(ant, 'chest', V(-0.2, -0.14, 0.075), { k: 90, c: 1.8, gain: -0.035, bounce: 0, maxTilt: 0.5 }),
+    ];
+    for (const gr of this.gear) grp.add(gr.mesh);
     // 소총
     const gun = new THREE.Group();
     const gb = (sx, sy, sz, x, y, z) => { const m = box(M.gun, sx, sy, sz); m.position.set(x, y, z); gun.add(m); };
@@ -132,6 +137,7 @@ export class Bot {
     this.lookYaw = this.yaw; this.thinkT = r() * 0.15;
     this.stepAcc = 0; this.hitFlinch = 0; this.flinchDir = V(0, 0, 0);
     this.group.visible = true; this.blob.visible = true;
+    for (const gr of this.gear) gr.reset();
     this.pose(0, 0);
     for (let i = 0; i < 15; i++) this.prevJ[i].copy(this.J[i]);
     this.render();
@@ -208,54 +214,25 @@ export class Bot {
     this.J[J.elR].copy(elbow(this.J[J.shR], grip, tr));
     this.J[J.elL].copy(elbow(this.J[J.shL], fore, tr.clone().negate()));
     this.gunPose = { pos: stock.clone().addScaledVector(gdir, 0.25), dir: gdir, side: gside };
+    // 살펴보기용(테스트 진입 경로 ?bots=…,bind): 몸 메시의 바인드 자세 그대로 세운다
+    if (this.testBind) for (let i = 0; i < 15; i++) { const b = BIND_J[i]; this.J[i].copy(this.pos).addScaledVector(r, b.x).addScaledVector(f, -b.z); this.J[i].y += b.y; }
   }
 
   render() {
     const P = this.parts, j = this.J;
     const side = j[J.shR].clone().sub(j[J.shL]);
     const up = j[J.chest].clone().sub(j[J.pelvis]);
-    const mid = j[J.pelvis].clone().lerp(j[J.chest], 0.5);
-    placeBasis(P.pelvisBox, j[J.pelvis].clone().add(V(0, -0.02, 0)), j[J.hipR].clone().sub(j[J.hipL]), up);
-    placeBasis(P.torsoLow, j[J.pelvis].clone().lerp(mid, 0.5), side, up); P.torsoLow.scale.y = up.length() * 0.5;
-    placeBasis(P.torsoUp, mid.clone().lerp(j[J.chest], 0.5), side, up); P.torsoUp.scale.y = up.length() * 0.55;
-    placeBasis(P.vest, mid.clone().lerp(j[J.chest], 0.42), side, up);
     const fwdT = new THREE.Vector3().crossVectors(side, up).normalize();
-    placeBasis(P.pouch, mid.clone().lerp(j[J.chest], 0.1).addScaledVector(fwdT, -0.19), side, up);
-    placeBasis(P.pack, mid.clone().lerp(j[J.chest], 0.55).addScaledVector(fwdT, 0.2), side, up);
-    const sN = side.clone().normalize(), uN = up.clone().normalize();
-    const vc = mid.clone().lerp(j[J.chest], 0.42);
-    placeBasis(P.plate, vc.clone().addScaledVector(fwdT, -0.19).addScaledVector(uN, 0.03), side, up);
-    [P.mag1, P.mag2, P.mag3].forEach((m, i) => placeBasis(m, vc.clone().addScaledVector(fwdT, -0.235).addScaledVector(sN, (i - 1) * 0.085).addScaledVector(uN, -0.08), side, up));
-    placeBasis(P.radio, vc.clone().addScaledVector(fwdT, -0.2).addScaledVector(sN, -0.17).addScaledVector(uN, 0.12), side, up);
-    placeBasis(P.cumL, vc.clone().addScaledVector(sN, -0.24).addScaledVector(uN, -0.08), side, up);
-    placeBasis(P.cumR, vc.clone().addScaledVector(sN, 0.24).addScaledVector(uN, -0.08), side, up);
-    placeBasis(P.strapL, j[J.shL].clone().addScaledVector(sN, 0.06).addScaledVector(uN, 0.06), side, up);
-    placeBasis(P.strapR, j[J.shR].clone().addScaledVector(sN, -0.06).addScaledVector(uN, 0.06), side, up);
-    placeBasis(P.holster, j[J.hipR].clone().addScaledVector(sN, 0.1).addScaledVector(uN, -0.1), side, up);
-    const knee = (pad, k, ft, hp) => { const shin = j[ft].clone().sub(j[k]); const thigh = j[k].clone().sub(j[hp]); const fw = thigh.clone().normalize().sub(shin.clone().normalize()).normalize(); placeBasis(pad, j[k].clone().addScaledVector(fw, 0.07), sN, shin.clone().negate().add(thigh)); };
-    knee(P.kneeL, J.knL, J.ftL, J.hipL); knee(P.kneeR, J.knR, J.ftR, J.hipR);
-    const elb = (pad, e, sh, ha) => { const a = j[sh].clone().sub(j[e]).normalize(), b = j[ha].clone().sub(j[e]).normalize(); const out = a.clone().add(b).negate().normalize(); placeBasis(pad, j[e].clone().addScaledVector(out, 0.05), sN, a); };
-    elb(P.elbL, J.elL, J.shL, J.haL); elb(P.elbR, J.elR, J.shR, J.haR);
-    placeLimb(P.sling, j[J.shL].clone().addScaledVector(fwdT, -0.12), this.gun.position);
-    placeLimb(P.neck, j[J.chest], j[J.head]);
     const hu = j[J.head].clone().sub(j[J.chest]);
     placeBasis(P.head, j[J.head], side, hu);
     // 머리는 조준 방향을 본다
     if (this.alive) { P.head.rotation.set(-this.aimPitch * 0.6 * this.aimRaise, this.aimYaw + 0, 0, 'YXZ'); }
-    placeLimb(P.uArmL, j[J.shL], j[J.elL]); placeLimb(P.fArmL, j[J.elL], j[J.haL]);
-    placeLimb(P.uArmR, j[J.shR], j[J.elR]); placeLimb(P.fArmR, j[J.elR], j[J.haR]);
-    placeLimb(P.thighL, j[J.hipL], j[J.knL]); placeLimb(P.shinL, j[J.knL], j[J.ftL]);
-    placeLimb(P.thighR, j[J.hipR], j[J.knR]); placeLimb(P.shinR, j[J.knR], j[J.ftR]);
-    P.handL.position.copy(j[J.haL]); P.handL.quaternion.copy(P.fArmL.quaternion);
-    P.handR.position.copy(j[J.haR]); P.handR.quaternion.copy(P.fArmR.quaternion);
-    for (const [boot, k, ft] of [[P.bootL, J.knL, J.ftL], [P.bootR, J.knR, J.ftR]]) {
-      const shin = j[ft].clone().sub(j[k]).normalize();
-      const fwd = this.alive ? V(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)) : fwdT.clone();
-      const bootUp = shin.clone().negate();
-      const s = new THREE.Vector3().crossVectors(bootUp, fwd);
-      if (s.lengthSq() < 1e-4) s.set(1, 0, 0);
-      placeBasis(boot, j[ft].clone().addScaledVector(fwd, 0.06).add(V(0, -0.0, 0)), s, bootUp);
-    }
+    P.head.updateMatrix();
+    // 몸: 관절을 따라 뼈를 놓는다(머리 뼈는 헬멧과 같은 틀)
+    this.body.pose(j, P.head.matrix);
+    const dt = this.g.lastDt || 1 / 60;
+    for (const gr of this.gear) gr.update(this.body.boneMatrix(gr.bone), dt);
+    placeLimb(P.sling, j[J.shL].clone().addScaledVector(fwdT, -0.12), this.gun.position);
     if (this.alive) {
       const gp = this.gunPose;
       _m.lookAt(V(0, 0, 0), gp.dir, UP);
@@ -470,6 +447,8 @@ export class Bot {
     for (let i = 0; i < 15; i++) this.prevJ[i].copy(this.J[i]);
     if (!this.alive) { this.stepRagdoll(dt); this.render(); return; }
     const g = this.g, p = g.player, r = this.rng, L = g.level;
+    // 촬영용(테스트 진입 경로 ?bots=…,dead): 첫 프레임에 플레이어 쪽에서 가슴에 맞은 것처럼 쓰러진다
+    if (this.testKill) { this.testKill = false; const c = this.chest, d = c.clone().sub(V(p.pos.x, p.pos.y + 1.3, p.pos.z)).normalize(); this.die(d, c, 'torso'); this.stepRagdoll(dt); this.render(); return; }
     this.hitFlinch = Math.max(0, this.hitFlinch - dt * 3);
     this.shotCool -= dt;
     let moveTarget = null, wantSpeed = 0, faceYaw = null, wantCrouch = 0, raise = 0;
@@ -495,16 +474,24 @@ export class Bot {
         this.seeing = false;
       }
     }
-    if (this.dormant) { this.state = this.dormant === 'walk' ? 'patrol' : 'idle'; }
+    if (this.dormant) { this.state = this.dormant === 'walk' ? 'patrol' : this.dormant === 'march' || this.dormant === 'run' ? 'march' : 'idle'; }
 
     switch (this.state) {
       case 'idle': {
         this.startleDelay = (this.startleDelay || 0) - dt;
         const st = this.startleDelay > 0 ? 0 : (this.startle || 0);
         this.startle = Math.max(0, (this.startle || 0) - dt * 0.15);
-        raise = st * 0.95; wantCrouch = st * 0.45;
+        raise = this.dormant === 'aim' ? 1 : st * 0.95; wantCrouch = st * 0.45;
         if (st <= 0) this.lookYaw += Math.sin(now * 0.3 + this.idx) * 0.002;
         faceYaw = st > 0 ? this.lookYaw : this.lookYaw; break;
+      }
+      // 촬영용: 바라보는 방향으로 곧게 걷거나 뛴다(테스트 진입 경로 전용)
+      case 'march': {
+        const run = this.dormant === 'run', s = run ? 3.3 : 1.3;
+        raise = run ? 0.3 : 0; faceYaw = this.lookYaw;
+        this.vel.x += (-Math.sin(this.lookYaw) * s - this.vel.x) * (1 - Math.exp(-dt * 6));
+        this.vel.z += (-Math.cos(this.lookYaw) * s - this.vel.z) * (1 - Math.exp(-dt * 6));
+        break;
       }
       case 'patrol': {
         raise = 0.0;
@@ -592,7 +579,7 @@ export class Bot {
         this.vel.z += (dz / d * s - this.vel.z) * (1 - Math.exp(-dt * 6));
         if (faceYaw === null) faceYaw = Math.atan2(-dx, -dz);
       }
-    } else {
+    } else if (this.state !== 'march') {
       this.vel.x *= Math.exp(-dt * 8); this.vel.z *= Math.exp(-dt * 8);
     }
     // 다른 봇, 플레이어와 겹치지 않게
@@ -617,7 +604,7 @@ export class Bot {
       this.yaw += Math.max(-turn, Math.min(turn, dy * Math.min(1, dt * 7)));
     }
     // 조준 방향
-    const tgt = (this.state === 'engage' || this.state === 'cover') && this.lastKnown ? this.lastKnown : null;
+    const tgt = (this.state === 'engage' || this.state === 'cover') && this.lastKnown ? this.lastKnown : this.dormant === 'aim' ? p.pos : null;
     let aimY = this.yaw, aimP = -0.1;
     if (tgt) {
       const e = this.eye; const tp = V(p.pos.x, p.pos.y + 1.2 - p.crouch * 0.35, p.pos.z);

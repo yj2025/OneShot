@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import { OUT, ensureDir, build, launch, openGame, clickStart, makeMouse } from './lib.mjs';
+import { BOT_SHOTS, BOT_STRIPS } from './botscenes.mjs';
 
 const W = 1280, H = 720, FPS = 60;
 const dir = ensureDir(path.join(OUT, 'shots'));
@@ -71,6 +72,8 @@ async function pullUntilShot(page, mouse) {
   console.log('  (0.6초 안에 발사되지 않음)');
   return false;
 }
+// --bots-only: 봇 장면만 찍는다(기준선의 봇 장면을 다시 찍을 때)
+if (!process.argv.includes('--bots-only')) {
 const VIEWS = [
   ['01-yard', 0], ['02-entrance', 1], ['03-corridor', 2], ['04-hall-windows', 3],
   ['05-office-fluorescent', 4], ['06-loading-dock-stairs', 5], ['07-doorway-to-yard', 6], ['08-bot-in-room', 7],
@@ -290,6 +293,15 @@ for (const [name, v] of [['18-fire-corridor', 2], ['19-fire-yard', 0], ['20-fire
   await strip(page, 'backpedal', null);
   await page.keyboard.up('KeyS');
   await page.close();
+}
+}
+// 봇을 가까이 찍는 장면과 움직이는 봇(2단계 ①에서 더함, scripts/botscenes.mjs). A/B에만 쓴다
+for (const s of [...BOT_SHOTS, ...BOT_STRIPS.map(x => ({ ...x, strip: true }))]) {
+  const g = await openGame(L.context, `test=1&clock=manual&seed=11&vp=${s.vp}&bots=${s.bots}`);
+  await clickStart(g.page);
+  await step(g.page, s.frames || 156);
+  if (s.strip) await strip(g.page, s.name, null); else await shot(g.page, s.name);
+  await g.page.close();
 }
 fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
 await L.browser.close();
