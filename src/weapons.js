@@ -284,7 +284,7 @@ const WEAPONS = {
     // 조준 자세: 카메라(눈)가 조준경의 사출동공에 오도록 총을 놓는다 → 광축 높이 0.152 아래, 사출동공(z 0.28) 앞
     hip: V(0.162, -0.232, -0.34), ads: V(0.0, -SCOPE.axisY, -(SCOPE.eyeZ + SCOPE.relief)), sprint: V(0.07, -0.28, -0.24), cant: 0.06 },
   pistol: { mag: 15, spareMags: 3, interval: 0.13, auto: false, reload: 1.75, recoil: 0.8, kind: 'pistol', damage: 0.85, spread: 0.003,
-    hip: V(0.09, -0.21, -0.32), ads: V(0.0, -0.085, -0.36), sprint: V(0.06, -0.28, -0.2), cant: 0.06 },
+    hip: V(0.09, -0.21, -0.32), ads: V(0.0, -0.085, -0.47), sprint: V(0.06, -0.28, -0.2), cant: 0.06 },
 };
 
 // 조준 앞섬과 관성의 축(카메라 기준): 소총은 오른쪽 겨드랑이 밑에 낀 개머리판 끝, 권총은 두 어깨 사이 앞
@@ -301,10 +301,12 @@ const PIVOT = { rifle: V(0.17, -0.2, 0.02), pistol: V(0.06, -0.2, 0.0) };
 //  sprint 달릴 때: 가슴 앞에 비스듬히 끌어안는다
 //  handle 재장전: 탄창 삽입구가 왼손 쪽을 보게 총을 돌려 몸 앞 가운데로 당긴다
 //  stow   파쿠르: 오른손에 든 채 오른쪽 아래로 처진다(쏘는 자세에서 내린다)
-// 팔꿈치 기준점(elbow): 두 마디 팔(solveArm)의 팔꿈치가 굽는 쪽이다. 손이 팔 길이 밖이거나 조준 중이면 이전 방식대로
-// 손목에서 이 점 쪽으로 팔뚝(과 팔꿈치, 위팔 일부)을 0.38~0.5 m 그린다. 어떤 자세든 팔이 화면 아래 바깥의 몸 쪽에서 들어온다
+// 팔꿈치 기준점(elbow): 두 마디 팔(solveArm)의 팔꿈치가 굽는 쪽이다. 손이 실제 어깨에서 닿지 않거나 조준 중이면
+// 손목에서 이 점 쪽 0.5 m에 둔 화면 밖의 가상 어깨에서 같은 두 마디로 푼다(solveBlended). 어떤 자세든 팔이 화면 아래 바깥의 몸 쪽에서 들어온다
 // 소총은 개머리판 끝(b)을 몸에 붙인 채 그 점을 축으로 돈다. 총 원점은 b와 회전에서 구한다(손잡이를 축으로 돌리면 총구를 숙일 때 개머리판이 렌즈 앞으로 솟는다)
 const BUTT = { rifle: V(0, 0.044, 0.36) };
+// 가상 어깨에서 푼 팔의 팔꿈치가 굽는 쪽(카메라 기준 방향): 바깥 아래
+const BEND = { R: V(0.3, -0.12, -0.05), L: V(-0.3, -0.12, -0.05) };
 const POSES = {
   rifle: {
     low: { b: V(0.18, -0.15, 0.06), r: V(-0.18, 0.0, 0.18) },
@@ -316,12 +318,14 @@ const POSES = {
   },
   pistol: {
     // 권총은 쏠 때 두 팔을 뻗어 든다(가슴 카메라에서는 화면 가운데 가까이 올라온다)
-    low: { p: V(0.04, -0.235, -0.31), r: V(-0.42, 0.1, 0.08) },
-    fire: { p: V(0.05, -0.13, -0.44), r: V(0.02, 0.02, 0.04) },
+    low: { p: V(0.035, -0.235, -0.47), r: V(-0.38, 0.08, 0.06) },
+    fire: { p: V(0.04, -0.2, -0.53), r: V(0.04, 0.02, 0.04) },
     sprint: { p: V(0.06, -0.28, -0.2), r: V(-0.55, 0.55, 0.45) },
     handle: { p: V(0.03, -0.19, -0.28), r: V(0.3, 0.22, -0.6) },
     stow: { p: V(0.18, -0.35, -0.32), r: V(-1.0, -0.5, 0.56) },
     elbow: { R: V(0.24, -0.36, 0.14), L: V(-0.24, -0.38, 0.06) },
+    // 두 팔을 앞으로 뻗으므로 팔꿈치는 옆보다 아래로 굽는다. 옆으로 굽히면 두 팔이 날개처럼 수평으로 퍼진다(A/B 66, 권총 조준 걷기)
+    bend: { R: V(0.12, -0.26, 0.0), L: V(-0.12, -0.26, 0.0) },
   },
 };
 // 개머리판 끝 b를 몸에 둔 채 회전 r로 든 총의 원점
@@ -338,9 +342,8 @@ export const SHOULDER_J = { R: V(0.19, 0.08, 0.10), L: V(-0.19, 0.08, 0.10) };
 const UPPER = 0.31, FORE = 0.27, REACH = (UPPER + FORE) * 0.985;
 // 손이 팔 길이보다 멀면 어깨를 손 쪽으로 내민다(어깨를 앞으로 빼고 몸을 튼다, 최대 12 cm). 그래도 멀면 팔을 곧게 편다.
 // pole: 팔꿈치가 굽는 쪽(자세마다, 화면 아래 바깥의 몸 쪽)
-// 닿지 않는 자세: 소총 받침손(핸드가드)은 왼쪽 어깨에서 0.69~0.74 m라 사람 팔(0.58 m + 어깨 12 cm)로 닿지 않는다. 그대로 펴면 위팔이
-// 렌즈 바로 앞을 가로지른다(out/dev/ik). 이 자리는 총을 드는 자세 자체의 문제라 2단계 ④(몸에 들린 질량으로 총을 움직이는 모형)에서 다시 짓는다.
-// 그때까지 닿지 않는 손과 조준(눈이 카메라가 되어 어깨 기준이 바뀐다) 동안은 이전 방식(팔꿈치 기준점 쪽 0.38~0.5 m 팔뚝)으로 부드럽게 넘어간다.
+// 닿지 않는 자세: 소총 받침손(핸드가드)은 왼쪽 어깨에서 0.72~0.76 m라 사람 팔(0.58 m + 어깨 12 cm)로 닿지 않는다. 그대로 펴면 위팔이
+// 렌즈 바로 앞을 가로지른다. 닿지 않는 손과 조준(눈이 카메라가 되어 어깨 기준이 바뀐다) 동안은 화면 밖의 가상 어깨로 부드럽게 넘어간다(solveBlended).
 // 반환값 ik: 두 마디 팔의 무게(1 = 해부 치수 팔), reach: 어깨를 내밀기 전 어깨~손목 거리
 function solveArm(shoulder, wrist, pole) {
   const s = shoulder.clone(), d = wrist.clone().sub(s);
@@ -358,13 +361,24 @@ function solveArm(shoulder, wrist, pole) {
   const near = elbow.clone().addScaledVector(fd, ft).length();
   // 두 마디 팔은 팔뚝이 렌즈에서 0.26 m 넘게 떨어질 때만 쓴다(0.235 m 안에서는 이전 방식). 권총을 두 손으로 앞에 들면 두 팔뚝 축이 렌즈에서 0.21~0.23 m를 지나
   // 화면 아래를 소매 덩어리로 채웠다(A/B 55: 권총 사격 장면에서 판정 4명 모두 기준선, '노란 고무 풍선 같은 팔'). 소총 오른팔은 0.27~0.30 m다
-  const ik = smooth01((REACH + 0.13 - reach) / 0.05) * smooth01((near - 0.235) / 0.025);
+  // 팔꿈치가 렌즈보다 충분히(12 cm) 아래일 때만 실제 어깨를 쓴다. 가슴 카메라에서 팔꿈치가 렌즈 높이 옆에 오면 팔뚝이 화면 옆에서 가로로 들어온다(권총을 뻗어 든 왼팔)
+  const ik = smooth01((REACH + 0.13 - reach) / 0.05) * smooth01((near - 0.235) / 0.025) * smooth01((-0.08 - elbow.y) / 0.05);
   return { shoulder: s, elbow, ik, reach, near };
 }
-// 이전 방식: 손목에서 팔꿈치 기준점 쪽으로 정해진 길이만큼 간 점(카메라 기준)
-function elbowFrom(wrist, anchor, lo = 0.38, hi = 0.5) {
-  const d = anchor.clone().sub(wrist); const L = d.length() || 1;
-  return wrist.clone().addScaledVector(d, Math.min(hi, Math.max(lo, L)) / L);
+// 화면 밖의 가상 어깨(2026-11-17 2단계 ④ 마무리): 어깨에서 닿지 않거나 팔뚝이 렌즈 바로 앞을 지나는 손은, 손목에서 팔꿈치 기준점(anchor, 화면 아래 바깥) 쪽으로
+// VREACH만큼 간 점을 어깨로 삼아 같은 두 마디(위팔 0.31, 팔뚝 0.27 m)로 푼다. 팔꿈치는 bend 쪽(바깥 아래)으로 굽는다.
+// 이전에는 손목에서 기준점 쪽으로 0.38~0.5 m짜리 팔뚝 원통 하나를 긋고 위팔과 팔꿈치를 그리지 않았다. 사람 팔뚝의 1.5~1.8배이고 굽는 데가 없어
+// 판정자들이 '어깨로 이어지지 않는 원통', '고무 풍선 같은 팔'이라 적었다(A/B 54·55·57, critic 38~43). 가슴 카메라는 어깨선보다 10 cm 앞, 8 cm 아래라
+// 실제 어깨에서 곧게 편 받침팔은 렌즈 옆 15 cm를 지나 화면 왼쪽 위를 덮는다(2단계 ④ 마감 뒤 측정). 보이는 것은 팔꿈치와 팔뚝뿐이라 가상 어깨의 자리는 드러나지 않는다
+const VREACH = 0.5;
+function virtualShoulder(wrist, anchor) {
+  return wrist.clone().addScaledVector(anchor.clone().sub(wrist).normalize(), VREACH);
+}
+// 실제 어깨의 풀이(a)와 가상 어깨를 무게 a.ik로 섞은 어깨에서 한 번 더 푼다. 두 풀이의 팔꿈치를 섞으면 위팔과 팔뚝 길이가 어긋난다
+function solveBlended(a, wrist, anchor, pole, bend) {
+  const vs = virtualShoulder(wrist, anchor);
+  const s = vs.clone().lerp(a.shoulder, a.ik), pl = vs.clone().add(bend).lerp(pole, a.ik);
+  return solveArm(s, wrist, pl);
 }
 
 class Spring {
@@ -697,18 +711,24 @@ export class Viewmodel {
     const poleL = this.plantW > 0 ? EB.L.clone().lerp(V(-0.45, -0.2, 0.1), this.plantW) : EB.L;
     const wcR = this.root.worldToLocal(wristR.clone()), wcL = this.root.worldToLocal(wristL.clone());
     const aR = solveArm(SHOULDER_J.R, wcR, EB.R), aL = solveArm(SHOULDER_J.L, wcL, poleL);
-    const oldR = elbowFrom(wcR, EB.R), oldL = elbowFrom(wcL, EB.L);
-    if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); oldL.lerp(V(-0.2, 0.02, 0.1), k); }
+    // 가상 어깨 쪽 기준점. 짚을 때 왼팔은 실제 어깨 쪽으로 곧게 뻗는다
+    const ancL = EB.L.clone();
+    if (this.plantW > 0) { const k = this.plantW * this.plantW * (3 - 2 * this.plantW); ancL.lerp(SHOULDER_J.L, k); }
     const noAds = 1 - smooth01(this.ads * 1.5);
     aR.ik *= noAds; aL.ik *= noAds;
-    const elbowR = toW(oldR.lerp(aR.elbow, aR.ik)), elbowL = toW(oldL.lerp(aL.elbow, aL.ik));
-    const shR = toW(aR.shoulder.clone()), shL = toW(aL.shoulder.clone());
+    const BD = POSES[this.current].bend || BEND;
+    const fR = solveBlended(aR, wcR, EB.R, EB.R, BD.R), fL = solveBlended(aL, wcL, ancL, poleL, BD.L);
+    const elbowR = toW(fR.elbow.clone()), elbowL = toW(fL.elbow.clone());
+    const shR = toW(fR.shoulder.clone()), shL = toW(fL.shoulder.clone());
     placeLimb(this.foreR, elbowR, wristR); placeLimb(this.foreL, elbowL, wristL);
     placeLimb(this.upR, shR, elbowR); placeLimb(this.upL, shL, elbowL);
     this.elR.position.copy(elbowR); this.elL.position.copy(elbowL);
     this.elR.quaternion.copy(this.foreR.quaternion); this.elL.quaternion.copy(this.foreL.quaternion);
-    this.upR.visible = this.elR.visible = aR.ik > 0.5; this.upL.visible = this.elL.visible = aL.ik > 0.5;
+    this.upR.visible = this.elR.visible = true; this.upL.visible = this.elL.visible = true;
     this.armsCam = { R: aR, L: aL, wR: wcR, wL: wcL };
+    // 검사용: 실제로 그린 어깨, 팔꿈치, 손목(카메라 기준)과 위팔이 보이는지
+    const cl = (v) => this.root.worldToLocal(v.clone());
+    this.armsDrawn = { R: { s: cl(shR), e: cl(elbowR), w: cl(wristR), up: this.upR.visible }, L: { s: cl(shL), e: cl(elbowL), w: cl(wristL), up: this.upL.visible } };
     this.elbowW = [elbowR, elbowL];   // 입은 사람의 위팔이 뷰모델의 빛을 가리는 자리(materials.js setBodyArms)
     this.shoulderW = [aR.ik > 0.5 ? shR : null, aL.ik > 0.5 ? shL : null];
 

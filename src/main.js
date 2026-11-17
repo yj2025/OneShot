@@ -682,7 +682,7 @@ class Game {
       // 살펴보기용: 총 자세 값을 덮어쓴다({ low: { p: [x,y,z], r: [숙임,돌림,기울임] }, alert, carry, handle, handleW })
       vmTune(o) { g.vm.tune = o || null; },
       // 살펴보기용: 지금 프레임의 팔(카메라 기준 어깨, 팔꿈치, 손목, m)
-      vmArms() { const a = g.vm.armsCam; if (!a) return null; const r = (v) => [v.x, v.y, v.z].map((x) => +x.toFixed(3)); const f = (k, w) => ({ s: r(a[k].shoulder), e: r(a[k].elbow), w: r(w), ik: +a[k].ik.toFixed(2), reach: +a[k].reach.toFixed(3), near: +a[k].near.toFixed(3) }); return { R: f('R', a.wR), L: f('L', a.wL) }; },
+      vmArms() { const a = g.vm.armsCam; if (!a) return null; const r = (v) => [v.x, v.y, v.z].map((x) => +x.toFixed(3)); const f = (k, w) => ({ s: r(a[k].shoulder), e: r(a[k].elbow), w: r(w), ik: +a[k].ik.toFixed(2), reach: +a[k].reach.toFixed(3), near: +a[k].near.toFixed(3) }); const D = g.vm.armsDrawn, dr = (k) => ({ s: r(D[k].s), e: r(D[k].e), w: r(D[k].w), up: D[k].up, upper: +D[k].s.distanceTo(D[k].e).toFixed(3), fore: +D[k].e.distanceTo(D[k].w).toFixed(3) }); return { R: { ...f('R', a.wR), drawn: dr('R') }, L: { ...f('L', a.wL), drawn: dr('L') } }; },
       // 검사용: 총의 화면 위치(총구, 총 원점, 두 손목)와 월드에 고정한 점(배경)의 화면 위치. 투영 좌표(-1~1, 어안 왜곡 전).
       //  set이 참이면 지금 카메라 앞 8 m의 점을 배경 점으로 기억한다(그 뒤로는 카메라가 돈 만큼 그 점이 화면에서 움직인다)
       vmScreen(set) {

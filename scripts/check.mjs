@@ -117,6 +117,42 @@ async function main() {
     rec('(o) 걷고 뛸 때 총과 몸이 움직인다', walkApart >= 8 && bgRange >= 12 && jumpMove > 27,
       `① 걷는 1초 동안 0.5초 떨어진 프레임의 총 위치 차 중앙값 ${walkApart.toFixed(1)} px(8 이상) ② 배경 점의 움직임 범위 ${bgRange.toFixed(1)} px(12 이상) ③ 점프와 착지 동안 총이 서 있을 때보다 움직인 최대 ${jumpMove.toFixed(1)} px(27 초과)`);
   }
+  // (p) 팔이 사람 팔의 치수로 이어진다(2단계 ④ 마무리, 2026-11-17).
+  //  2단계 ③부터 판정자들이 '어깨로 이어지지 않는 원통 끝의 작은 덩어리 손', '두 손이 화면 아래를 바위처럼 덮는다'고 적었다(A/B 54·55·57, critic 38~43).
+  //  어깨에서 닿지 않는 손(소총 받침손, 렌즈 앞을 지나는 권총 팔)은 팔꿈치 없이 손목에서 0.38~0.5 m짜리 원통 하나로 그려졌고, 권총은 두 손이 렌즈 0.34 m 앞에 모였다.
+  //  __bc.vmArms()의 drawn이 실제로 그린 어깨, 팔꿈치, 손목(카메라 기준, m)이다. 소총 낮춤·쏘기, 권총 낮춤·쏘기의 여덟 장면, 두 팔 모두에서
+  //   ① 그린 팔뚝(팔꿈치~손목)이 0.27 ± 0.02 m, 위팔(어깨~팔꿈치)이 0.31 ± 0.03 m이고 위팔이 그려진다
+  //   ② 팔꿈치가 렌즈 높이보다 아래이고 손목보다 3 cm 넘게 높지 않다(팔이 화면 위쪽을 덮지 않는다)
+  //   ③ 권총 쏘기 자세에서 두 손목이 렌즈에서 0.42 m 넘게 앞에 있다(팔을 뻗어 든다)
+  //  CHECK_ONLY=arms 이면 이 검사만 돈다
+  async function armChecks() {
+    const CASES = [['소총 낮춤 마당', 0, 'rifle', 0], ['소총 낮춤 복도', 2, 'rifle', 0], ['소총 쏘기 방', 7, 'rifle', 1], ['소총 쏘기 마당', 0, 'rifle', 1], ['소총 쏘기 홀', 3, 'rifle', 1],
+      ['권총 낮춤', 12, 'pistol', 0], ['권총 쏘기', 12, 'pistol', 1], ['권총 쏘기 방', 7, 'pistol', 1]];
+    const bad1 = [], bad2 = [], bad3 = [];
+    let foreR = [Infinity, -Infinity], upR = [Infinity, -Infinity];
+    for (const [name, view, wpn, alert] of CASES) {
+      const g = await openGame(L.context, `test=1&clock=manual&seed=11&view=${view}`), Q = g.page; await clickStart(Q);
+      const stepQ = (k) => Q.evaluate((m) => window.__bc.step(m), k);
+      await Q.evaluate((a) => window.__bc.vmTune({ alert: a, carry: 0 }), alert);
+      await stepQ(60);
+      if (wpn === 'pistol' && (await Q.evaluate(() => window.__bc.state())).player.weapon !== 'pistol') { await Q.keyboard.down('Digit2'); await stepQ(2); await Q.keyboard.up('Digit2'); }
+      await stepQ(120);
+      const a = await Q.evaluate(() => window.__bc.vmArms());
+      extraErrors.push(...g.errors); extraExternal.push(...g.external); await Q.close();
+      for (const k of ['R', 'L']) {
+        const d = a[k].drawn;
+        foreR = [Math.min(foreR[0], d.fore), Math.max(foreR[1], d.fore)]; upR = [Math.min(upR[0], d.upper), Math.max(upR[1], d.upper)];
+        if (Math.abs(d.fore - 0.27) > 0.02 || Math.abs(d.upper - 0.31) > 0.03 || !d.up) bad1.push(`${name} ${k} 팔뚝 ${d.fore} 위팔 ${d.upper}${d.up ? '' : '(안 그림)'}`);
+        if (d.e[1] >= 0 || d.e[1] > d.w[1] + 0.03) bad2.push(`${name} ${k} 팔꿈치 높이 ${d.e[1]} 손목 ${d.w[1]}`);
+        if (wpn === 'pistol' && alert && d.w[2] > -0.42) bad3.push(`${name} ${k} 손목 앞 ${(-d.w[2]).toFixed(2)} m`);
+      }
+    }
+    rec('(p) 팔이 사람 팔의 치수로 이어진다', !bad1.length && !bad2.length && !bad3.length,
+      `① 팔뚝 ${foreR[0].toFixed(2)}~${foreR[1].toFixed(2)} m, 위팔 ${upR[0].toFixed(2)}~${upR[1].toFixed(2)} m${bad1.length ? ` (벗어남 ${bad1.length}: ${bad1.slice(0, 3).join('; ')})` : ' (모두 안)'}` +
+      ` ② 팔꿈치${bad2.length ? ` 벗어남 ${bad2.length}: ${bad2.slice(0, 3).join('; ')}` : ' 모두 렌즈 아래'}` +
+      ` ③ 권총 쏘기 손목${bad3.length ? ` 벗어남: ${bad3.join('; ')}` : ' 모두 0.42 m 넘게 앞'}`);
+  }
+  if (process.env.CHECK_ONLY === 'arms') { await armChecks(); return; }
   if (process.env.CHECK_ONLY === 'motion') { await motionChecks(); return; }
 
   if (process.env.CHECK_ONLY !== 'surface') {
@@ -405,7 +441,7 @@ async function main() {
       ` / ④ 소매 채도 ${satBad.length ? '0.8배 미만 ' + satBad.join(', ') : '모든 시점 0.8배 이상'}` +
       (unseen.length ? ` / 잴 수 없는 시점 ${unseen.join(', ')}` : ''));
   }
-  if (!process.env.CHECK_ONLY) await motionChecks();
+  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); }
   if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');
