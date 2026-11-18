@@ -1,0 +1,155 @@
+{
+ "round": 74,
+ "baseline": "p2-2b",
+ "crossover": true,
+ "zoom": {
+  "x": 0,
+  "y": 0.1,
+  "w": 1,
+  "h": 0.85
+ },
+ "only": [
+  "novm"
+ ],
+ "judgments": [
+  {
+   "set": "78d3",
+   "text": "1=구분 안 됨, 2=A, 3=B, 4=구분 안 됨, 5=B"
+  },
+  {
+   "set": "78d3",
+   "text": "1=구분 안 됨, 2=A, 3=B, 4=구분 안 됨, 5=B"
+  },
+  {
+   "set": "3213",
+   "text": "1=구분 안 됨, 2=구분 안 됨, 3=B, 4=A, 5=A"
+  },
+  {
+   "set": "3213",
+   "text": "1=구분 안 됨, 2=구분 안 됨, 3=A, 4=A, 5=B"
+  }
+ ],
+ "summary": {
+  "W": 0,
+  "L": 3,
+  "T": 2,
+  "p": 1,
+  "verdict": "판정 불가",
+  "letters": {
+   "A": 6,
+   "B": 6,
+   "p": 1
+  },
+  "position": {
+   "A": {
+    "N": 1,
+    "O": 5,
+    "T": 4
+   },
+   "B": {
+    "N": 1,
+    "O": 5,
+    "T": 4
+   }
+  },
+  "conflicts": 2,
+  "oldRatio": 0.2
+ },
+ "pairs": [
+  {
+   "scene": "strip-bot-walk-near-novm.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "78d3",
+     "n": 1,
+     "newSide": "B"
+    },
+    {
+     "tag": "3213",
+     "n": 2,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-bot-fall-novm.png",
+   "result": "L",
+   "newVotes": 1,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "78d3",
+     "n": 2,
+     "newSide": "B"
+    },
+    {
+     "tag": "3213",
+     "n": 3,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-bot-shot-room-novm.png",
+   "result": "L",
+   "newVotes": 1,
+   "baseVotes": 3,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "78d3",
+     "n": 3,
+     "newSide": "A"
+    },
+    {
+     "tag": "3213",
+     "n": 5,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-bot-run-near-novm.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "78d3",
+     "n": 4,
+     "newSide": "B"
+    },
+    {
+     "tag": "3213",
+     "n": 1,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-bot-shot-yard-novm.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 4,
+   "ties": 0,
+   "sets": [
+    {
+     "tag": "78d3",
+     "n": 5,
+     "newSide": "A"
+    },
+    {
+     "tag": "3213",
+     "n": 4,
+     "newSide": "B"
+    }
+   ]
+  }
+ ]
+}

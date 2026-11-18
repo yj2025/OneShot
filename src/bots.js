@@ -46,6 +46,8 @@ export class Bot {
     this.g = game; this.idx = idx; this.spawnDef = spawn; this.patrolNodes = patrol; this.role = role;
     const rng = game.rng;
     this.rng = rng;
+    // 동작의 난수(2단계 ②): 게임 공용 난수(플레이어 탄 퍼짐과 같은 열)를 더 쓰지 않도록 봇마다 따로 둔다
+    { let a = (0x9e3779b9 ^ (idx * 7919 + 13)) >>> 0; this.mr = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
     const o = OUTFITS[idx % OUTFITS.length];
     this.height = 0.97 + rng() * 0.06; // 키 비율
     // 몸: 거리장으로 지은 옷 입은 사람 하나를 뼈 11개에 스키닝한다(body.js). 재질은 영역마다 하나(셔츠, 바지, 조끼, 장갑, 부츠, 얼굴 가리개, 띠, 보호대).
@@ -136,6 +138,9 @@ export class Bot {
     this.coverUntil = 0; this.suppressed = 0;
     this.lookYaw = this.yaw; this.thinkT = r() * 0.15;
     this.stepAcc = 0; this.hitFlinch = 0; this.flinchDir = V(0, 0, 0);
+    this.feet = null; this.gaitC = this.mr(); this.pelY = null; this.shift = 0; this.prevVel = V(0, 0, 0); this.avel = V(0, 0, 0);
+    this.stance = [this.mr() - 0.5, this.mr() - 0.5];
+    this.hrP = V(0, 0, 0); this.hrPv = V(0, 0, 0); this.hrC = V(0, 0, 0); this.hrCv = V(0, 0, 0); this.hrH = V(0, 0, 0); this.hrHv = V(0, 0, 0);
     this.group.visible = true; this.blob.visible = true;
     for (const gr of this.gear) gr.reset();
     this.pose(0, 0);
@@ -160,50 +165,166 @@ export class Bot {
     return s;
   }
 
+  // ===== 걸음(2단계 ②, 2026-11-18) =====
+  // 발은 세상에 놓인다. 디딘 발은 제자리에 있고, 든 발은 다음 디딜 자리(몸의 속도와 남은 시간으로 예측)로 호를 그리며 옮긴다.
+  // 걸을 때는 걸음 박자가 발을 들고, 서 있을 때는 발이 쉬는 자리에서 멀어지면(돌기, 밀림, 피격으로 골반이 밀림) 한 발씩 고쳐 딛는다.
+  // 그 전에는 다리가 엉덩이에 매단 진자(허벅지 sin, 무릎 -cos)라 디딘 발이 몸보다 더 움직였다(검사 (r) 154~170%).
+  footHome(s) {
+    const side = s ? 1 : -1, H = this.height, cr = this.crouch;
+    const f = V(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)), r = V(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const idle = Math.max(0, 1 - this.speed * 2) * (1 - cr);
+    const wSide = (this.idx % 2) ? 1 : -1;
+    const w = (0.115 + 0.035 * cr) * H + (side === wSide ? idle * 0.04 : 0) + this.stance[s] * 0.03;
+    const fo = cr * (s ? -0.16 : 0.26) + idle * (s ? -0.04 : 0.06) * wSide;
+    return this.pos.clone().addScaledVector(r, side * w).addScaledVector(f, fo).add(V(this.hrP.x, 0, this.hrP.z));
+  }
+
+  gait(dt) {
+    const H = this.height, sp = this.speed, cr = this.crouch, m = this.mr, L = this.g.level;
+    const home = [this.footHome(0), this.footHome(1)];
+    let F = this.feet;
+    if (!F || Math.hypot(F[0].p.x - home[0].x, F[0].p.z - home[0].z) > 1.5 || Math.abs(F[0].p.y - this.pos.y) > 0.8) {
+      // 처음이거나 테스트 경로로 자리를 옮김
+      this.feet = F = [0, 1].map(s => ({ p: home[s].clone().setY(this.pos.y), from: V(0, 0, 0), t: -1, dur: 0.3, lift: 0.07, vr: 1, jit: 0, gy: this.pos.y, k: null }));
+      return;
+    }
+    const run = Math.min(1, Math.max(0, (sp - 2.2) / 1.1));
+    const duty = 0.63 - 0.06 * Math.min(1, sp / 2) - 0.2 * run;   // 한 걸음 주기에서 발이 땅에 있는 비율(달리면 0.37: 두 발이 다 뜨는 순간이 있다)
+    const stepLen = (0.42 + 0.2 * sp) * H * (1 - 0.3 * cr);         // 한 걸음 길이(1.3 m/s 0.68 m, 3.3 m/s 1.08 m)
+    const Tc = 2 * stepLen / Math.max(sp, 0.05);
+    const moving = sp > 0.25;
+    if (moving) this.gaitC += dt / Tc;
+    const r = V(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    for (let s = 0; s < 2; s++) {
+      const ft = F[s], o = F[1 - s];
+      const k = Math.floor(this.gaitC + s * 0.5 - duty);
+      if (ft.k === null) ft.k = k;
+      if (ft.t < 0) {
+        let dur = 0;
+        const e = Math.hypot(ft.p.x - home[s].x, ft.p.z - home[s].z), eo = Math.hypot(o.p.x - home[1 - s].x, o.p.z - home[1 - s].z);
+        if (moving) { if (k > ft.k) dur = Math.min(0.45, (1 - duty) * Tc); }
+        else if (o.t < 0 && e > 0.14 && e >= eo) dur = 0.24 + 0.1 * m();
+        // 뒤에 남은 발: 출발하며 가속할 때는 걸음 박자가 느려 디딘 발이 0.8 m 뒤에 남았고 골반이 그 발에 닿도록 주저앉았다. 박자와 상관없이 든다
+        if (!dur && e > Math.max(0.45, 0.55 * stepLen) && (o.t < 0 || o.t > 0.6 || e > 0.7)) dur = 0.26;
+        ft.k = k;
+        if (dur > 0) {
+          ft.from.copy(ft.p); ft.t = 0; ft.dur = Math.max(0.12, dur);
+          ft.vr = 0.92 + m() * 0.16; ft.jit = (m() - 0.5) * 0.045;
+          ft.lift = (0.045 + 0.075 * Math.min(1, sp / 3)) * (1 - 0.45 * cr) * (0.75 + m() * 0.5);
+          const g0 = this.footTarget(s, home[s], duty, Tc, moving, r);
+          const gh = L.groundHeight(g0.x, g0.z, this.pos.y, 0.05, 0.42); ft.gy = gh > -0.4 && Math.abs(gh - this.pos.y) < 0.45 ? gh : this.pos.y;   // 실내 바닥(0.7 m)에서는 바깥 땅을 돌려줄 수 있다
+        }
+      }
+      if (ft.t >= 0) {
+        ft.t = Math.min(1, ft.t + dt / ft.dur);
+        const tgt = this.footTarget(s, home[s], duty, Tc, moving, r);
+        { const gh = L.groundHeight(tgt.x, tgt.z, this.pos.y, 0.05, 0.42); ft.gy = gh > -0.4 && Math.abs(gh - this.pos.y) < 0.45 ? gh : this.pos.y; }   // 단을 오르내리면 디딜 높이가 바뀐다
+        // 발꿈치부터 들고 나서 앞으로 옮기고, 거의 다 옮긴 뒤 내려 딛는다(수평은 t 0.08~0.92, 높이는 앞쪽이 빨리 오른다)
+        const u = Math.max(0, Math.min(1, (ft.t - 0.08) / 0.84)), e = u * u * (3 - 2 * u);
+        ft.p.lerpVectors(ft.from, tgt, e);
+        // 단을 오를 때는 발을 먼저 단 높이까지 올리고, 내려갈 때는 거의 다 옮긴 뒤 내린다
+        const ev = ft.gy > ft.from.y ? Math.min(1, ft.t * 2.2) : e;
+        ft.p.y = ft.from.y + (ft.gy - ft.from.y) * ev * ev * (3 - 2 * ev) + Math.pow(Math.sin(Math.PI * ft.t), 0.7) * ft.lift;
+        if (ft.t >= 1) {
+          ft.t = -1; ft.p.y = ft.gy;
+          // 디딤: 골반과 가슴이 한 번 내려앉고 발소리가 난다
+          this.hrPv.y -= (0.05 + 0.28 * Math.min(1, sp / 3.3)) * (0.8 + m() * 0.4);
+          this.hrCv.y -= 0.06 + 0.12 * Math.min(1, sp / 3.3);
+          this.g.events.push({ type: 'botStep', pos: ft.p.clone(), mat: L.floorMaterial(ft.p.x, this.pos.y, ft.p.z), speed: Math.max(sp, 0.4) });
+        }
+      }
+    }
+  }
+
+  // 든 발이 내려앉을 자리: 쉬는 자리 + 속도 × (남은 흔들기 시간 + 디딤 시간의 반). 디딘 발이 디딤의 한가운데에서 엉덩이 밑을 지나간다
+  footTarget(s, home, duty, Tc, moving, r) {
+    const ft = this.feet[s];
+    const rem = (1 - Math.max(0, ft.t)) * ft.dur, stance = moving ? duty * Tc : 0;
+    return home.clone().addScaledVector(this.avel, (rem + stance * 0.5) * ft.vr).addScaledVector(r, ft.jit);
+  }
+
+  // 피격, 디딤, 가속에 반응하는 감쇠 스프링 층(골반, 가슴, 머리의 어긋남)
+  springs(dt) {
+    const ax = (this.avel.x - this.prevVel.x) / Math.max(dt, 1e-3), az = (this.avel.z - this.prevVel.z) / Math.max(dt, 1e-3);
+    this.prevVel.copy(this.avel);
+    const S = (x, v, k, c, fx, fy, fz, mx) => {
+      v.x += (-k * x.x - c * v.x + fx) * dt; v.y += (-k * x.y - c * v.y + fy) * dt; v.z += (-k * x.z - c * v.z + fz) * dt;
+      x.addScaledVector(v, dt);
+      const l = x.length(); if (l > mx) { x.multiplyScalar(mx / l); v.multiplyScalar(0.5); }
+    };
+    const cl = (a) => Math.max(-30, Math.min(30, a));
+    S(this.hrP, this.hrPv, 16, 6, 0, 0, 0, 0.32);   // 골반: 맞은 뒤 천천히 돌아온다(전에는 34·7.5로 0.2초 만에 꼿꼿이 서서 '맞고-회복-쓰러짐'으로 보였다)
+    S(this.hrC, this.hrCv, 70, 9, -cl(ax) * 0.35, 0, -cl(az) * 0.35, 0.3);
+    S(this.hrH, this.hrHv, 130, 11, -cl(ax) * 0.15, 0, -cl(az) * 0.15, 0.2);
+  }
+
   pose(t, dt) {
     const f = V(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)), r = V(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     const H = this.height;
     const sp = Math.min(1, this.speed / 3.5);
-    const ph = this.walkPhase;
     const cr = this.crouch;
     const idle = Math.max(0, 1 - this.speed * 2) * (1 - cr);
     const wSide = (this.idx % 2) ? 1 : -1;
-    const legLen = 0.46 * H;
-    const legs = [];
-    for (const side of [-1, 1]) {
-      const p = ph + (side < 0 ? 0 : Math.PI);
-      let a = Math.sin(p) * (0.25 + sp * 0.35) * Math.min(1, this.speed * 1.5) + cr * 1.15 * (side < 0 ? 1.0 : 0.25);
-      let kb = Math.max(0, -Math.cos(p)) * (0.4 + sp * 0.7) * Math.min(1, this.speed * 1.5) + cr * (side < 0 ? 1.35 : 2.3) + 0.16 + (side < 0 ? 0.05 : 0);
-      a += 0.08 + (side < 0 ? 0.05 : -0.02) + idle * (side === wSide ? -0.04 : 0.16);
-      kb += idle * (side === wSide ? 0.0 : 0.32);
-      const hip = V(0, 0, 0).addScaledVector(r, side * 0.11 * H);
-      const knee = hip.clone().addScaledVector(f, Math.sin(a) * legLen).add(V(0, -Math.cos(a) * legLen, 0));
-      const b = a - kb;
-      const foot = knee.clone().addScaledVector(f, Math.sin(b) * legLen).add(V(0, -Math.cos(b) * legLen, 0));
-      legs.push({ hip, knee, foot });
+    if (!this.feet || dt === 0) this.gait(0);
+    const F = this.feet;
+    const LT = 0.455 * H, LS = 0.435 * H, REACH = (LT + LS) * 0.995, HIPW = 0.11 * H, HIPD = 0.05;
+    const run = Math.min(1, Math.max(0, (this.speed - 2.2) / 1.1));
+    // 골반: 무게를 디딘 발 쪽으로 옮기고, 디딘 발이 닿는 높이를 넘지 않는다(걸으면 두 발로 설 때 낮아지는 뒤집힌 진자)
+    let cx = 0, cz = 0, n = 0;
+    for (const ft of F) if (ft.t < 0 || ft.t > 0.9) { cx += ft.p.x; cz += ft.p.z; n++; }
+    const lat = n ? (cx / n - this.pos.x) * r.x + (cz / n - this.pos.z) * r.z : 0;
+    const shiftT = lat * (0.5 - 0.3 * run) + idle * wSide * (0.035 + 0.012 * Math.sin(t * 0.37 + this.idx));
+    const kk = dt > 0 ? 1 - Math.exp(-dt * 9) : 1;
+    this.shift += (shiftT - this.shift) * kk;
+    const pelvis = this.pos.clone().addScaledVector(r, this.shift).addScaledVector(f, -cr * 0.06).add(this.hrP);
+    const base = this.pos.y + 0.06 + (LT + LS) * (0.975 - 0.035 * run - 0.02 * sp) + HIPD - cr * 0.42 * H + this.hrP.y;
+    const dlt = Math.max(-0.4, Math.min(0.4, (F[0].p.x - F[1].p.x) * f.x + (F[0].p.z - F[1].p.z) * f.z));
+    const tw = Math.max(-0.22, Math.min(0.22, dlt * 0.38)) * (1 - cr * 0.7);   // 앞으로 나간 발 쪽 엉덩이가 앞으로 돈다
+    const rp = r.clone().multiplyScalar(Math.cos(tw)).addScaledVector(f, -Math.sin(tw));
+    let yMax = Infinity;
+    for (let s = 0; s < 2; s++) {
+      const ft = F[s]; if (!(ft.t < 0 || ft.t > 0.85)) continue;
+      const hx = pelvis.x + rp.x * (s ? 1 : -1) * HIPW, hz = pelvis.z + rp.z * (s ? 1 : -1) * HIPW;
+      const hd = Math.hypot(hx - ft.p.x, hz - ft.p.z);
+      // 뒤에 남은 발은 발끝으로 서서(발꿈치가 들려) 8 cm까지 더 닿는다
+      const behind = (ft.p.x - hx) * f.x + (ft.p.z - hz) * f.z < -0.1 ? 0.08 : 0;
+      yMax = Math.min(yMax, ft.p.y + 0.06 + behind + Math.sqrt(Math.max(0, REACH * REACH - hd * hd)) + HIPD);
     }
-    const drop = -Math.min(legs[0].foot.y, legs[1].foot.y) + 0.06;
-    const bounce = Math.abs(Math.sin(ph)) * 0.025 * Math.min(1, this.speed);
-    const pelvis = this.pos.clone().add(V(0, drop + bounce, 0)).addScaledVector(f, -cr * 0.05).addScaledVector(r, idle * wSide * (0.045 + 0.012 * Math.sin(t * 0.37 + this.idx)));
-    const [L, R] = legs;
-    this.J[J.hipL].copy(pelvis).add(L.hip).add(V(0, -0.05, 0)); this.J[J.knL].copy(pelvis).add(L.knee); this.J[J.ftL].copy(pelvis).add(L.foot);
-    this.J[J.hipR].copy(pelvis).add(R.hip).add(V(0, -0.05, 0)); this.J[J.knR].copy(pelvis).add(R.knee); this.J[J.ftR].copy(pelvis).add(R.foot);
+    const py = Math.min(base, yMax);
+    if (this.pelY === null || dt === 0) this.pelY = py; else this.pelY += (py - this.pelY) * (1 - Math.exp(-dt * 20));
+    pelvis.y = Math.min(this.pelY, yMax + 0.01);
     this.J[J.pelvis].copy(pelvis);
+    // 다리: 엉덩이에서 발목까지 두 마디 IK. 무릎은 앞(조금 바깥)으로 굽는다. 흔드는 다리 쪽 골반이 조금 내려간다
+    for (let s = 0; s < 2; s++) {
+      const side = s ? 1 : -1, ft = F[s];
+      const sw = ft.t >= 0 ? Math.sin(Math.PI * ft.t) * Math.min(1, this.speed * 1.5) : 0;
+      const hip = pelvis.clone().addScaledVector(rp, side * HIPW).add(V(0, -HIPD - sw * 0.025 * (1 - run), 0));
+      const ank = ft.p.clone().add(V(0, 0.06, 0));
+      const d = ank.clone().sub(hip); let dl = d.length();
+      if (dl > LT + LS - 1e-3) { d.multiplyScalar((LT + LS - 1e-3) / dl); dl = LT + LS - 1e-3; ank.copy(hip).add(d); }
+      const ax = d.clone().divideScalar(dl);
+      const a = (LT * LT - LS * LS + dl * dl) / (2 * dl), h = Math.sqrt(Math.max(0, LT * LT - a * a));
+      const bend = f.clone().addScaledVector(r, side * 0.07); bend.addScaledVector(ax, -bend.dot(ax)).normalize();
+      const knee = hip.clone().addScaledVector(ax, a).addScaledVector(bend, h);
+      const [jh, jk, jf] = s ? [J.hipR, J.knR, J.ftR] : [J.hipL, J.knL, J.ftL];
+      this.J[jh].copy(hip); this.J[jk].copy(knee); this.J[jf].copy(ank);
+    }
     const lean = 0.08 + this.aimRaise * 0.12 + cr * 0.25 + sp * 0.12;
-    const flinch = this.flinchDir.clone().multiplyScalar(this.hitFlinch * 0.25);
-    const spineUp = V(0, 1, 0).addScaledVector(f, Math.sin(lean) + idle * 0.012 * Math.sin(t * 1.3 + this.idx)).addScaledVector(r, -idle * wSide * 0.06).add(flinch).normalize();
-    const chest = pelvis.clone().addScaledVector(spineUp, 0.5 * H);
-    // 조준하면 상체가 조준 방향으로 비틀림
-    const twist = Math.max(-0.6, Math.min(0.6, angDiff(this.aimYaw, this.yaw)));
+    const spineUp = V(0, 1, 0).addScaledVector(f, Math.sin(lean) + idle * 0.012 * Math.sin(t * 1.3 + this.idx)).addScaledVector(r, -idle * wSide * 0.06 - this.shift * 0.25).normalize();
+    const chest = pelvis.clone().addScaledVector(spineUp, 0.5 * H).add(this.hrC);
+    chest.sub(pelvis).setLength(0.5 * H).add(pelvis);
+    // 조준하면 상체가 조준 방향으로 비틀림. 걸을 때 어깨는 골반과 반대로 돈다
+    const twist = Math.max(-0.6, Math.min(0.6, angDiff(this.aimYaw, this.yaw))) - tw * 0.6 * (1 - this.aimRaise * 0.7);
     const tf = V(-Math.sin(this.yaw + twist), 0, -Math.cos(this.yaw + twist)), tr = V(Math.cos(this.yaw + twist), 0, -Math.sin(this.yaw + twist));
     this.J[J.chest].copy(chest);
-    const headDir = spineUp.clone().addScaledVector(tf, 0.12 + this.aimPitch * 0.15).normalize();
-    this.J[J.head].copy(chest).addScaledVector(headDir, 0.215 * H);
+    const sU = chest.clone().sub(pelvis).normalize();
+    const headDir = sU.clone().addScaledVector(tf, 0.12 + this.aimPitch * 0.15).normalize().multiplyScalar(0.215 * H).add(this.hrH).setLength(0.215 * H);
+    this.J[J.head].copy(chest).add(headDir);
     this.J[J.shL].copy(chest).addScaledVector(tr, -0.19 * H).add(V(0, -0.04, 0));
     this.J[J.shR].copy(chest).addScaledVector(tr, 0.19 * H).add(V(0, -0.04, 0));
-    // 총 방향: 조준 중이면 aimYaw/aimPitch, 아니면 앞으로 낮게
+    // 총 방향: 조준 중이면 aimYaw/aimPitch, 아니면 앞으로 낮게. 낮춰 든 총은 걸음마다 좌우로 조금 흔들린다
     const gp = this.aimPitch * this.aimRaise + (-0.5) * (1 - this.aimRaise);
-    const gy = this.aimYaw;
+    const gy = this.aimYaw + Math.sin(this.gaitC * Math.PI * 2) * 0.06 * Math.min(1, this.speed) * (1 - this.aimRaise);
     const gdir = V(-Math.sin(gy) * Math.cos(gp), Math.sin(gp), -Math.cos(gy) * Math.cos(gp));
     const gside = V(Math.cos(gy), 0, -Math.sin(gy));
     const stock = this.J[J.shR].clone().addScaledVector(gside, -0.05).add(V(0, -0.02 - (1 - this.aimRaise) * 0.12, 0)).addScaledVector(gdir, 0.06 + (1 - this.aimRaise) * 0.1);
@@ -276,6 +397,7 @@ export class Bot {
     this.hp -= dmg;
     this.alerted = true;
     this.hitFlinch = 1; this.flinchDir.copy(dir).setY(0).normalize();
+    this.impact(part, dir, point, 1);
     this.suppressed = now;
     if (!this.lastKnown) this.lastKnown = this.g.player.pos.clone();
     if (this.hp <= 0) { this.die(dir, point, part); return true; }
@@ -286,6 +408,23 @@ export class Bot {
       this.shotCool = Math.min(this.shotCool, 0.12 + this.rng() * 0.25); this.aimErr = Math.max(this.aimErr, 0.06);
     }
     return false;
+  }
+
+  // 맞은 자리의 충격(2단계 ②). 몸통은 맞은 높이에 따라 가슴과 골반에 나눠 주고, 머리는 젖혀지고, 다리는 무릎이 꺾여 주저앉는다.
+  // 크기와 방향은 매번 다르다. 그 전에는 등뼈를 맞은 방향으로 0.25 기울였다 돌아오는 것 하나였다
+  impact(part, dir, point, gain) {
+    const m = this.mr, d = dir.clone().setY(0); if (d.lengthSq() < 1e-6) d.set(0, 0, 1); d.normalize();
+    const q = (0.75 + m() * 0.5) * gain, side = V(-d.z, 0, d.x).multiplyScalar((m() - 0.5) * 0.8);
+    const pv = this.J[J.pelvis], cv = this.J[J.chest];
+    if (part === 'head') { this.hrHv.addScaledVector(d, 2.6 * q).add(V(0, 0.4 * q, 0)); this.hrCv.addScaledVector(d, 0.8 * q); this.hrPv.addScaledVector(d, 0.25 * q); }
+    else if (part === 'torso') {
+      const hi = Math.max(0, Math.min(1, (point.y - pv.y) / Math.max(0.1, cv.y - pv.y)));
+      this.hrCv.addScaledVector(d, (0.7 + 1.1 * hi) * q).addScaledVector(side, q); this.hrPv.addScaledVector(d, (0.25 + 0.9 * (1 - hi)) * q).add(V(0, -0.35 * q, 0));
+      this.hrHv.addScaledVector(d, -0.6 * q).add(V(0, -0.3 * q, 0));
+    } else if (point.y < pv.y) { this.hrPv.addScaledVector(d, 0.5 * q).add(V(0, -1.1 * q, 0)); this.hrCv.addScaledVector(d, -0.3 * q); this.crouch = Math.min(1, this.crouch + 0.3 * q); }
+    else { this.hrCv.addScaledVector(d, 0.6 * q).addScaledVector(side, 1.2 * q); }
+    // 맞으면 총구가 처진다(A/B 73·74: 총 든 팔이 뻣뻣하게 위로 들리는 것이 연출로 읽혔다). 몸통을 맞으면 무릎도 조금 꺾여 그 자세가 남는다
+    if (this.alive) { this.aimYaw += (m() - 0.5) * 0.3 * q; this.aimPitch -= (0.03 + m() * 0.09) * q; if (part === 'torso') this.crouch = Math.min(1, this.crouch + 0.22 * q); }
   }
 
   die(dir, point, part) {
@@ -309,7 +448,17 @@ export class Bot {
     const rest = EDGES.map(([a, b]) => P[a].distanceTo(P[b]));
     // 총: 두 점 강체
     const g0 = this.gun.position.clone(), g1 = this.muzzleWorld();
-    this.ragdoll = { P, prev, rest, t: 0, gun: { a: g0, b: g1, pa: g0.clone().addScaledVector(dir, -dt * 1.5).add(V(0, dt, 0)), pb: g1.clone().addScaledVector(dir, -dt * 0.5), len: g0.distanceTo(g1) }, sleep: false };
+    // 근육이 남은 인형(2단계 ②): 몸통 틀에 대한 관절 자리를 기억해 두고, 관절마다 정한 시간에 걸쳐 그 자세로 당기는 힘을 푼다.
+    //  다리는 바로 풀려 무릎이 꺾이고, 팔은 0.06~0.2초, 등과 머리는 0.15~0.45초 버틴다. 풀리는 차례와 시간은 매번 다르다
+    const m = this.mr, fr = ragFrame(P), loc = P.map(p => { const v = p.clone().sub(P[0]); return [v.dot(fr.s), v.dot(fr.u), v.dot(fr.f)]; });
+    const lg = [m() * 0.08, m() * 0.08], ar = 0.06 + m() * 0.14;   // 다리는 바로, 팔은 0.06~0.2초에 풀린다(A/B 73·74: 오래 버티는 팔과 다리가 '팔을 휘젓다 늦게 쓰러진다'로 읽혔다)
+    // 상체는 맞은 방향으로 넘어간다(무릎만 꺾여 꿇어앉은 채 멈추지 않게)
+    { const tp = 0.25 + m() * 0.35, dh = dir.clone().setY(0).normalize(); for (const [i, k] of [[J.chest, 1], [J.head, 1.2], [J.shL, 1], [J.shR, 1]]) prev[i].addScaledVector(dh, -tp * k * dt); }   // 속도는 이전 위치(prev)로 준다
+    const hold = [0, 0.25 + m() * 0.2, 0.15 + m() * 0.2, ar, ar * (0.8 + m() * 0.3), ar * (0.6 + m() * 0.3), ar, ar * (0.8 + m() * 0.3), ar * (0.6 + m() * 0.3), lg[0] + 0.1, lg[0], lg[0], lg[1] + 0.1, lg[1], lg[1]];
+    // 총은 손에서 빠져 손 옆에 떨어진다(그 전에는 몸과 같이 넘어가 몸을 뚫고 섰다, A/B 72)
+    const gth = V(-dir.z, 0, dir.x).multiplyScalar((m() < 0.5 ? -1 : 1) * (0.2 + m() * 0.3)).add(V(0, 0.05 + m() * 0.15, 0));   // 손에서 놓쳐 손 옆에 떨어진다(A/B 76: 멀리 던진 총이 몸 옆의 긴 막대로 읽혔다)
+    const leg = [m(), m()];   // 누운 뒤 다리를 펴는 정도(반쯤 굽힘~거의 폄), 다리마다 다르다
+    this.ragdoll = { leg, loc, hold, P, prev, rest, t: 0, gun: { a: g0, b: g1, pa: g0.clone().addScaledVector(dir, -dt * 1.5).add(V(0, dt, 0)).addScaledVector(gth, -dt), pb: g1.clone().addScaledVector(dir, -dt * 0.5).addScaledVector(gth, -dt * 0.5).add(V(0, -dt * 0.8, 0)), len: g0.distanceTo(g1) }, sleep: false };
     this.g.events.push({ type: 'botDown', bot: this.idx, pos: this.pos.clone() });
   }
 
@@ -342,10 +491,27 @@ export class Bot {
         }
         const G = R.gun; const d = G.b.clone().sub(G.a); const l = d.length() || 1e-5; const k = (l - G.len) / l * 0.5; G.a.addScaledVector(d, k); G.b.addScaledVector(d, -k);
       }
-      // 바닥·벽 충돌
-      const pts = [...R.P.map((p, i) => [p, R.prev[i]]), [R.gun.a, R.gun.pa], [R.gun.b, R.gun.pb]];
-      for (const [p, q] of pts) {
-        const rad = 0.07;
+      // 근육: 몸통 틀 기준의 죽기 직전 자세로 당긴다. 다리는 골반과, 팔과 머리는 가슴과 나눠 움직여 몸을 떠받친다
+      if (R.loc) {
+        const fr = ragFrame(R.P), P0 = R.P[0];
+        for (let i = 1; i < 15; i++) {
+          const T = R.hold[i]; if (!(R.t < T)) continue;
+          const k = 0.25 * Math.pow(1 - R.t / T, 1.5), l = R.loc[i];
+          const c = P0.clone().addScaledVector(fr.s, l[0]).addScaledVector(fr.u, l[1]).addScaledVector(fr.f, l[2]).sub(R.P[i]).multiplyScalar(k);
+          const base = i >= J.hipL ? R.P[0] : R.P[1];
+          if (i === J.chest) { R.P[i].addScaledVector(c, 0.5); R.P[0].addScaledVector(c, -0.5); }
+          else { R.P[i].addScaledVector(c, 0.6); base.addScaledVector(c, -0.4); }
+        }
+      }
+      // 누운 뒤(몸통이 거의 수평): 근육이 풀린 팔다리는 무게로 펴진다. 접힌 다리를 조금씩 늘여 몸 밑에 깔린 덩어리로 멈추지 않게 한다
+      if (R.t > 0.6 && R.P[1].y - R.P[0].y < 0.22) {
+        for (const [a, b, L0] of [[J.hipL, J.ftL, 0.62 + 0.12 * R.leg[0]], [J.hipR, J.ftR, 0.62 + 0.12 * R.leg[1]], [J.shL, J.haL, 0.42], [J.shR, J.haR, 0.42]]) {
+          const d = R.P[b].clone().sub(R.P[a]), l = d.length(); if (l < L0 && l > 1e-4) R.P[b].addScaledVector(d, (L0 - l) / l * 0.03);
+        }
+      }
+      // 바닥·벽 충돌. 몸통 점은 몸의 두께만큼 반경을 둔다(그 전에는 모두 7 cm라 몸통이 바닥에 납작하게 깔렸다)
+      const pts = [...R.P.map((p, i) => [p, R.prev[i], RAD[i]]), [R.gun.a, R.gun.pa, 0.04], [R.gun.b, R.gun.pb, 0.03]];
+      for (const [p, q, rad] of pts) {
         const gh = L.groundHeight(p.x, p.z, p.y + 0.15, 0.0, 0.3);
         if (p.y < gh + rad) {
           p.y = gh + rad;
@@ -355,6 +521,10 @@ export class Bot {
         }
         L.collide(p, rad, p.y - 0.05, 0.1, 0.0);
       }
+      // 총은 몸통을 뚫지 않는다
+      for (const p of [R.gun.a, R.gun.b]) for (const i of [0, 1, 2, 3, 6, 9, 12]) { const d = p.clone().sub(R.P[i]), l = d.length(), rr = RAD[i] + 0.04; if (l < rr && l > 1e-5) p.addScaledVector(d, (rr - l) / l); }
+      // 경첩: 무릎은 몸 앞쪽으로만, 팔꿈치는 몸 앞쪽으로 크게 꺾이지 않는다
+      hinge(R.P);
     }
     // 정지 판정
     let e = 0; for (let i = 0; i < 15; i++) e += R.P[i].distanceToSquared(R.prev[i]);
@@ -392,6 +562,7 @@ export class Bot {
         this.startle = 1; this.startleDelay = 0.12 + this.rng() * 0.25;
         this.lookYaw = Math.atan2(-(pos.x - this.pos.x), -(pos.z - this.pos.z));
         this.hitFlinch = Math.max(this.hitFlinch, 0.5); this.flinchDir.set(this.pos.x - pos.x, 0, this.pos.z - pos.z).normalize();
+        this.hrCv.addScaledVector(this.flinchDir, -0.35 * (0.7 + this.mr() * 0.6)); this.hrPv.y -= 0.25;
       }
       return;
     }
@@ -446,6 +617,7 @@ export class Bot {
   update(dt, now) {
     for (let i = 0; i < 15; i++) this.prevJ[i].copy(this.J[i]);
     if (!this.alive) { this.stepRagdoll(dt); this.render(); return; }
+    const px0 = this.pos.x, pz0 = this.pos.z;
     const g = this.g, p = g.player, r = this.rng, L = g.level;
     // 촬영용(테스트 진입 경로 ?bots=…,dead): 첫 프레임에 플레이어 쪽에서 가슴에 맞은 것처럼 쓰러진다
     if (this.testKill) { this.testKill = false; const c = this.chest, d = c.clone().sub(V(p.pos.x, p.pos.y + 1.3, p.pos.z)).normalize(); this.die(d, c, 'torso'); this.stepRagdoll(dt); this.render(); return; }
@@ -590,12 +762,12 @@ export class Bot {
     L.collide(this.pos, 0.28, this.pos.y, 1.7);
     const gh = L.groundHeight(this.pos.x, this.pos.z, this.pos.y, 0.15, 0.42);
     if (gh > -0.4) this.pos.y += (gh - this.pos.y) * Math.min(1, dt * 16);
-    this.speed = Math.hypot(this.vel.x, this.vel.z);
+    // 걸음은 실제로 움직인 속도를 쓴다(벽이나 방벽에 막혀 서 있는데 발만 원래 속도로 앞으로 디뎌 다리가 벌어지고 주저앉았다, A/B 72)
+    { const k = 1 - Math.exp(-dt * 12), ax = (this.pos.x - px0) / Math.max(dt, 1e-3), az = (this.pos.z - pz0) / Math.max(dt, 1e-3); this.avel.x += (Math.max(-6, Math.min(6, ax)) - this.avel.x) * k; this.avel.z += (Math.max(-6, Math.min(6, az)) - this.avel.z) * k; }
+    this.speed = Math.hypot(this.avel.x, this.avel.z);
     // 걸음 위상 (보폭에 맞춤) 과 발소리
     const stride = 0.7 + Math.min(1, this.speed / 3.5) * 0.45;
     this.walkPhase += this.speed / stride * Math.PI * dt;
-    this.stepAcc += this.speed * dt;
-    if (this.stepAcc > stride * 0.98) { this.stepAcc = 0; g.events.push({ type: 'botStep', pos: this.pos.clone(), mat: L.floorMaterial(this.pos.x, this.pos.y, this.pos.z), speed: this.speed }); }
 
     // 몸 회전: 사람처럼 약간의 지연
     if (faceYaw !== null) {
@@ -615,6 +787,8 @@ export class Bot {
     this.aimYaw += angDiff(aimY, this.aimYaw) * ak; this.aimPitch += (aimP - this.aimPitch) * ak;
     this.aimRaise += (raise - this.aimRaise) * (1 - Math.exp(-dt * 5));
     this.crouch += (wantCrouch - this.crouch) * (1 - Math.exp(-dt * 5));
+    this.springs(dt);
+    this.gait(dt);
     this.pose(now, dt);
     this.render();
   }
@@ -629,6 +803,22 @@ export class Bot {
     const right = new THREE.Vector3().crossVectors(dir, UP).normalize(); const up2 = new THREE.Vector3().crossVectors(right, dir);
     dir.addScaledVector(right, r.gauss() * err).addScaledVector(up2, r.gauss() * err * 0.8).normalize();
     g.botShot(this, m, dir);
+  }
+}
+
+// 쓰러짐의 몸통 틀: u 골반→가슴, s 왼어깨→오른어깨(u에 수직), f = u × s(몸 앞)
+function ragFrame(P) {
+  const u = P[1].clone().sub(P[0]).normalize(), s = P[6].clone().sub(P[3]); s.addScaledVector(u, -s.dot(u)).normalize();
+  return { u, s, f: new THREE.Vector3().crossVectors(u, s) };
+}
+const RAD = [0.13, 0.14, 0.11, 0.08, 0.055, 0.05, 0.08, 0.055, 0.05, 0.09, 0.065, 0.06, 0.09, 0.065, 0.06];
+function hinge(P) {
+  const fr = ragFrame(P);
+  for (const [a, b, c, mn, mx] of [[9, 10, 11, 0.015, 9], [12, 13, 14, 0.015, 9], [3, 4, 5, -9, 0.08], [6, 7, 8, -9, 0.08]]) {
+    const ax = P[c].clone().sub(P[a]); const l = ax.length(); if (l < 1e-4) continue; ax.divideScalar(l);
+    const v = P[b].clone().sub(P[a]); const perp = v.addScaledVector(ax, -v.dot(ax));
+    const fd = perp.dot(fr.f);
+    if (fd < mn) P[b].addScaledVector(fr.f, mn - fd); else if (fd > mx) P[b].addScaledVector(fr.f, mx - fd);
   }
 }
 

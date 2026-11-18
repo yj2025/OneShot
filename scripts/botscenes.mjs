@@ -17,4 +17,18 @@ export const BOT_STRIPS = [
   { name: 'bot-walk-yard', vp: '6,20,0.22,0', bots: '0,2.31,17.23,-1.35,march', frames: 60 },
   { name: 'bot-run-yard', vp: '6,20,0.22,0', bots: '0,-0.13,17.78,-1.35,run', frames: 40 },
   { name: 'bot-walk-room', vp: '8,-5.6,3.1416,0', bots: '1,7.4,-3.2,-1.5708,march', frames: 30 },
+  // 2단계 ②(2026-11-18): 플레이어가 봇 가슴을 겨눠 2프레임과 14프레임에 쏜다(fire). 첫 발에 맞아 움찔하고 둘째 발에 쓰러진다.
+  //  시점은 총구 방향이 봇 가슴을 지나도록 scripts/_aimprobe.mjs로 맞췄다. 봇을 맞히는 테스트 API 없이 플레이어 입력만 쓰므로 기준선 빌드에서도 같은 절차로 찍힌다
+  { name: 'bot-shot-room', vp: '8,-5.6,-2.9353,0.0241', bots: '1,8.4,-3.1,0.3,idle', fire: [2, 14] },
+  { name: 'bot-shot-yard', vp: '6,20,0.4782,0.0068', bots: '0,4.2,16.4,-0.5,idle', fire: [2, 14] },
+  // 2단계 ②: 봇이 가까이(2.3 m)서 걷고 뛰는 묶음. 위의 걷기 묶음은 봇이 작아 시트 크기에서 다리 움직임이 보이지 않았다(A/B 70)
+  { name: 'bot-walk-near', vp: '0,16,0,-0.12', bots: '0,-2.7,13.9,-1.5708,march', frames: 20 },
+  { name: 'bot-run-near', vp: '0,16,0,-0.12', bots: '0,-3.9,13.6,-1.5708,run', frames: 6 },
+  // 2단계 ②(12:15): 총과 팔을 그리지 않는(novm) 묶음. 쏘는 장면에서 총과 팔이 봇을 가리고 봇이 작아 A/B 70~72가 세 번 판정 불가였다.
+  //  봇이 화면 가운데에 크게 나오게 해 움찔, 쓰러짐, 걸음만 비교한다. 기준선 빌드도 novm=1을 지원한다
+  { name: 'bot-fall-novm', vp: '0,16,0.4007,0.0295', bots: '0,-0.9,13.7,-2.77,aim', fire: [2, 14], novm: true },
+  { name: 'bot-shot-room-novm', vp: '8,-5.6,-2.9353,0.0241', bots: '1,8.4,-3.1,0.3,idle', fire: [2, 14], novm: true },
+  { name: 'bot-shot-yard-novm', vp: '6,20,0.4782,0.0068', bots: '0,4.2,16.4,-0.5,idle', fire: [2, 14], novm: true },
+  { name: 'bot-walk-near-novm', vp: '0,16,0,-0.12', bots: '0,-2.7,13.9,-1.5708,march', frames: 20, novm: true },
+  { name: 'bot-run-near-novm', vp: '0,16,0,-0.12', bots: '0,-3.9,13.6,-1.5708,run', frames: 6, novm: true },
 ];

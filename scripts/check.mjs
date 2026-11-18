@@ -154,7 +154,7 @@ async function main() {
   }
   // (r) 봇이 걸을 때 디딘 발이 땅에서 미끄러지지 않는다, (s) 쓰러질 때 무릎이 거꾸로 꺾이지 않는다(2단계 ②, 2026-11-18).
   //  판정자들이 '걸음이 뻣뻣하고 기계적', '마네킹'이라 적었다(A/B 68·69). 다리를 엉덩이에 매단 진자로 그려서 디딘 발이 몸과 함께 끌려갔다.
-  //  (r) 연속 프레임 bot-walk-yard, bot-run-yard, bot-walk-room과 같은 자리에서 0.5초 걸은 뒤 1.5초 동안, 땅에 닿은 발(발목이 몸 기준 0.09 m 아래)이
+  //  (r) 연속 프레임 bot-walk-yard, bot-run-yard, bot-walk-room과 같은 자리에서 0.5초 걸은 뒤 1.5초 동안, 땅에 닿은 발(발목이 발 밑 땅에서 0.09 m 아래. 처음에는 몸 높이 기준이라 방 장면의 0.29 m 단에서 단 아래의 든 발까지 셌다)이
   //   두 프레임 사이에 수평으로 움직인 거리의 합이 몸이 움직인 거리의 10% 이하다
   //  (s) 마당, 방, 홀에서 쓰러진 봇의 4초 동안, 무릎이 엉덩이와 발목을 잇는 선에서 몸 뒤쪽으로 3 cm 넘게 나가지 않는다
   //  고치기 전 빌드에서 실패하는 것을 먼저 확인했다(PROGRESS.md 2단계 ②). CHECK_ONLY=bot 이면 이 검사만 돈다
@@ -165,14 +165,16 @@ async function main() {
     const slips = [];
     for (const [name, vp, bots, i] of WALKS) {
       const g = await open(vp, bots);
-      const fr = await g.page.evaluate((i) => { window.__bc.step(30); const o = []; for (let k = 0; k < 90; k++) { window.__bc.step(1); o.push(window.__bc.botJ(i)); } return o; }, i);
+      // 발 밑 땅 높이: 실내 바닥에서 땅 함수가 바깥 땅을 주면(0.45 m 넘게 차이) 봇이 선 높이를 쓴다
+      const fr = await g.page.evaluate((i) => { const gr = (j, b) => { const h = window.__bc.ground(j[0], j[2], j[1] + 0.3); return h > -0.4 && Math.abs(h - b.pos[1]) < 0.45 ? h : b.pos[1]; }; window.__bc.step(30); const o = []; for (let k = 0; k < 90; k++) { window.__bc.step(1); const b = window.__bc.botJ(i); b.g = [gr(b.J[11], b), gr(b.J[14], b)]; o.push(b); } return o; }, i);
       await close(g);
       let foot = 0, body = 0;
       for (let k = 1; k < fr.length; k++) {
         const a = fr[k - 1], b = fr[k];
         body += Math.hypot(b.pos[0] - a.pos[0], b.pos[2] - a.pos[2]);
         for (const f of [11, 14]) {
-          if (a.J[f][1] - a.pos[1] < 0.09 && b.J[f][1] - b.pos[1] < 0.09) foot += Math.hypot(b.J[f][0] - a.J[f][0], b.J[f][2] - a.J[f][2]);
+          const gi = f === 11 ? 0 : 1;
+          if (a.J[f][1] - a.g[gi] < 0.09 && b.J[f][1] - b.g[gi] < 0.09) foot += Math.hypot(b.J[f][0] - a.J[f][0], b.J[f][2] - a.J[f][2]);
         }
       }
       slips.push({ name, r: foot / Math.max(body, 1e-6), body });
@@ -493,7 +495,7 @@ async function main() {
       ` / ④ 소매 채도 ${satBad.length ? '0.8배 미만 ' + satBad.join(', ') : '모든 시점 0.8배 이상'}` +
       (unseen.length ? ` / 잴 수 없는 시점 ${unseen.join(', ')}` : ''));
   }
-  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); }   // (r)(s)는 2단계 ② 동작을 고치는 세션에서 전체 검사에 넣는다. 그 전까지는 CHECK_ONLY=bot으로만 돈다
+  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); await botMotionChecks(); }
   if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');
@@ -597,12 +599,14 @@ async function main() {
     const st = () => page.evaluate(() => window.__bc.state().player);
     const peak = async (ms, pick) => { let best = -1e9; const t = Date.now(); while (Date.now() - t < ms) { best = Math.max(best, pick(await st())); await sleep(30); } return best; };
     await page.mouse.down({ button: 'right' }); await sleep(500); await page.mouse.up({ button: 'right' }); await sleep(600);
+    const p0 = await st();
     await page.keyboard.down('KeyW'); await sleep(500);
     const walk = await peak(500, (p) => p.speed);
     await page.keyboard.down('ShiftLeft'); await sleep(500);
     const run = await peak(500, (p) => p.speed);
+    const runSprint = (await st()).sprinting;
     await page.keyboard.up('ShiftLeft'); await page.keyboard.up('KeyW'); await sleep(700);
-    rec('걷기와 달리기 구분 (조준을 한 번 한 뒤 Shift+W)', run > walk * 1.6, `걷기 ${walk.toFixed(2)} m/s, 달리기 ${run.toFixed(2)} m/s (${(run / Math.max(walk, 0.01)).toFixed(2)}배)`);
+    rec('걷기와 달리기 구분 (조준을 한 번 한 뒤 Shift+W)', run > walk * 1.6, `걷기 ${walk.toFixed(2)} m/s, 달리기 ${run.toFixed(2)} m/s (${(run / Math.max(walk, 0.01)).toFixed(2)}배), 출발 x ${p0.x.toFixed(2)} z ${p0.z.toFixed(2)} 방향 ${(p0.yaw ?? 0).toFixed(2)}, 달리기 중 sprinting ${runSprint}`);
   }
 
   // 3. 자동 플레이: 시작 → 교전 → 전원 제압 → 판 종료

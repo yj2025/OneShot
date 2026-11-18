@@ -803,6 +803,8 @@ class Game {
       async audioTest() { return g.sound.offlineStats(); },
       // 수동 시계에서 1/60초짜리 프레임을 n번 진행한다 (입력은 그 사이에 실제 이벤트로 넣는다)
       // 봇의 관절 15개와 발 디딤 상태(검사 (r)(s)용, 2단계 ②)
+      vmAim() { const m = g.vm.muzzleWorld, d = g.vm.dirWorld; return { m: [m.x, m.y, m.z], d: [d.x, d.y, d.z] }; },
+      ground(x, z, y) { const h = g.level.groundHeight(x, z, y, 0.05, 0.42); return h; },
       botJ(i) { const b = g.bots[i]; return { J: b.J.map(v => [v.x, v.y, v.z]), pos: [b.pos.x, b.pos.y, b.pos.z], alive: b.alive, speed: b.speed }; },
       step(n = 1) { if (!MANUAL) return null; for (let i = 0; i < n; i++) g.tick(1 / 60); return { time: g.time, phase: g.phase, playerHits: g.stats.playerHits, shotsFired: g.stats.shotsFired }; },
     };

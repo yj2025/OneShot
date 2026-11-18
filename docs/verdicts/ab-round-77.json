@@ -1,0 +1,155 @@
+{
+ "round": 77,
+ "baseline": "p2-2b",
+ "crossover": true,
+ "zoom": {
+  "x": 0,
+  "y": 0.1,
+  "w": 1,
+  "h": 0.85
+ },
+ "only": [
+  "novm"
+ ],
+ "judgments": [
+  {
+   "set": "44cd",
+   "text": "1=구분 안 됨, 2=B, 3=구분 안 됨, 4=구분 안 됨, 5=구분 안 됨"
+  },
+  {
+   "set": "44cd",
+   "text": "1=구분 안 됨, 2=B, 3=A, 4=구분 안 됨, 5=구분 안 됨"
+  },
+  {
+   "set": "c254",
+   "text": "1=구분 안 됨, 2=B, 3=구분 안 됨, 4=구분 안 됨, 5=구분 안 됨"
+  },
+  {
+   "set": "c254",
+   "text": "1=구분 안 됨, 2=B, 3=구분 안 됨, 4=구분 안 됨, 5=구분 안 됨"
+  }
+ ],
+ "summary": {
+  "W": 0,
+  "L": 1,
+  "T": 4,
+  "p": 1,
+  "verdict": "판정 불가",
+  "letters": {
+   "A": 1,
+   "B": 4,
+   "p": 0.375
+  },
+  "position": {
+   "A": {
+    "N": 0,
+    "O": 2,
+    "T": 8
+   },
+   "B": {
+    "N": 2,
+    "O": 1,
+    "T": 7
+   }
+  },
+  "conflicts": 0,
+  "oldRatio": 0.4
+ },
+ "pairs": [
+  {
+   "scene": "strip-bot-shot-room-novm.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "44cd",
+     "n": 1,
+     "newSide": "A"
+    },
+    {
+     "tag": "c254",
+     "n": 5,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-bot-fall-novm.png",
+   "result": "T",
+   "newVotes": 2,
+   "baseVotes": 0,
+   "ties": 2,
+   "sets": [
+    {
+     "tag": "44cd",
+     "n": 2,
+     "newSide": "B"
+    },
+    {
+     "tag": "c254",
+     "n": 3,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-bot-shot-yard-novm.png",
+   "result": "L",
+   "newVotes": 0,
+   "baseVotes": 3,
+   "ties": 1,
+   "sets": [
+    {
+     "tag": "44cd",
+     "n": 3,
+     "newSide": "B"
+    },
+    {
+     "tag": "c254",
+     "n": 2,
+     "newSide": "A"
+    }
+   ]
+  },
+  {
+   "scene": "strip-bot-run-near-novm.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "44cd",
+     "n": 4,
+     "newSide": "A"
+    },
+    {
+     "tag": "c254",
+     "n": 1,
+     "newSide": "B"
+    }
+   ]
+  },
+  {
+   "scene": "strip-bot-walk-near-novm.png",
+   "result": "T",
+   "newVotes": 0,
+   "baseVotes": 0,
+   "ties": 4,
+   "sets": [
+    {
+     "tag": "44cd",
+     "n": 5,
+     "newSide": "B"
+    },
+    {
+     "tag": "c254",
+     "n": 4,
+     "newSide": "A"
+    }
+   ]
+  }
+ ]
+}

@@ -297,10 +297,13 @@ for (const [name, v] of [['18-fire-corridor', 2], ['19-fire-yard', 0], ['20-fire
 }
 // 봇을 가까이 찍는 장면과 움직이는 봇(2단계 ①에서 더함, scripts/botscenes.mjs). A/B에만 쓴다
 for (const s of [...BOT_SHOTS, ...BOT_STRIPS.map(x => ({ ...x, strip: true }))]) {
-  const g = await openGame(L.context, `test=1&clock=manual&seed=11&vp=${s.vp}&bots=${s.bots}`);
+  const g = await openGame(L.context, `test=1&clock=manual&seed=11&vp=${s.vp}&bots=${s.bots}${s.novm ? "&novm=1" : ""}`);
   await clickStart(g.page);
   await step(g.page, s.frames || 156);
-  if (s.strip) await strip(g.page, s.name, null); else await shot(g.page, s.name);
+  if (s.strip && s.fire) {
+    const mouse = makeMouse(g.page, W, H); await mouse.center();
+    await strip(g.page, s.name, async (f) => { if (s.fire.includes(f)) await mouse.down('left'); if (s.fire.includes(f - 2)) await mouse.up('left'); });
+  } else if (s.strip) await strip(g.page, s.name, null); else await shot(g.page, s.name);
   await g.page.close();
 }
 fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
