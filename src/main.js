@@ -29,6 +29,7 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = (id) => document.getElementById(id);
 
 // ---------------- 입력 (event.code 기준) ----------------
+const GOD_SEQ = ['KeyA', 'KeyN', 'KeyW', 'KeyJ', 'KeyR'];
 class Input {
   constructor(canvas) {
     this.down = new Set(); this.edge = new Set(); this.dx = 0; this.dy = 0; this.lmb = false; this.rmb = false; this.wheel = 0;
@@ -36,6 +37,14 @@ class Input {
     addEventListener('keydown', (e) => {
       if (!e.code) return;
       if (['Space', 'Tab', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) e.preventDefault();
+      // 무적 키(시험 플레이용): 2초 안에 KeyA KeyN KeyW KeyJ KeyR. 두벌식 한글로 '무적', 영문으로 'anwjr'을 친 것과 같다.
+      // 마지막 R은 재장전으로 넘기지 않는다
+      if (!e.repeat) {
+        const now = performance.now();
+        this.seq = (this.seq || []).filter(s => now - s.t < 2000); this.seq.push({ c: e.code, t: now });
+        if (this.seq.length > GOD_SEQ.length) this.seq.shift();
+        if (this.seq.length === GOD_SEQ.length && this.seq.every((s, i) => s.c === GOD_SEQ[i])) { this.seq = []; this.down.add(e.code); if (this.onGod) this.onGod(); return; }
+      }
       if (!this.down.has(e.code)) this.edge.add(e.code);
       this.down.add(e.code);
     });
@@ -115,6 +124,8 @@ class Game {
     // 세로 화각 80도. 렌즈 패스가 화면 밖을 읽을 수 있도록 OVERSCAN배 넓게 그린다(post.js)
     this.camera = new THREE.PerspectiveCamera(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(40)) * OVERSCAN) * 180 / Math.PI, 16 / 9, 0.04, 420);
     this.input = new Input(this.canvas);
+    this.god = false;
+    this.input.onGod = () => this.toggleGod();
     this.osd = new OSD($('osd'), SEED, TEST);
     this.phase = 'loading';
     this.stats = { shotsFired: 0, hits: 0, botShots: 0, playerHits: 0, deaths: 0, kills: 0 };
@@ -352,6 +363,25 @@ class Game {
     }
   }
 
+  // 플레이어가 탄에 맞음. 무적이면 흔들림과 소리는 그대로 내고 체력만 깎지 않는다
+  hurtPlayer(dir) {
+    const p = this.player, r = this.rng;
+    if (!p.alive) return;
+    const dmg = 36 + r() * 8;
+    if (!this.god) p.hp -= dmg;
+    p.hit(dir);
+    this.hitFx = 1;
+    this.sound.play('bodyHit', { gain: 1.0, send: 0.1 });
+    this.sound.duck(0.2, 1.2);
+    if (p.hp <= 0 && p.alive) { p.die(this.rng); this.deadAt = this.time; this.stats.deaths++; }
+  }
+  toggleGod() {
+    this.god = !this.god;
+    const el = $('god'); if (!el) return;
+    el.textContent = this.god ? '무적 켬' : '무적 끔';
+    el.classList.toggle('on', this.god); el.classList.add('show');
+    clearTimeout(this.godT); this.godT = setTimeout(() => { el.classList.remove('show'); el.textContent = this.god ? '무적' : ''; }, 1500);
+  }
   botShot(bot, m, dir) {
     const p = this.player, r = this.rng;
     this.stats.botShots++;
@@ -369,12 +399,7 @@ class Game {
     }
     if (hitP) {
       this.stats.playerHits++;
-      p.hp -= 36 + r() * 8;
-      p.hit(dir);
-      this.hitFx = 1;
-      this.sound.play('bodyHit', { gain: 1.0, send: 0.1 });
-      this.sound.duck(0.2, 1.2);
-      if (p.hp <= 0 && p.alive) { p.die(this.rng); this.deadAt = this.time; this.stats.deaths++; }
+      this.hurtPlayer(dir);
     } else if (hitL) {
       this.fx.hole(hitL.point, hitL.normal, hitL.mat);
       this.fx.impact(hitL.point, hitL.normal, hitL.mat, dir);
@@ -691,13 +716,16 @@ class Game {
       },
       // 조도 볼륨을 한 점에서 읽는다(검사와 살펴보기용)
       light(x, y, z) { return probeLight(g.renderer, x, y, z); },
+      // 무적 키 검사용: 봇 탄에 n번 맞은 것처럼 한다
+      hurtPlayer(n = 1) { const d = new THREE.Vector3(0, 0, 1); for (let i = 0; i < n; i++) g.hurtPlayer(d); },
+      setAmmo(n) { g.vm.state[g.vm.current].ammo = n; },
       state() {
         const p = g.player, vm = g.vm;
         if (!p) return { phase: g.phase };
         const d = vm.dirWorld;
         return {
           phase: g.phase, kills: g.bots.filter(b => !b.alive).length,
-          player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.bodyYaw, pitch: p.camPitch, gunYaw: Math.atan2(-d.x, -d.z), gunPitch: Math.asin(Math.max(-1, Math.min(1, d.y))), hp: p.hp, alive: p.alive, weapon: vm.current, ammo: vm.ammo, reloading: !!vm.reload, crouch: p.crouch, aimYaw: p.aimYaw, aimPitch: p.aimPitch, alert: vm.alert, threat: !!g.threat,
+          player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.bodyYaw, pitch: p.camPitch, gunYaw: Math.atan2(-d.x, -d.z), gunPitch: Math.asin(Math.max(-1, Math.min(1, d.y))), hp: p.hp, alive: p.alive, god: g.god, weapon: vm.current, ammo: vm.ammo, reloading: !!vm.reload, crouch: p.crouch, aimYaw: p.aimYaw, aimPitch: p.aimPitch, alert: vm.alert, threat: !!g.threat,
             speed: Math.hypot(p.vel.x, p.vel.z), vy: p.vel.y, onGround: p.onGround, sprinting: p.sprinting, ads: vm.ads, parkour: p.pk ? p.pk.plan.kind : null,
             // 검사용: 카메라 높이, 총구와 왼손의 화면 위치(투영 좌표 -1~1, 어안 왜곡 전), 왼손이 짚은 자리
             eye: g.camera.position.y,

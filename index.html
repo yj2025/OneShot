@@ -27,12 +27,15 @@
   .row select { font: inherit; background: #23272a; color: #ddd; border: 1px solid #3a4045; padding: 4px 8px; }
   .val { width: 44px; text-align: right; color: #aab; font-variant-numeric: tabular-nums; }
   #flash { position: fixed; inset: 0; pointer-events: none; background: #000; opacity: 0; z-index: 5; }
+  #god { position: fixed; right: 14px; bottom: 10px; pointer-events: none; z-index: 6; font: 11px/1 monospace; color: rgba(255,255,255,0.35); }
+  #god.show { font-size: 15px; color: rgba(255,230,160,0.9); }
 </style>
 </head>
 <body>
 <canvas id="view"></canvas>
 <canvas id="osd"></canvas>
 <div id="flash"></div>
+<div id="god"></div>
 
 <div id="loading" class="screen on"><div class="panel">
   <h1>잿빛 훈련장</h1>

@@ -243,7 +243,28 @@ async function main() {
     rec('(v) 탄이 스치면 봇이 몸을 숨기고, 벽에 막힌 탄은 제압하지 않는다', ok >= 8 && wall.stopped === wall.shots && !wall.suppressedChanged,
       `반응 ${ok}/10(8 이상, 교전 ${sup.filter(s => s.engaged).length}, 첫 탄부터 반응까지 ${sup.filter(s => s.reacted).map(s => s.rt.toFixed(2)).join('/')}), 벽 탄 ${wall.stopped}/${wall.shots} 막힘, 제압됨 ${wall.suppressedChanged}`);
   }
+  // (x) 무적 키(2026-11-19): 한글 입력 상태에서 '무적'을 치면(ㅁㅜㅈㅓㄱ = KeyA KeyN KeyW KeyJ KeyR) 무적이 켜지고, 맞아도 쓰러지지 않는다.
+  //  다시 치면 꺼지고, 꺼진 뒤에는 맞으면 쓰러진다. 마지막 R이 재장전으로 새지 않는다. 고치기 전 빌드에서 실패하는 것을 먼저 확인했다.
+  //  CHECK_ONLY=god 이면 이 검사만 돈다
+  async function godChecks() {
+    const g = await openGame(L.context, 'test=1&clock=manual&seed=11');
+    const P = g.page; await clickStart(P);
+    const cdp = await P.context().newCDPSession(P);
+    const seq = [['ㅁ', 'KeyA', 65], ['ㅜ', 'KeyN', 78], ['ㅈ', 'KeyW', 87], ['ㅓ', 'KeyJ', 74], ['ㄱ', 'KeyR', 82]];
+    const type = async () => { for (const [key, code, vk] of seq) { await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk }); await sleep(60); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk }); await sleep(60); } await P.evaluate(() => window.__bc.step(2)); };
+    const st = () => P.evaluate(() => window.__bc.state().player);
+    const hurt = (n) => P.evaluate((k) => window.__bc.hurtPlayer(k), n);
+    await P.evaluate(() => window.__bc.setAmmo && window.__bc.setAmmo(3));
+    await type();
+    const on = await st(); await hurt(6); const afterOn = await st();
+    await type();
+    const off = await st(); await hurt(4); const afterOff = await st();
+    extraErrors.push(...g.errors); extraExternal.push(...g.external); await P.close();
+    rec("(x) 한글 입력 상태로 '무적'을 치면 무적이 켜지고 꺼진다", on.god === true && afterOn.alive && !on.reloading && off.god === false && !afterOff.alive,
+      `켬 ${on.god}, 켠 뒤 6발 맞고 ${afterOn.alive ? '살아 있음' : '쓰러짐'}(체력 ${Math.round(afterOn.hp)}), 재장전 새어 나감 ${on.reloading}, 다시 쳐서 끔 ${off.god === false}, 끈 뒤 4발 맞고 ${afterOff.alive ? '살아 있음' : '쓰러짐'}`);
+  }
   if (process.env.CHECK_ONLY === 'ai') { await aiChecks(); return; }
+  if (process.env.CHECK_ONLY === 'god') { await godChecks(); return; }
   if (process.env.CHECK_ONLY === 'arms') { await armChecks(); return; }
   if (process.env.CHECK_ONLY === 'bot') { await botMotionChecks(); return; }
   if (process.env.CHECK_ONLY === 'motion') { await motionChecks(); return; }
@@ -534,7 +555,7 @@ async function main() {
       ` / ④ 소매 채도 ${satBad.length ? '0.8배 미만 ' + satBad.join(', ') : '모든 시점 0.8배 이상'}` +
       (unseen.length ? ` / 잴 수 없는 시점 ${unseen.join(', ')}` : ''));
   }
-  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); await botMotionChecks(); await aiChecks(); }
+  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); await botMotionChecks(); await aiChecks(); await godChecks(); }
   if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');
