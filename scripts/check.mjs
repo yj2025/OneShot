@@ -205,6 +205,45 @@ async function main() {
     }
     rec('(s) 쓰러질 때 무릎이 거꾸로 꺾이지 않는다', worst.every(x => x.w <= 0.03), worst.map(x => `${x.name} ${(x.w * 100).toFixed(1)} cm`).join(', ') + ' (3 cm 이하)');
   }
+  // (t)(u)(v)(w) 봇의 엄폐·시야·제압·우회가 보이는 형상과 맞는다(3단계 ①, 2026-11-18). 기준은 탄이 쓰는 보이는 삼각형(BVH)이다.
+  //  봇의 지각과 엄폐와 우회가 충돌 상자로 판단해서, 상자가 없는 드럼통과 방벽 뒤를 엄폐로 여기지 않고, 선반 빈틈 너머를 못 보고, 상자보다 낮은 그림 너머로 쏠 수 있었다.
+  //  (u) 시야: 길목 점의 눈 × 사람 자리(앉음/섬) 쌍에서, 봇이 보인다는데 몸 다섯 점이 모두 가린 비율 1% 이하, 안 보인다는데 머리와 가슴이 트인 비율 2% 이하
+  //  (t) 엄폐: 위협에게 드러난 봇이 고른 자리에서 앉은 몸이 위협에게 하나도 보이지 않는 비율 95% 이상, 10 m 안에 가리는 자리가 있는데 못 찾은 경우 20% 이하
+  //  (v) 제압: 교전 중인 봇 머리 0.7 m 옆으로 탄 4발(0.13초 간격)이 지나가면 마지막 탄 뒤 1.5초 안에 앉거나 엄폐로 가거나 시선에서 빠진다(시드 10개 중 8개 이상).
+  //   벽에서 멈춘 탄은 벽 너머의 봇을 제압하지 않는다
+  //  (w) 우회: 측면 역할의 길이 정면 길보다 30% 넘게 덜 드러나는 경우가, 정면 길이 20% 넘게 드러나고 돌아갈 길이 있는 시나리오(자리 격자 전체에서 찾은
+  //   가장 덜 드러나는 길이 정면보다 30% 넘게 덜 드러난다)의 80% 이상. 처음에는 돌아갈 길이 있는지 따지지 않았다. 마당 한가운데의 위협처럼 어떤 길로도
+  //   드러나는 시나리오가 절반을 넘어서, 그 기준은 어떤 봇도 넘을 수 없었다(PROGRESS.md 3단계 ①). 고치기 전 빌드는 바뀐 기준에서도 실패한다(33%)
+  //  고치기 전 빌드에서 실패하는 것을 먼저 확인했다(PROGRESS.md 3단계 ①). CHECK_ONLY=ai 이면 이 검사만 돈다
+  async function aiChecks() {
+    const open = async (q) => { const g = await openGame(L.context, `test=1&clock=manual&${q}`); await clickStart(g.page); return g; };
+    const close = async (g) => { extraErrors.push(...g.errors); extraExternal.push(...g.external); await g.page.close(); };
+    const pct = (x) => (x * 100).toFixed(1) + '%';
+    let g = await open('seed=11&bots=0,-15.5,2.6,0,idle');
+    const S = await g.page.evaluate(() => window.__bc.ai('sight'));
+    const C = await g.page.evaluate(() => window.__bc.ai('cover'));
+    const F = await g.page.evaluate(() => window.__bc.ai('flank'));
+    await close(g);
+    rec('(u) 봇의 시야가 보이는 형상과 맞는다', S.falseSeeRate <= 0.01 && S.blindRate <= 0.02,
+      `쌍 ${S.pairs}, 가린 몸을 봄 ${pct(S.falseSeeRate)}(1% 이하), 트인 몸을 못 봄 ${pct(S.blindRate)}(2% 이하)` + (S.exFalseSee.length ? ` 예: 봄 ${JSON.stringify(S.exFalseSee.slice(0, 2))}` : '') + (S.exBlind.length ? ` 못 봄 ${JSON.stringify(S.exBlind.slice(0, 2))}` : ''));
+    rec('(t) 봇이 고른 엄폐가 실제로 몸을 가린다', C.badRate <= 0.05 && C.missRate <= 0.2,
+      `시나리오 ${C.scenarios}, 고름 ${C.chosen}, 드러난 엄폐 ${C.bad}(${pct(C.badRate)}, 5% 이하), 못 고름 ${C.none} 중 놓침 ${C.missed}(${pct(C.missRate)}, 20% 이하)` + (C.exBad.length ? ` 예 ${JSON.stringify(C.exBad.slice(0, 2))}` : ''));
+    rec('(w) 우회 길이 정면 길보다 덜 드러난다', F.altRate >= 0.8,
+      `시나리오 ${F.rows}, 정면이 드러나고 돌아갈 길이 있는 ${F.alt} 중 우회가 나은 ${F.altBetter}(${pct(F.altRate)}, 80% 이상). 돌아갈 길과 상관없이 ${F.better}/${F.open}. 드러난 비율 평균 정면 ${F.meanDirect} 우회 ${F.meanFlank}, 길 짜기 평균 ${F.planMs} ms 최대 ${F.planMsMax} ms`);
+    const sup = [];
+    for (let seed = 1; seed <= 10; seed++) {
+      g = await open(`seed=${seed}&vp=6,22,0.38,0&bots=0,2,12,-2.76,live`);
+      sup.push(await g.page.evaluate(() => window.__bc.ai('suppress')));
+      await close(g);
+    }
+    g = await open('seed=3&vp=0,8,0,0&bots=1,8,-2.6,0,idle');
+    const wall = await g.page.evaluate(() => window.__bc.ai('suppress', { wall: true, i: 1 }));
+    await close(g);
+    const ok = sup.filter(s => s.engaged && s.reacted).length;
+    rec('(v) 탄이 스치면 봇이 몸을 숨기고, 벽에 막힌 탄은 제압하지 않는다', ok >= 8 && wall.stopped === wall.shots && !wall.suppressedChanged,
+      `반응 ${ok}/10(8 이상, 교전 ${sup.filter(s => s.engaged).length}, 첫 탄부터 반응까지 ${sup.filter(s => s.reacted).map(s => s.rt.toFixed(2)).join('/')}), 벽 탄 ${wall.stopped}/${wall.shots} 막힘, 제압됨 ${wall.suppressedChanged}`);
+  }
+  if (process.env.CHECK_ONLY === 'ai') { await aiChecks(); return; }
   if (process.env.CHECK_ONLY === 'arms') { await armChecks(); return; }
   if (process.env.CHECK_ONLY === 'bot') { await botMotionChecks(); return; }
   if (process.env.CHECK_ONLY === 'motion') { await motionChecks(); return; }
@@ -495,7 +534,7 @@ async function main() {
       ` / ④ 소매 채도 ${satBad.length ? '0.8배 미만 ' + satBad.join(', ') : '모든 시점 0.8배 이상'}` +
       (unseen.length ? ` / 잴 수 없는 시점 ${unseen.join(', ')}` : ''));
   }
-  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); await botMotionChecks(); }
+  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); await botMotionChecks(); await aiChecks(); }
   if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');

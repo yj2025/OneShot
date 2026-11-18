@@ -135,7 +135,7 @@ export class Bot {
     this.walkPhase = r() * 10; this.speed = 0; this.crouch = 0; this.aimRaise = 0;
     this.reaction = 0; this.lastSeen = -99; this.lastKnown = null; this.seeing = false;
     this.burstLeft = 0; this.shotCool = 0; this.aimErr = 0.1;
-    this.coverUntil = 0; this.suppressed = 0;
+    this.coverUntil = 0; this.suppressed = 0; this.supp = 0; this.suppFelt = 0; this.coverTry = 0; this.coverPt = null;
     this.lookYaw = this.yaw; this.thinkT = r() * 0.15;
     this.stepAcc = 0; this.hitFlinch = 0; this.flinchDir = V(0, 0, 0);
     this.feet = null; this.gaitC = this.mr(); this.pelY = null; this.shift = 0; this.prevVel = V(0, 0, 0); this.avel = V(0, 0, 0);
@@ -398,8 +398,7 @@ export class Bot {
     this.alerted = true;
     this.hitFlinch = 1; this.flinchDir.copy(dir).setY(0).normalize();
     this.impact(part, dir, point, 1);
-    this.suppressed = now;
-    if (!this.lastKnown) this.lastKnown = this.g.player.pos.clone();
+    this.suppress(0.6, now);
     if (this.hp <= 0) { this.die(dir, point, part); return true; }
     // 맞으면 바로 응사하거나 엄폐로 간다
     this.lastKnown = this.g.player.pos.clone();
@@ -556,8 +555,14 @@ export class Bot {
     // 어두운 실내의 플레이어는 멀리서 덜 보인다
     const dark = this.g.level.insideBuilding(p.pos.x, p.pos.z) && !this.g.level.insideBuilding(this.pos.x, this.pos.z);
     if (dark && dist > 14 && !this.alerted) return false;
+    return this.bodyVisible(eye, p.pos, p.crouch, p.eyeHeight);
+  }
+
+  // 눈에서 사람 몸(발 자리 pos, 앉은 정도 crouch)이 보이는가. 지각과 검사(scripts/check.mjs (t)~(w))가 같이 쓴다
+  bodyVisible(eye, pos, crouch = 0, eyeH = 1.6) {
+    const target = V(pos.x, pos.y + eyeH + 0.15, pos.z);
     if (this.g.level.lineClear(eye, target)) return true;
-    const torso = V(p.pos.x, p.pos.y + 1.0 - p.crouch * 0.35, p.pos.z);
+    const torso = V(pos.x, pos.y + 1.0 - crouch * 0.35, pos.z);
     return this.g.level.lineClear(eye, torso);
   }
 
@@ -586,36 +591,76 @@ export class Bot {
     }
   }
 
+  // 탄이 가까이 지나가거나 맞으면 제압 수치가 쌓이고 식는다(초당 0.35). 수치가 오르면 몸을 낮추고, 더 오르면 엄폐로 간다(3단계 ①).
+  // 전에는 '탄이 가슴 1.6 m 안을 지난 시각' 하나였고, 0.6초 안에 프레임마다 작은 확률로 엄폐를 찾는 것이 반응의 전부였다
+  suppress(a, now) {
+    this.supp = Math.min(1.5, this.supp + a); this.suppressed = now; this.alerted = true;
+    // 반응 빠르기는 매번 다르다(느낀 값이 따라오는 빠르기 초당 2.5~10)
+    this.suppK = 2.5 + this.rng() * 7.5;
+    if (!this.lastKnown) this.lastKnown = this.g.player.pos.clone();
+  }
+
+  // 엄폐: 사람이 설 수 있는 자리(level.spots, 0.75 m 격자) 가운데 가까운 곳부터, 위협의 눈에서 앉은 몸 다섯 점이 모두 가리는 자리를 고른다.
+  // 가림은 탄과 같은 보이는 형상(BVH)으로 본다. 길은 길목 점까지 간 뒤 그 자리로 곧게 들어간다(곧게 닿으면 바로 간다).
+  // 전에는 길목 점 90개만 후보로, 점 위 1.0 m 한 점을 상자로 봤다(PROGRESS.md 3단계 ①)
   seekCover(now) {
-    const L = this.g.level, p = this.g.player;
-    const threat = V(p.pos.x, p.pos.y + 1.3, p.pos.z);
-    let best = null, bs = Infinity;
-    for (const n of L.nodes) {
-      const d = Math.hypot(n.x - this.pos.x, n.z - this.pos.z);
-      if (d > 10 || d < 0.8) continue;
-      if (Math.abs(n.y - this.pos.y) > 0.5) continue;
-      const hidden = !L.lineClear(threat, V(n.x, n.y + 1.0, n.z));
-      if (!hidden) continue;
-      const dp = Math.hypot(n.x - p.pos.x, n.z - p.pos.z);
-      const score = d + (dp < 4 ? 8 : 0) + this.rng() * 2;
-      if (score < bs) { bs = score; best = n; }
+    const L = this.g.level, p = this.g.player, r = this.rng;
+    const eye = V(p.pos.x, p.pos.y + 1.6, p.pos.z);
+    const dNow = Math.hypot(this.pos.x - p.pos.x, this.pos.z - p.pos.z);
+    const cand = [];
+    for (const s of L.spots) {
+      const d = Math.hypot(s.x - this.pos.x, s.z - this.pos.z);
+      if (d > 10 || Math.abs(s.y - this.pos.y) > 0.5) continue;
+      const dp = Math.hypot(s.x - p.pos.x, s.z - p.pos.z); if (dp < 4) continue;
+      // 위협 쪽으로 다가가는 자리는 덜 고른다
+      cand.push([d + Math.max(0, dNow - dp) * 0.8 + r() * 1.5, s]);
     }
-    if (best) {
-      const start = L.nearestNode(this.pos.x, this.pos.z, this.pos.y);
-      const path = start && L.path(start, best);
-      if (path) { this.path = path; this.pathI = 0; this.state = 'tocover'; this.coverNode = best; return true; }
+    cand.sort((a, b) => a[0] - b[0]);
+    const here = { x: this.pos.x, y: this.pos.y, z: this.pos.z };
+    let start, tries = 0;
+    for (const [, s] of cand) {
+      if (!L.bodyHidden(eye, s, 1)) continue;
+      if (++tries > 8) break;
+      let path = null, node = null;
+      if (Math.hypot(s.x - here.x, s.z - here.z) < 6 && L.walkable(here, s)) path = [s];
+      else {
+        node = L.spotNode(s); if (!node) continue;
+        if (start === undefined) start = L.nearestNode(this.pos.x, this.pos.z, this.pos.y);
+        const pth = start && L.path(start, node);
+        if (pth) path = [...pth, s];
+      }
+      if (!path) continue;
+      this.path = path; this.pathI = 0; this.state = 'tocover'; this.coverPt = s; this.coverNode = node;
+      return true;
     }
     return false;
   }
 
   planTo(target, flank = false) {
     const L = this.g.level, p = this.g.player;
+    // 우회: 사람이 설 수 있는 자리의 격자(0.75 m) 위에서, 위협의 눈에게 서 있는 가슴이 드러나는 자리를 1 m당 10 m 더 걷는 것으로 쳐서 길을 짠다
+    // (위협 6 m 안은 어차피 드러나므로 뺀다). 가림은 보이는 형상(BVH)으로 본다. 길목 점 90개 그래프로는 벽과 방벽을 따라 숨는 길을 나타낼 수 없었다(PROGRESS.md 3단계 ①)
+    if (flank) {
+      const a = L.nearestSpot(this.pos.x, this.pos.z, this.pos.y), b = L.nearestSpot(target.x, target.z, target.y ?? this.pos.y);
+      if (a && b) {
+        const eyeT = V(p.pos.x, p.pos.y + 1.6, p.pos.z), q = V(0, 0, 0);
+        // 같은 자리의 위협에 대한 드러남은 1.5초 동안 봇끼리 같이 쓴다(길 하나에 광선 수천 개가 들 수 있다)
+        const key = `${Math.round(eyeT.x * 2)},${Math.round(eyeT.y * 2)},${Math.round(eyeT.z * 2)}`, now = this.g.time;
+        if (!L._expo || L._expo.key !== key || now - L._expo.t > 1.5) L._expo = { key, t: now, memo: new Map() };
+        const memo = L._expo.memo;
+        const cost = (s) => {
+          let c = memo.get(s.i);
+          if (c === undefined) { c = Math.hypot(s.x - eyeT.x, s.z - eyeT.z) < 6 ? 0 : L.sightClear(eyeT, q.set(s.x, s.y + 1.25, s.z)) ? 10 : 0; memo.set(s.i, c); }
+          return c;
+        };
+        const path = L.spotPath(a, b, cost);
+        if (path && path.length) { this.path = path; this.pathI = 0; return true; }
+      }
+    }
     const start = L.nearestNode(this.pos.x, this.pos.z, this.pos.y);
     const goal = L.nearestNode(target.x, target.z, target.y, false);
     if (!start || !goal) return false;
-    const threat = V(p.pos.x, p.pos.y + 1.3, p.pos.z);
-    const avoid = flank ? (n) => (L.lineClear(threat, V(n.x, n.y + 1.2, n.z)) ? 18 : 0) : null;
-    const path = L.path(start, goal, avoid);
+    const path = L.path(start, goal);
     if (!path) return false;
     this.path = path; this.pathI = 0;
     return true;
@@ -653,6 +698,13 @@ export class Bot {
         this.seeing = false;
       }
     }
+    // 제압 수치: 느낀 값은 0.1~0.4초 늦게 따라온다(사람의 반응). 많이 오르면 엄폐를 찾고, 못 찾으면 그 자리에서 응사한다
+    this.supp = Math.max(0, this.supp - dt * 0.35);
+    this.suppFelt += (this.supp - this.suppFelt) * (1 - Math.exp(-dt * (this.suppK || 6)));
+    if (!this.dormant && this.suppFelt > 0.6 && this.state !== 'tocover' && this.state !== 'cover' && now > this.coverTry) {
+      this.coverTry = now + 1.2 + r() * 0.6;
+      if (!this.seekCover(now) && this.state !== 'engage') { this.state = 'engage'; this.path = null; this.lastSeen = now; }
+    }
     if (this.dormant) { this.state = this.dormant === 'walk' ? 'patrol' : this.dormant === 'march' || this.dormant === 'run' ? 'march' : 'idle'; }
 
     switch (this.state) {
@@ -688,8 +740,7 @@ export class Bot {
         raise = 0.6;
         this.timer -= dt;
         if (this.timer <= 0 && !this.path && this.lastKnown) {
-          const flank = this.role === 'flank' && g.bots.filter(b => b.alive && b.alerted).length > 1;
-          this.planTo(this.lastKnown, flank);
+          this.planTo(this.lastKnown, this.role === 'flank');
           this.timer = 99;
         }
         if (this.path) { moveTarget = true; wantSpeed = this.role === 'flank' ? 3.3 : 2.2; }
@@ -723,8 +774,8 @@ export class Bot {
         if (!this.seeing && lostFor > 1.0 + r() * 0.5) {
           this.state = 'investigate'; this.timer = 0.2 + r() * 0.5; this.path = null;
         }
-        // 오래 노출되면 엄폐 시도
-        if (this.seeing && now - this.suppressed < 0.6 && r() < dt * 3) this.seekCover(now);
+        // 제압당하면 조준이 흐트러진다
+        if (this.suppFelt > 0.3) this.aimErr = Math.max(this.aimErr, 0.03 + this.suppFelt * 0.05);
         break;
       }
       case 'tocover': {
@@ -747,6 +798,8 @@ export class Bot {
       }
     }
 
+    // 제압당하면 서 있는 동안 몸을 낮춘다(달려서 엄폐로 가는 동안은 빼고)
+    if (!moveTarget && !this.dormant) wantCrouch = Math.max(wantCrouch, Math.min(1, (this.suppFelt - 0.25) * 2.2));
     // 경로 따라 이동
     if (moveTarget && this.path) {
       const n = this.path[this.pathI];

@@ -15,6 +15,7 @@ export const FL = 0.7;
 const CA = FL + 2.8;   // 일반 천장
 const CH = FL + 4.6;   // 창고 홀 천장
 const DOOR_H = FL + 2.05;
+const _sv = new THREE.Vector3(), _sp = new THREE.Vector3();
 const BLDG = { x0: -12, z0: -16, x1: 12, z1: 0 };
 // 재질 키 → 닳는 방식(wear.js의 WEAR). 여기에 없는 재질(땅, 고무, 종이 등)은 반듯한 상자 그대로 둔다
 const WEAR_KEYS = {
@@ -970,6 +971,7 @@ export class Level {
     this.trace = new BulletTrace(this.group);
     // 품질 낮음: 형광등 일부 끔(광원 수를 줄임)
     this.buildNav();
+    this.buildSpots();
   }
 
   // ---- 형상 도구 적용 ----
@@ -1306,6 +1308,104 @@ export class Level {
     return !h;
   }
 
+  // ===== 봇의 판단에 쓰는 보이는 형상 시야(3단계 ①) =====
+  // 탄과 같은 보이는 삼각형(BVH)으로 a에서 b가 트였는가. 잎, 철망, 유리처럼 탄이 지나가는 것은 시야도 지나간다
+  sightClear(a, b) {
+    const d = _sv.subVectors(b, a), l = d.length();
+    if (l < 1e-3) return true;
+    d.divideScalar(l);
+    return !this.trace.ray(a, d, l - 0.04);
+  }
+  // 눈에서 사람 몸(발 자리 p, 앉은 정도 c)의 다섯 점(머리, 가슴, 배, 양어깨)이 모두 가렸는가. 엄폐 판단과 검사 (t)가 같은 몸을 본다
+  bodyHidden(eye, p, c = 0) {
+    const sx = -(p.z - eye.z), sz = p.x - eye.x, sl = Math.hypot(sx, sz) || 1, ox = sx / sl * 0.2, oz = sz / sl * 0.2;
+    const pts = [[0, 1.62 - 0.5 * c, 0], [0, 1.25 - 0.4 * c, 0], [ox, 1.38 - 0.45 * c, oz], [-ox, 1.38 - 0.45 * c, -oz], [0, 0.95 - 0.3 * c, 0]];
+    for (const [x, y, z] of pts) if (this.sightClear(eye, _sp.set(p.x + x, p.y + y, p.z + z))) return false;
+    return true;
+  }
+  // 사람이 설 수 있는 자리 전부(0.75 m 격자). 엄폐 후보다. 길목 점 90개만 후보로 쓰던 것을 바꿨다
+  buildSpots() {
+    const out = [], q = new THREE.Vector3();
+    for (let x = -24; x <= 24; x += 0.75) for (let z = -22; z <= 30; z += 0.75) {
+      let y;
+      if (this.insideBuilding(x, z)) y = FL;
+      else { y = this.groundHeight(x, z, 1.0, 0.1, 0.3); if (y <= -0.4) continue; }
+      q.set(x, y, z); this.collide(q, 0.3, y, 1.7);
+      if (Math.hypot(q.x - x, q.z - z) > 0.01) continue;
+      out.push({ i: out.length, x, y, z, node: undefined, nb: null, ix: Math.round((x + 24) / 0.75), iz: Math.round((z + 22) / 0.75) });
+    }
+    this.spots = out;
+    this.spotAt = new Map(out.map((p) => [p.ix * 1000 + p.iz, p]));
+  }
+  nearestSpot(x, z, y) {
+    const ix = Math.round((x + 24) / 0.75), iz = Math.round((z + 22) / 0.75);
+    let best = null, bd = Infinity;
+    for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
+      const p = this.spotAt.get((ix + a) * 1000 + iz + b); if (!p) continue;
+      const d = Math.hypot(p.x - x, p.z - z) + Math.abs(p.y - y) * 3;
+      if (d < bd) { bd = d; best = p; }
+    }
+    return best;
+  }
+  // 격자 이웃(8방향). 높이 차가 0.42 m 이하이고 무릎 높이에서 막히지 않은 곳. 처음 물을 때 정한다
+  spotLinks(p) {
+    if (p.nb) return p.nb;
+    p.nb = [];
+    const A = new THREE.Vector3(), B = new THREE.Vector3();
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      if (!a && !b) continue;
+      const q = this.spotAt.get((p.ix + a) * 1000 + p.iz + b); if (!q) continue;
+      // 계단: 격자 간격(0.75 m)에 계단 두 칸이 들어가므로, 높이 차가 0.42 m를 넘으면 가운데 땅이 양쪽과 0.42 m 안에 있어야 한다
+      const dy = Math.abs(q.y - p.y);
+      if (dy > 0.84) continue;
+      if (dy > 0.42) { const m = this.groundHeight((p.x + q.x) / 2, (p.z + q.z) / 2, Math.max(p.y, q.y) + 0.3, 0.1, 0.42); if (Math.abs(m - p.y) > 0.42 || Math.abs(m - q.y) > 0.42) continue; }
+      if (a && b && !(this.spotAt.get((p.ix + a) * 1000 + p.iz) && this.spotAt.get(p.ix * 1000 + p.iz + b))) continue;
+      A.set(p.x, p.y + 0.5, p.z); B.set(q.x, q.y + 0.5, q.z);
+      if (!this.lineClear(A, B)) continue;
+      p.nb.push([q, Math.hypot(q.x - p.x, q.z - p.z)]);
+    }
+    return p.nb;
+  }
+  // 격자 위의 A*. cost(자리) → 그 자리를 지나는 1 m당 추가 비용. 꺾이는 곳만 남긴 길을 돌려준다(없으면 null)
+  spotPath(from, to, cost, maxExpand = 9000) {
+    const S = this.spots, n = S.length;
+    if (!this._g || this._g.length !== n) { this._g = new Float32Array(n); this._came = new Int32Array(n); this._stamp = new Int32Array(n); this._st = 0; }
+    const G = this._g, came = this._came, st = this._stamp, tag = ++this._st;
+    const h = (p) => Math.hypot(p.x - to.x, p.z - to.z);
+    const heap = [];   // [f, 자리 번호]
+    const push = (f, i) => { heap.push([f, i]); let k = heap.length - 1; while (k > 0) { const pk = (k - 1) >> 1; if (heap[pk][0] <= heap[k][0]) break; [heap[pk], heap[k]] = [heap[k], heap[pk]]; k = pk; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+    st[from.i] = tag; G[from.i] = 0; came[from.i] = -1; push(h(from), from.i);
+    let expand = 0;
+    while (heap.length) {
+      const [f, i] = pop(); const p = S[i];
+      if (f > G[i] + h(p) + 1e-4) continue;
+      if (p === to) {
+        const out = []; for (let k = i; k >= 0; k = came[k]) out.unshift(S[k]);
+        // 꺾이는 곳만 남긴다
+        const keep = [out[0]];
+        for (let k = 1; k < out.length - 1; k++) { const a = out[k - 1], b = out[k], c = out[k + 1]; if (b.ix - a.ix !== c.ix - b.ix || b.iz - a.iz !== c.iz - b.iz) keep.push(b); }
+        if (out.length > 1) keep.push(out[out.length - 1]);
+        return keep;
+      }
+      if (++expand > maxExpand) return null;
+      const ci = cost(p);
+      for (const [q, d] of this.spotLinks(p)) {
+        const ng = G[i] + d * (1 + (ci + cost(q)) * 0.5);
+        if (st[q.i] !== tag || ng < G[q.i]) { st[q.i] = tag; G[q.i] = ng; came[q.i] = i; push(ng + h(q), q.i); }
+      }
+    }
+    return null;
+  }
+  // 자리에서 곧게 걸어 닿는 가까운 길목 점(없으면 null). 처음 물을 때 정한다
+  spotNode(s) {
+    if (s.node !== undefined) return s.node;
+    const near = this.nodes.map((n) => [Math.hypot(n.x - s.x, n.z - s.z) + Math.abs(n.y - s.y) * 3, n]).filter((e) => e[0] < 12).sort((a, b) => a[0] - b[0]).slice(0, 5);
+    s.node = null;
+    for (const [, n] of near) if (this.walkable(n, s)) { s.node = n; break; }
+    return s.node;
+  }
+
   // ===== 이동 경로 그래프 =====
   buildNav() {
     const pts = [
@@ -1361,7 +1461,7 @@ export class Level {
     return best;
   }
   path(fromNode, toNode, avoid = null) {
-    // A*; avoid(node) → 추가 비용
+    // A*; avoid(node, 앞 node, 거리) → 그 길 조각의 추가 비용
     const N = this.nodes, open = new Set([fromNode.i]), g = new Map([[fromNode.i, 0]]), came = new Map(), f = new Map([[fromNode.i, 0]]);
     const h = (n) => Math.hypot(n.x - toNode.x, n.z - toNode.z);
     while (open.size) {
@@ -1370,7 +1470,7 @@ export class Level {
       if (cur === toNode.i) { const out = [N[cur]]; while (came.has(cur)) { cur = came.get(cur); out.unshift(N[cur]); } return out; }
       open.delete(cur);
       for (const [j, d] of N[cur].links) {
-        const ng = g.get(cur) + d + (avoid ? avoid(N[j]) : 0);
+        const ng = g.get(cur) + d + (avoid ? avoid(N[j], N[cur], d) : 0);
         if (ng < (g.get(j) ?? Infinity)) { came.set(j, cur); g.set(j, ng); f.set(j, ng + h(N[j])); open.add(j); }
       }
     }

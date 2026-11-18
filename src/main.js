@@ -7,6 +7,7 @@ import { FX } from './fx.js';
 import { Viewmodel } from './weapons.js';
 import { Player } from './player.js';
 import { Bot, angDiff } from './bots.js';
+import { AIAUDIT } from './aiaudit.js';
 import { Sound } from './audio.js';
 import { Post, OVERSCAN } from './post.js';
 import { ScopeView } from './scope.js';
@@ -281,7 +282,7 @@ class Game {
       if (TEST && Q.get('bots')) for (const s of Q.get('bots').split(';')) {
         const [i, x, z, yaw, mode = 'idle'] = s.split(','); const b = this.bots[+i]; if (!b) continue;
         b.pos.set(+x, 0, +z); b.pos.y = this.level.insideBuilding(b.pos.x, b.pos.z) ? FL : this.level.groundHeight(b.pos.x, b.pos.z, 1.0, 0.1, 0.3);
-        b.yaw = b.aimYaw = b.lookYaw = +yaw; b.dormant = mode === 'dead' || mode === 'bind' ? 'idle' : mode; b.testKill = mode === 'dead'; b.testBind = mode === 'bind';
+        b.yaw = b.aimYaw = b.lookYaw = +yaw; b.dormant = mode === 'dead' || mode === 'bind' ? 'idle' : mode === 'live' ? null : mode; if (mode === 'live') { b.alerted = true; b.state = 'patrol'; b.timer = 99; } b.testKill = mode === 'dead'; b.testBind = mode === 'bind';
         b.pose(0, 0); for (let k = 0; k < 15; k++) b.prevJ[k].copy(b.J[k]); b.render(); for (const gr of b.gear || []) gr.reset();
       }
     } else {
@@ -326,12 +327,7 @@ class Game {
       this.sound.play('impact_' + im, { pos: hitL.point, listener: this.listener(), gain: 0.55, zone: this.level.zoneAt(hitL.point.x, hitL.point.z), occluded: hitL.dist > 3 && !this.level.lineClear(chest, hitL.point.clone().addScaledVector(hitL.normal, 0.1)) });
     }
     // 봇: 총성 듣기, 탄이 가까이 지나가면 제압
-    for (const b of this.bots) {
-      if (!b.alive) continue;
-      b.hear(p.pos, 45, now);
-      const c = b.chest; const t = c.clone().sub(start).dot(dir);
-      if (t > 0) { const d = start.clone().addScaledVector(dir, t).distanceTo(c); if (d < 1.6) b.suppressed = now; }
-    }
+    this.notifyBots(p.pos, start, dir, hitL ? hitL.dist : 150, now);
     // 총구 화염, 탄피, 반동, 소리. 총구가 벽 너머로 나가 있으면(벽에 바짝 붙어 쏨) 화염의 빛은 벽 이쪽에 둔다
     const lightPos = block ? chest.clone().addScaledVector(toM, Math.max(0, block.dist - 0.08)) : null;
     this.fx.muzzleFlash(origin, dir, vm.current === 'rifle' ? 'rifle' : 'pistol', 'player', lightPos);
@@ -343,6 +339,17 @@ class Game {
     vm.stress = Math.min(1, vm.stress + 0.08);
     this.sound.play(vm.current === 'rifle' ? 'rifle' : 'pistol', { gain: vm.current === 'rifle' ? 1.75 : 1.5, send: 0.5 });
     this.sound.duck(0.15, 1.6);
+  }
+
+  // 플레이어의 총성과 탄길을 봇에게 알린다(총성 듣기, 탄이 가까이 지나가면 제압). 검사 (v)도 이 길로 탄을 지나가게 한다
+  notifyBots(from, start, dir, maxD, now) {
+    for (const b of this.bots) {
+      if (!b.alive) continue;
+      b.hear(from, 45, now);
+      const c = b.chest; const t = c.clone().sub(start).dot(dir);
+      // 탄이 실제로 지나간 구간(맞은 거리까지)에서만 제압한다. 벽에 막힌 탄은 벽 너머의 봇을 제압하지 않는다
+      if (t > 0 && t < maxD + 0.3) { const d = start.clone().addScaledVector(dir, t).distanceTo(c); if (d < 1.6) b.suppress(0.25 + 0.4 * (1 - d / 1.6), now); }
+    }
   }
 
   botShot(bot, m, dir) {
@@ -805,6 +812,8 @@ class Game {
       // 봇의 관절 15개와 발 디딤 상태(검사 (r)(s)용, 2단계 ②)
       vmAim() { const m = g.vm.muzzleWorld, d = g.vm.dirWorld; return { m: [m.x, m.y, m.z], d: [d.x, d.y, d.z] }; },
       ground(x, z, y) { const h = g.level.groundHeight(x, z, y, 0.05, 0.42); return h; },
+      // 봇 판단 검사(3단계 ①, scripts/aiaudit 쪽): src/aiaudit.js의 측정을 부른다
+      ai(name, opts = {}) { return AIAUDIT[name](g, opts); },
       botJ(i) { const b = g.bots[i]; return { J: b.J.map(v => [v.x, v.y, v.z]), pos: [b.pos.x, b.pos.y, b.pos.z], alive: b.alive, speed: b.speed }; },
       step(n = 1) { if (!MANUAL) return null; for (let i = 0; i < n; i++) g.tick(1 / 60); return { time: g.time, phase: g.phase, playerHits: g.stats.playerHits, shotsFired: g.stats.shotsFired }; },
     };
