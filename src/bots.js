@@ -457,8 +457,10 @@ export class Bot {
     const hold = [0, 0.25 + m() * 0.2, 0.15 + m() * 0.2, ar, ar * (0.8 + m() * 0.3), ar * (0.6 + m() * 0.3), ar, ar * (0.8 + m() * 0.3), ar * (0.6 + m() * 0.3), lg[0] + 0.1, lg[0], lg[0], lg[1] + 0.1, lg[1], lg[1]];
     // 총은 손에서 빠져 손 옆에 떨어진다(그 전에는 몸과 같이 넘어가 몸을 뚫고 섰다, A/B 72)
     const gth = V(-dir.z, 0, dir.x).multiplyScalar((m() < 0.5 ? -1 : 1) * (0.2 + m() * 0.3)).add(V(0, 0.05 + m() * 0.15, 0));   // 손에서 놓쳐 손 옆에 떨어진다(A/B 76: 멀리 던진 총이 몸 옆의 긴 막대로 읽혔다)
+    // 넘어갈 방향: 맞은 방향에서 옆으로 ±35° 안. 몸통이 아직 서 있는 동안 이쪽으로 균형을 잃는다(아래 stepRagdoll)
+    const tip = (() => { const a = (m() - 0.5) * 1.2, d = dir.clone().setY(0); if (d.lengthSq() < 1e-6) d.set(0, 0, 1); d.normalize(); return V(d.x * Math.cos(a) - d.z * Math.sin(a), 0, d.x * Math.sin(a) + d.z * Math.cos(a)); })();
     const leg = [m(), m()];   // 누운 뒤 다리를 펴는 정도(반쯤 굽힘~거의 폄), 다리마다 다르다
-    this.ragdoll = { leg, loc, hold, P, prev, rest, t: 0, gun: { a: g0, b: g1, pa: g0.clone().addScaledVector(dir, -dt * 1.5).add(V(0, dt, 0)).addScaledVector(gth, -dt), pb: g1.clone().addScaledVector(dir, -dt * 0.5).addScaledVector(gth, -dt * 0.5).add(V(0, -dt * 0.8, 0)), len: g0.distanceTo(g1) }, sleep: false };
+    this.ragdoll = { tip, tipA: 2.5 + m() * 2.5, leg, loc, hold, P, prev, rest, t: 0, gun: { a: g0, b: g1, pa: g0.clone().addScaledVector(dir, -dt * 1.5).add(V(0, dt, 0)).addScaledVector(gth, -dt), pb: g1.clone().addScaledVector(dir, -dt * 0.5).addScaledVector(gth, -dt * 0.5).add(V(0, -dt * 0.8, 0)), len: g0.distanceTo(g1) }, sleep: false };
     this.g.events.push({ type: 'botDown', bot: this.idx, pos: this.pos.clone() });
   }
 
@@ -473,6 +475,11 @@ export class Bot {
         const vx = (p.x - q.x) * 0.995, vy = (p.y - q.y) * 0.995, vz = (p.z - q.z) * 0.995;
         q.copy(p);
         p.x += vx; p.y += vy - 9.8 * h * h; p.z += vz;
+      }
+      if (R.tip && R.t < 1.5 && R.P[J.chest].y - R.P[J.pelvis].y > 0.25) {
+        // 균형 잃기(A/B 77: 무릎이 꺾인 뒤 상체가 꼿꼿이 선 채 무릎 꿇고 멈췄다). 서 있는 상체는 뒤집힌 진자라 조금만 기울어도 넘어간다
+        const up = (R.P[J.chest].y - R.P[J.pelvis].y) / (R.P[J.chest].distanceTo(R.P[J.pelvis]) || 1), a = R.tipA * up * h * h;
+        for (const [i, k] of [[J.chest, 1], [J.head, 1.2], [J.shL, 1], [J.shR, 1]]) R.P[i].addScaledVector(R.tip, a * k);
       }
       for (const G of [R.gun]) {
         for (const [p, q] of [[G.a, G.pa], [G.b, G.pb]]) { const v = p.clone().sub(q).multiplyScalar(0.995); q.copy(p); p.add(v); p.y -= 9.8 * h * h; }
