@@ -308,7 +308,7 @@ class Game {
     let start = origin;
     const block = this.level.raycast(chest, toM.normalize(), lm, true);
     if (block) start = chest;
-    const hitL = this.level.raycast(start, dir, 200);
+    const hitL = this.level.bulletRay(start, dir, 200);
     let best = null, bestBot = null;
     for (const b of this.bots) { const h = b.hitTest(start, dir, hitL ? hitL.dist : 200); if (h && (!best || h.dist < best.dist)) { best = h; bestBot = b; } }
     this.stats.shotsFired++;
@@ -348,7 +348,7 @@ class Game {
   botShot(bot, m, dir) {
     const p = this.player, r = this.rng;
     this.stats.botShots++;
-    const hitL = this.level.raycast(m, dir, 150);
+    const hitL = this.level.bulletRay(m, dir, 150);
     const maxD = hitL ? hitL.dist : 150;
     // 플레이어 원기둥과의 교차
     let hitP = false;
@@ -626,6 +626,62 @@ class Game {
         });
         return out;
       },
+      traceStats() { const t = g.level.trace; return t ? { ms: t.ms, tris: t.N, nodes: t.nodes } : null; },
+      triStats() {
+        const L = g.level, keyOf = new Map(Object.entries(L.mats).map(([k, m]) => [m, k])), out = {}; let notId = 0;
+        L.group.traverse((o) => { if (!o.isMesh) return; const k = keyOf.get(o.material) || '?' + (o.name || o.material.type) + (o.isInstancedMesh ? '*' + o.count : ''); const n = (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1); out[k] = (out[k] || 0) + n; o.updateMatrixWorld(); if (!o.matrixWorld.equals(new THREE.Matrix4())) notId++; });
+        return JSON.stringify({ out, notId });
+      },
+      // 탄의 가림 검사(2026-11-18): 한 시점에서 레벨의 보이는 형상만 핀홀 카메라로 거리 버퍼에 그리고, 같은 화소의 광선을
+      // 탄이 쓰는 충돌 상자(level.raycast)로 쏴서 두 거리를 견준다. 보이는 면이 먼저면 '뚫림'(보이는 물체를 탄이 지나감),
+      // 충돌 상자가 먼저면 '막힘'(보이는 빈틈에서 탄이 멈춤)이다. 재질 키별로 센다
+      bulletMatch({ x, y, z, yaw = 0, pitch = 0, w = 160, h = 90, fov = 80, maxD = 25, skip = [] } = {}) {
+        const L = g.level, R = g.renderer;
+        const keys = Object.keys(L.mats), idOf = new Map(keys.map((k, i) => [L.mats[k], i + 1]));
+        // 표에 없는 재질(나무, 원경 건물 등)은 메시 이름이나 재질 이름으로 따로 센다
+        L.group.traverse((o) => { if (o.isMesh && !idOf.has(o.material)) { const nm = '?' + (o.name || o.material.name || o.material.type) + (o.isInstancedMesh ? '*' : ''); keys.push(nm); idOf.set(o.material, keys.length); } });
+        const vs = `varying vec3 vW; void main(){ vec4 p = vec4(position, 1.0);
+#ifdef USE_INSTANCING
+ p = instanceMatrix * p;
+#endif
+ vec4 w = modelMatrix * p; vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
+        const fs = 'uniform vec3 uO; uniform float uId; varying vec3 vW; void main(){ gl_FragColor = vec4(distance(vW, uO), uId, 0.0, 1.0); }';
+        const mats = new Map(), saved = [];
+        L.group.traverse((o) => {
+          if (!o.isMesh) return;
+          const id = idOf.get(o.material) || 0, key = id ? keys[id - 1] : '?';
+          saved.push([o, o.material, o.visible]);
+          if (skip.includes(key)) { o.visible = false; return; }
+          let m = mats.get(id);
+          if (!m) { m = new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fs, side: THREE.DoubleSide, uniforms: { uO: { value: new THREE.Vector3(x, y, z) }, uId: { value: id } } }); mats.set(id, m); }
+          o.material = m;
+        });
+        const cam = new THREE.PerspectiveCamera(fov * h / w, w / h, 0.02, maxD * 2);
+        cam.position.set(x, y, z); cam.rotation.set(pitch, yaw, 0, 'YXZ'); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+        const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: true });
+        const prevT = R.getRenderTarget(), prevC = new THREE.Color(); R.getClearColor(prevC); const prevA = R.getClearAlpha();
+        const sc = new THREE.Scene(), parent = L.group.parent; sc.add(L.group);
+        R.setRenderTarget(rt); R.setClearColor(0x000000, 1); R.clear(); R.render(sc, cam);
+        const buf = new Float32Array(w * h * 4); R.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+        R.setRenderTarget(prevT); R.setClearColor(prevC, prevA); parent.add(L.group);
+        for (const [o, m, v] of saved) { o.material = m; o.visible = v; }
+        for (const m of mats.values()) m.dispose(); rt.dispose();
+        const o = new THREE.Vector3(x, y, z), d = new THREE.Vector3();
+        const out = { rays: 0, solid: 0, pass: {}, block: {}, passN: 0, blockN: 0, samples: [] };
+        for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+          const k = (j * w + i) * 4, dv0 = buf[k], id = Math.round(buf[k + 1]);
+          const dv = dv0 > 0 ? dv0 : Infinity;
+          d.set((i + 0.5) / w * 2 - 1, (j + 0.5) / h * 2 - 1, 0.5).unproject(cam).sub(o).normalize();
+          const hc = L.bulletRay(o, d, maxD, true), dc = hc ? hc.dist : Infinity;
+          out.rays++;
+          if (dv > maxD && dc > maxD) continue;
+          out.solid++;
+          const tol = 0.1 + 0.015 * Math.min(dv, dc);
+          if (dv + tol < dc) { const key = keys[id - 1] || '?'; out.pass[key] = (out.pass[key] || 0) + 1; out.passN++; if (out.samples.length < 400) out.samples.push(['pass', key, +(o.x + d.x * dv).toFixed(2), +(o.y + d.y * dv).toFixed(2), +(o.z + d.z * dv).toFixed(2), +(dc - dv).toFixed(2)]); }
+          else if (dc + tol < dv) { const key = hc.mat || '?'; out.block[key] = (out.block[key] || 0) + 1; out.blockN++; if (out.samples.length < 400) out.samples.push(['block', key, +(o.x + d.x * dc).toFixed(2), +(o.y + d.y * dc).toFixed(2), +(o.z + d.z * dc).toFixed(2), +(Math.min(dv, 99) - dc).toFixed(2)]); }
+        }
+        return out;
+      },
       // 조도 볼륨을 한 점에서 읽는다(검사와 살펴보기용)
       light(x, y, z) { return probeLight(g.renderer, x, y, z); },
       state() {
@@ -746,6 +802,8 @@ class Game {
       perfStop() { const r = g.perf; g.perf = null; return { frames: r.frames.slice(2), seconds: (performance.now() - r.t0) / 1000, renderScale: SCALE[g.settings.quality], canvas: `${innerWidth}x${innerHeight}`, distance: g.distance - r.d0 }; },
       async audioTest() { return g.sound.offlineStats(); },
       // 수동 시계에서 1/60초짜리 프레임을 n번 진행한다 (입력은 그 사이에 실제 이벤트로 넣는다)
+      // 봇의 관절 15개와 발 디딤 상태(검사 (r)(s)용, 2단계 ②)
+      botJ(i) { const b = g.bots[i]; return { J: b.J.map(v => [v.x, v.y, v.z]), pos: [b.pos.x, b.pos.y, b.pos.z], alive: b.alive, speed: b.speed }; },
       step(n = 1) { if (!MANUAL) return null; for (let i = 0; i < n; i++) g.tick(1 / 60); return { time: g.time, phase: g.phase, playerHits: g.stats.playerHits, shotsFired: g.stats.shotsFired }; },
     };
   }

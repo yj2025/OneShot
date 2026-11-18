@@ -152,7 +152,59 @@ async function main() {
       ` ② 팔꿈치${bad2.length ? ` 벗어남 ${bad2.length}: ${bad2.slice(0, 3).join('; ')}` : ' 모두 렌즈 아래'}` +
       ` ③ 권총 쏘기 손목${bad3.length ? ` 벗어남: ${bad3.join('; ')}` : ' 모두 0.42 m 넘게 앞'}`);
   }
+  // (r) 봇이 걸을 때 디딘 발이 땅에서 미끄러지지 않는다, (s) 쓰러질 때 무릎이 거꾸로 꺾이지 않는다(2단계 ②, 2026-11-18).
+  //  판정자들이 '걸음이 뻣뻣하고 기계적', '마네킹'이라 적었다(A/B 68·69). 다리를 엉덩이에 매단 진자로 그려서 디딘 발이 몸과 함께 끌려갔다.
+  //  (r) 연속 프레임 bot-walk-yard, bot-run-yard, bot-walk-room과 같은 자리에서 0.5초 걸은 뒤 1.5초 동안, 땅에 닿은 발(발목이 몸 기준 0.09 m 아래)이
+  //   두 프레임 사이에 수평으로 움직인 거리의 합이 몸이 움직인 거리의 10% 이하다
+  //  (s) 마당, 방, 홀에서 쓰러진 봇의 4초 동안, 무릎이 엉덩이와 발목을 잇는 선에서 몸 뒤쪽으로 3 cm 넘게 나가지 않는다
+  //  고치기 전 빌드에서 실패하는 것을 먼저 확인했다(PROGRESS.md 2단계 ②). CHECK_ONLY=bot 이면 이 검사만 돈다
+  async function botMotionChecks() {
+    const open = async (vp, bots) => { const g = await openGame(L.context, `test=1&clock=manual&seed=11&vp=${vp}&bots=${bots}`); await clickStart(g.page); return g; };
+    const close = async (g) => { extraErrors.push(...g.errors); extraExternal.push(...g.external); await g.page.close(); };
+    const WALKS = [['마당 걷기', '6,20,0.22,0', '0,2.31,17.23,-1.35,march', 0], ['마당 달리기', '6,20,0.22,0', '0,-0.13,17.78,-1.35,run', 0], ['방 걷기', '8,-5.6,3.1416,0', '1,7.4,-3.2,-1.5708,march', 1]];
+    const slips = [];
+    for (const [name, vp, bots, i] of WALKS) {
+      const g = await open(vp, bots);
+      const fr = await g.page.evaluate((i) => { window.__bc.step(30); const o = []; for (let k = 0; k < 90; k++) { window.__bc.step(1); o.push(window.__bc.botJ(i)); } return o; }, i);
+      await close(g);
+      let foot = 0, body = 0;
+      for (let k = 1; k < fr.length; k++) {
+        const a = fr[k - 1], b = fr[k];
+        body += Math.hypot(b.pos[0] - a.pos[0], b.pos[2] - a.pos[2]);
+        for (const f of [11, 14]) {
+          if (a.J[f][1] - a.pos[1] < 0.09 && b.J[f][1] - b.pos[1] < 0.09) foot += Math.hypot(b.J[f][0] - a.J[f][0], b.J[f][2] - a.J[f][2]);
+        }
+      }
+      slips.push({ name, r: foot / Math.max(body, 1e-6), body });
+    }
+    rec('(r) 봇이 걸을 때 디딘 발이 미끄러지지 않는다', slips.every(s => s.r <= 0.1 && s.body > 0.5),
+      slips.map(s => `${s.name} ${(s.r * 100).toFixed(0)}% (몸 ${s.body.toFixed(1)} m)`).join(', ') + ' (10% 이하)');
+    const FALLS = [['마당', '6,20,0.22,0', '0,4.76,17.2,1.79,dead', 0], ['방', '8,-5.6,3.1416,-0.45', '1,8.5,-4.0,-2.8,dead', 1], ['홀', '2,-8,1.0,0.05', '2,-0.62,-9.1,-2.6,dead', 2]];
+    const worst = [];
+    for (const [name, vp, bots, i] of FALLS) {
+      const g = await open(vp, bots);
+      const w = await g.page.evaluate((i) => {
+        const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], nrm = (a) => { const l = Math.hypot(...a) || 1; return a.map(x => x / l); };
+        let worst = 0;
+        for (let k = 0; k < 240; k++) {
+          window.__bc.step(1);
+          const J = window.__bc.botJ(i).J;
+          const fwd = nrm(cross(sub(J[1], J[0]), sub(J[6], J[3])));
+          for (const [h, kn, f] of [[9, 10, 11], [12, 13, 14]]) {
+            const ax = nrm(sub(J[f], J[h])), v = sub(J[kn], J[h]), t = dot(v, ax), perp = [v[0] - ax[0] * t, v[1] - ax[1] * t, v[2] - ax[2] * t];
+            worst = Math.max(worst, -dot(perp, fwd));
+          }
+        }
+        return worst;
+      }, i);
+      await close(g);
+      worst.push({ name, w });
+    }
+    rec('(s) 쓰러질 때 무릎이 거꾸로 꺾이지 않는다', worst.every(x => x.w <= 0.03), worst.map(x => `${x.name} ${(x.w * 100).toFixed(1)} cm`).join(', ') + ' (3 cm 이하)');
+  }
   if (process.env.CHECK_ONLY === 'arms') { await armChecks(); return; }
+  if (process.env.CHECK_ONLY === 'bot') { await botMotionChecks(); return; }
   if (process.env.CHECK_ONLY === 'motion') { await motionChecks(); return; }
 
   if (process.env.CHECK_ONLY !== 'surface') {
@@ -441,7 +493,7 @@ async function main() {
       ` / ④ 소매 채도 ${satBad.length ? '0.8배 미만 ' + satBad.join(', ') : '모든 시점 0.8배 이상'}` +
       (unseen.length ? ` / 잴 수 없는 시점 ${unseen.join(', ')}` : ''));
   }
-  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); }
+  if (!process.env.CHECK_ONLY) { await motionChecks(); await armChecks(); }   // (r)(s)는 2단계 ② 동작을 고치는 세션에서 전체 검사에 넣는다. 그 전까지는 CHECK_ONLY=bot으로만 돈다
   if (process.env.CHECK_ONLY === 'move' || process.env.CHECK_ONLY === 'surface') return;
 
   const { page, errors, external } = await openGame(L.context, 'test=1&seed=7');
@@ -454,6 +506,31 @@ async function main() {
     const r = await page.evaluate(() => window.__bc.geoCheck());
     rec('(m) 로딩이 끝나면 장면의 정점 버퍼가 모두 올라가 있다', r.after === r.before, `컬링 없이 다시 그린 뒤 GPU 지오메트리 ${r.before} → ${r.after}`);
   }
+
+  // (q) 탄은 보이는 형상에서 멈추고 보이는 빈틈은 지나간다(2026-11-18, 사용자 요청). 탄은 레벨의 충돌 상자로 쏘는데,
+  //  상자는 보이는 형상과 따로 손으로 둔 것이라 선반·의자·돌린 상자에서는 빈틈에서 탄이 멈추고(막힘), 팔레트 더미·드럼통·방벽·나무 줄기에서는
+  //  보이는 물체를 탄이 지나갔다(뚫림). 교전이 벌어지는 8자리의 가슴 높이에서 네 방향으로, 레벨의 보이는 형상(잎, 낙엽, 철망, 비닐, 웅덩이,
+  //  얼룩, 종이, 전선은 빼고)을 핀홀 카메라로 그린 거리와 탄의 길(level.bulletRay)이 처음 닿는 거리를 화소마다 견준다(__bc.bulletMatch).
+  //  어긋남은 0.1 m + 거리의 1.5%보다 큰 차이다. 뚫림과 막힘이 각각 닿은 광선의 1% 이하여야 한다. 고치기 전 빌드에서 실패하는 것을 먼저 확인했다
+  {
+    const SPOTS = [[0, 16], [-12, 12], [16, 6], [-7.5, -0.9], [0.5, -2.4], [8, -2.6], [-6, -5.8], [2, -8]];
+    const SKIP = ['weeds', 'sheet', 'chain', 'tube', 'puddle', 'stain', 'paper', 'cable', '?treeCards', '?treeLitter'];
+    const r = await page.evaluate(({ SPOTS, SKIP }) => {
+      const tot = { solid: 0, pass: 0, block: 0, pk: {}, bk: {} };
+      for (const [x, z] of SPOTS) for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+        const m = window.__bc.bulletMatch({ x, y: 1.35, z, yaw, w: 120, h: 68, skip: SKIP });
+        tot.solid += m.solid; tot.pass += m.passN; tot.block += m.blockN;
+        for (const k in m.pass) tot.pk[k] = (tot.pk[k] || 0) + m.pass[k];
+        for (const k in m.block) tot.bk[k] = (tot.bk[k] || 0) + m.block[k];
+      }
+      return tot;
+    }, { SPOTS, SKIP });
+    const top = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(', ') || '없음';
+    const pp = r.pass / Math.max(1, r.solid), bp = r.block / Math.max(1, r.solid);
+    rec('(q) 탄은 보이는 형상에서 멈추고 보이는 빈틈은 지나간다', pp <= 0.01 && bp <= 0.01,
+      `닿은 광선 ${r.solid}, 뚫림 ${(pp * 100).toFixed(2)}% [${top(r.pk)}], 막힘 ${(bp * 100).toFixed(2)}% [${top(r.bk)}] (각각 1% 이하)`);
+  }
+  if (process.env.CHECK_ONLY === 'bullet') return;   // (q)만 빠르게 돌려 보는 용도
 
   // 빛 굽기: 조도 볼륨이 구워졌고, 가려진 곳과 트인 곳이 실제로 다른 값을 갖는지 몇 점에서 읽어 본다.
   // 형상을 고치다가 빛을 가리는 메시 목록이나 격자가 어긋나면 여기서 걸린다.

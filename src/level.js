@@ -9,6 +9,7 @@ import { setLightSlots, volUniforms, skyGain } from './lightbake.js';
 import { mulberry32 } from './rng.js';
 import { TreeTool, setTreeTime } from './trees.js';
 import { BackdropTool } from './backdrop.js';
+import { BulletTrace } from './bullettrace.js';
 
 export const FL = 0.7;
 const CA = FL + 2.8;   // 일반 천장
@@ -965,6 +966,8 @@ export class Level {
     this.casters = [new THREE.Mesh(mergeGeometries(this.casterGeos.map(c => posOnly(c.geo)), false))];
     this.nearCasters = [new THREE.Mesh(mergeGeometries(this.casterGeos.filter(c => !far.includes(c.key) && !c.key.startsWith('bg')).map(c => posOnly(c.geo)), false))];
     this.casterGeos = null;
+    // 탄의 길: 보이는 삼각형의 BVH(bullettrace.js)
+    this.trace = new BulletTrace(this.group);
     // 품질 낮음: 형광등 일부 끔(광원 수를 줄임)
     this.buildNav();
   }
@@ -1260,11 +1263,12 @@ export class Level {
   }
 
   // 광선과 상자들의 첫 교차
-  raycast(o, d, maxDist = 200, skipThin = false) {
+  raycast(o, d, maxDist = 200, skipThin = false, onlyThin = false) {
     let best = maxDist, hit = null, nAxis = 0, nSign = 0;
     const inv = [1 / d.x, 1 / d.y, 1 / d.z], oo = [o.x, o.y, o.z];
     for (const b of this.boxes) {
       if (skipThin && b.thin) continue;
+      if (onlyThin && !b.thin) continue;
       let tmin = 0, tmax = best, ax = -1, sg = 0;
       let ok = true;
       for (let a = 0; a < 3; a++) {
@@ -1283,6 +1287,15 @@ export class Level {
     if (!hit) return null;
     const n = new THREE.Vector3(); n.setComponent(nAxis, nSign);
     return { dist: best, point: new THREE.Vector3(o.x + d.x * best, o.y + d.y * best, o.z + d.z * best), normal: n, mat: hit.mat, box: hit };
+  }
+
+  // 탄이 지나가는 길. 사격(플레이어와 봇)과 검사 (q)가 쓴다. skipThin이면 철망을 무시한다
+  // 보이는 형상(BVH)에서 멈추고, 철망은 그물코에 걸린 만큼만 막는다(철망은 그림이 알파 텍스처라 상자로 둔다)
+  bulletRay(o, d, maxDist = 200, skipThin = false) {
+    if (!this.trace) return this.raycast(o, d, maxDist, skipThin);
+    const a = this.trace.ray(o, d, maxDist);
+    const b = skipThin ? null : this.raycast(o, d, a ? a.dist : maxDist, false, true);
+    return b || a;
   }
 
   lineClear(a, b) {
